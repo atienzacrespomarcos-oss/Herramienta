@@ -1,6 +1,32 @@
 # Módulo: mediciones, ofertas y modificados (Etapa 2)
 
-Especificación aprobada por decisiones del usuario (06-11-2026). Estado: **en desarrollo**.
+Especificación aprobada por decisiones del usuario (06-11-2026).
+
+## Estado (06-11-2026)
+
+| Parte | Estado |
+|---|---|
+| Lector BC3 | Implementado. Pendiente de validar con un BC3 real del usuario. |
+| Partidas en el proyecto con su origen; leer/quitar con deshacer | Implementado |
+| Excel con todo | Implementado |
+| Interfaz por pasos según tipo de encargo | Implementado (Documentación · Mediciones y ofertas · Equipos) |
+| Lector Excel | Pendiente |
+| Lector PDF | Pendiente |
+| Ampliaciones y modificaciones (Excel y BC3) | Pendiente |
+
+## Cómo se usa
+
+1. **Documentación** → «Incorporar documento» (el BC3 de la oferta o medición).
+2. «Leer medición u oferta» → eliges el documento, si es medición, oferta o presupuesto, y el
+   proveedor. Se guardan todas las partidas con el sitio exacto del fichero de donde salen.
+3. **Mediciones y ofertas** → capítulos y partidas en árbol, total, y debajo los **avisos**
+   del lector (lo que no cuadra en el fichero). Las partidas sin precio aparecen como «no
+   consta» y no se suman: el total se marca «parcial».
+4. «Exportar Excel con todo» → hoja *Partidas* (documento, tipo, proveedor, capítulo, código,
+   etiqueta, ud, descripción, cantidad, precio, importe, origen), hoja *Avisos de lectura* y
+   hoja *Información*. Celdas vacías = no consta (nunca 0).
+5. «Quitar medición» → quita las partidas leídas de ese documento (el documento se queda).
+   Se puede deshacer.
 
 ## Por qué va primero
 

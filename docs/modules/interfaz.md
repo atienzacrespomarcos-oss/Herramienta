@@ -1,5 +1,10 @@
 # Módulo: interfaz (Etapa 1, bloque 2)
 
+> **Actualización 06-11-2026:** la ventana se organiza ahora en **pasos del proyecto**
+> (Documentación · Mediciones y ofertas · Equipos) según el tipo de encargo. El árbol y la
+> tabla de propiedades descritos abajo forman el paso **Equipos**; documentos y pendientes,
+> el paso **Documentación**; el historial se abre desde **Ver**.
+
 ## Decisiones del usuario (06-11-2026)
 
 - Distribución **clásica de ingeniería**: árbol de elementos a la izquierda, propiedades en el

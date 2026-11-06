@@ -21,11 +21,18 @@ from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDockWidget,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
+    QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QToolBar,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -34,14 +41,18 @@ from PySide6.QtWidgets import (
 
 from traza import __version__
 from traza.app.ordenes import (
+    CLASES_MEDICION,
+    ENCARGOS,
     Aprobar,
     BorrarPropiedad,
+    CambiarEncargo,
     ConfirmarPropuesta,
     CrearElemento,
     CrearPendiente,
     FijarPropiedad,
     Orden,
     OrdenRechazada,
+    QuitarMedicion,
     Reabrir,
     ResolverPendiente,
 )
@@ -86,6 +97,31 @@ EXTENSIONES_ABRIBLES = {
     ".tiff",
     ".bmp",
 }
+
+
+TODOS = frozenset(ENCARGOS)
+#: Pasos del proyecto: (clave, texto, encargos en que se muestra). Solo pasos que funcionan;
+#: los de cálculo y planos se añadirán, solo para «diseño», cuando estén construidos.
+PASOS = [
+    ("documentacion", "Documentación", TODOS),
+    ("mediciones", "Mediciones y ofertas", TODOS),
+    ("equipos", "Equipos", TODOS),
+]
+
+
+def _barra(acciones: list[QAction]) -> QToolBar:
+    b = QToolBar()
+    b.setToolButtonStyle(Qt.ToolButtonTextOnly)
+    for a in acciones:
+        b.addAction(a)
+    return b
+
+
+def _dinero(v: float | None) -> str:
+    """1234.5 → «1.234,50». Solo para mostrar: los datos se guardan sin formato."""
+    if v is None:
+        return ""
+    return f"{v:,.2f}".replace(",", " ").replace(".", ",").replace(" ", ".")
 
 
 def _tabla(columnas: list[str]) -> QTableWidget:
@@ -144,50 +180,175 @@ class VentanaPrincipal(QMainWindow):
     # --- Construcción --------------------------------------------------------------------
 
     def _construir(self) -> None:
-        # Centro: propiedades del elemento seleccionado.
-        centro = QWidget()
-        lay = QVBoxLayout(centro)
-        self.cabecera = QLabel()
-        self.cabecera.setTextFormat(Qt.RichText)
-        lay.addWidget(self.cabecera)
-        self.tabla_propiedades = _tabla(
-            ["Propiedad", "Valor", "Unidad", "Procedencia", "Fuente / justificación"]
-        )
-        self.tabla_propiedades.doubleClicked.connect(lambda _i: self.accion_fijar_valor())
-        lay.addWidget(self.tabla_propiedades)
-        self.setCentralWidget(centro)
+        """Pasos del proyecto a la izquierda; a la derecha, la página del paso elegido.
 
-        # Izquierda: árbol de elementos.
-        self.arbol = QTreeWidget()
-        self.arbol.setHeaderLabels(["Código", "Tipo", "Estado"])
-        self.arbol.itemSelectionChanged.connect(self._al_seleccionar)
-        self._dock("Elementos", self.arbol, Qt.LeftDockWidgetArea)
+        Decisión del usuario (06-11-2026): la herramienta se recorre por pasos, adaptados
+        al tipo de encargo, y solo se ven los pasos que ya funcionan.
+        """
+        self._crear_acciones()
 
-        # Abajo: documentos, historial, pendientes.
+        # Página de bienvenida (sin proyecto abierto).
+        bienvenida = QWidget()
+        lb = QVBoxLayout(bienvenida)
+        lb.addStretch()
+        titulo = QLabel("<h2>TRAZA</h2><p>Crea un proyecto nuevo o abre uno existente.</p>")
+        titulo.setAlignment(Qt.AlignCenter)
+        lb.addWidget(titulo)
+        fila = QHBoxLayout()
+        fila.addStretch()
+        for a in (self.a_nuevo, self.a_abrir):
+            b = QToolButton()
+            b.setDefaultAction(a)
+            b.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            fila.addWidget(b)
+        fila.addStretch()
+        lb.addLayout(fila)
+        lb.addStretch()
+
+        # Paso Documentación: documentos del proyecto e información pendiente.
         self.tabla_documentos = _tabla(
             ["Documento", "Tipo", "Páginas", "Incorporado", "Valores que lo citan"]
         )
-        self.tabla_documentos.doubleClicked.connect(lambda _i: self.accion_abrir_documento())
-        self.tabla_historial = _tabla(["Fecha", "Autor", "Orden", "Afecta a", "Campos"])
+        self.tabla_documentos.doubleClicked.connect(
+            lambda _i: self._proteger("Abrir documento", self.accion_abrir_documento)
+        )
         self.tabla_pendientes = _tabla(["Pendiente", "Elemento", "Creado"])
-        d1 = self._dock("Documentos", self.tabla_documentos, Qt.BottomDockWidgetArea)
-        d2 = self._dock("Historial", self.tabla_historial, Qt.BottomDockWidgetArea)
-        d3 = self._dock("Pendientes", self.tabla_pendientes, Qt.BottomDockWidgetArea)
-        self.tabifyDockWidget(d1, d2)
-        self.tabifyDockWidget(d2, d3)
-        d1.raise_()
+        doc = QWidget()
+        ld = QVBoxLayout(doc)
+        ld.addWidget(_barra([self.a_incorporar, self.a_leer_medicion, self.a_abrir_doc]))
+        ld.addWidget(self.tabla_documentos, 3)
+        ld.addWidget(QLabel("<b>Información pendiente de confirmar</b>"))
+        ld.addWidget(_barra([self.a_nuevo_pendiente, self.a_resolver]))
+        ld.addWidget(self.tabla_pendientes, 1)
 
-        self._crear_acciones()
+        # Paso Mediciones y ofertas.
+        self.tabla_mediciones = _tabla(
+            ["Documento", "Tipo", "Proveedor", "Partidas", "Total", "Avisos"]
+        )
+        self.tabla_mediciones.itemSelectionChanged.connect(self._al_elegir_medicion)
+        self.arbol_partidas = QTreeWidget()
+        self.arbol_partidas.setHeaderLabels(
+            ["Capítulo / código", "Descripción", "Ud", "Cantidad", "Precio", "Importe", "Origen"]
+        )
+        self.arbol_partidas.setAlternatingRowColors(True)
+        self.arbol_partidas.header().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.total_medicion = QLabel()
+        self.lista_avisos = QListWidget()
+        med = QWidget()
+        lm = QVBoxLayout(med)
+        lm.addWidget(_barra([self.a_leer_medicion, self.a_exportar_excel, self.a_quitar_medicion]))
+        partes = QSplitter(Qt.Vertical)
+        partes.addWidget(self.tabla_mediciones)
+        partes.addWidget(self.arbol_partidas)
+        partes.addWidget(self.lista_avisos)
+        partes.setStretchFactor(0, 1)
+        partes.setStretchFactor(1, 4)
+        partes.setStretchFactor(2, 1)
+        lm.addWidget(partes)
+        lm.addWidget(self.total_medicion)
+
+        # Paso Equipos: elementos con sus propiedades y procedencia.
+        self.arbol = QTreeWidget()
+        self.arbol.setHeaderLabels(["Código", "Tipo", "Estado"])
+        self.arbol.itemSelectionChanged.connect(self._al_seleccionar)
+        self.cabecera = QLabel()
+        self.cabecera.setTextFormat(Qt.RichText)
+        self.tabla_propiedades = _tabla(
+            ["Propiedad", "Valor", "Unidad", "Procedencia", "Fuente / justificación"]
+        )
+        self.tabla_propiedades.doubleClicked.connect(
+            lambda _i: self._proteger("Fijar valor", self.accion_fijar_valor)
+        )
+        derecha = QWidget()
+        lr = QVBoxLayout(derecha)
+        lr.setContentsMargins(0, 0, 0, 0)
+        lr.addWidget(self.cabecera)
+        lr.addWidget(self.tabla_propiedades)
+        division = QSplitter(Qt.Horizontal)
+        division.addWidget(self.arbol)
+        division.addWidget(derecha)
+        division.setStretchFactor(1, 3)
+        eq = QWidget()
+        le = QVBoxLayout(eq)
+        le.addWidget(
+            _barra(
+                [
+                    self.a_nuevo_elemento,
+                    self.a_fijar,
+                    self.a_borrar_valor,
+                    self.a_confirmar,
+                    self.a_aprobar,
+                    self.a_reabrir,
+                ]
+            )
+        )
+        le.addWidget(division)
+
+        self.paginas = QStackedWidget()
+        self.paginas.addWidget(bienvenida)
+        self._pagina = {"documentacion": doc, "mediciones": med, "equipos": eq}
+        for p in self._pagina.values():
+            self.paginas.addWidget(p)
+
+        self.lista_pasos = QListWidget()
+        self.lista_pasos.setMaximumWidth(230)
+        self.lista_pasos.currentRowChanged.connect(self._al_elegir_paso)
+        self.lista_pasos.setFocusPolicy(Qt.NoFocus)
+
+        centro = QSplitter(Qt.Horizontal)
+        centro.addWidget(self.lista_pasos)
+        centro.addWidget(self.paginas)
+        centro.setStretchFactor(1, 1)
+        self.setCentralWidget(centro)
+
+        # Historial: consulta, no un paso del trabajo. Se abre desde «Ver».
+        self.tabla_historial = _tabla(["Fecha", "Autor", "Orden", "Afecta a", "Campos"])
+        self.dock_historial = QDockWidget("Historial de cambios", self)
+        self.dock_historial.setObjectName("dock_historial")
+        self.dock_historial.setWidget(self.tabla_historial)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.dock_historial)
+        self.dock_historial.hide()
+
         self.tabla_documentos.itemSelectionChanged.connect(self._actualizar_estado)
         self.tabla_pendientes.itemSelectionChanged.connect(self._actualizar_estado)
         self.statusBar()
 
-    def _dock(self, titulo: str, widget: QWidget, zona) -> QDockWidget:
-        d = QDockWidget(titulo, self)
-        d.setObjectName(f"dock_{titulo}")
-        d.setWidget(widget)
-        self.addDockWidget(zona, d)
-        return d
+    def _refrescar_pasos(self) -> None:
+        """Muestra solo los pasos del tipo de encargo (y que ya funcionan)."""
+        actual = self.paso_actual()
+        self.lista_pasos.blockSignals(True)
+        try:
+            self.lista_pasos.clear()
+            if self.proyecto is None:
+                self.paginas.setCurrentIndex(0)
+                return
+            visibles = [p for p in PASOS if self.proyecto.encargo in p[2]]
+            for n, (clave, texto, _) in enumerate(visibles, start=1):
+                item = QListWidgetItem(f"{n}. {texto}")
+                item.setData(Qt.UserRole, clave)
+                self.lista_pasos.addItem(item)
+            claves = [p[0] for p in visibles]
+            fila = claves.index(actual) if actual in claves else 0
+            self.lista_pasos.setCurrentRow(fila)
+            self.paginas.setCurrentWidget(self._pagina[claves[fila]])
+        finally:
+            self.lista_pasos.blockSignals(False)
+
+    def paso_actual(self) -> str | None:
+        item = self.lista_pasos.currentItem()
+        return item.data(Qt.UserRole) if item else None
+
+    def ir_a_paso(self, clave: str) -> None:
+        for i in range(self.lista_pasos.count()):
+            if self.lista_pasos.item(i).data(Qt.UserRole) == clave:
+                self.lista_pasos.setCurrentRow(i)
+                return
+        raise KeyError(f"El paso «{clave}» no está visible en este encargo.")
+
+    def _al_elegir_paso(self, fila: int) -> None:
+        item = self.lista_pasos.item(fila)
+        if item is not None:
+            self.paginas.setCurrentWidget(self._pagina[item.data(Qt.UserRole)])
 
     def _accion(self, menu, texto: str, funcion: Callable[[], None], atajo=None) -> QAction:
         a = QAction(texto, self)
@@ -264,6 +425,19 @@ class VentanaPrincipal(QMainWindow):
         )
         self.a_resolver = self._accion(m, "Resolver pendiente…", self.accion_resolver_pendiente)
 
+        m = mb.addMenu("&Mediciones")
+        self.a_leer_medicion = self._accion(
+            m, "Leer medición u oferta…", self.accion_leer_medicion, "Ctrl+L"
+        )
+        self.a_exportar_excel = self._accion(
+            m, "Exportar Excel con todo…", self.accion_exportar_excel
+        )
+        self.a_quitar_medicion = self._accion(m, "Quitar medición", self.accion_quitar_medicion)
+
+        m = mb.addMenu("&Ver")
+        self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
+        self.a_encargo = self._accion(m, "Tipo de encargo…", self.accion_encargo)
+
         m = mb.addMenu("A&yuda")
         self.a_acerca = self._accion(m, "Acerca de TRAZA", self.accion_acerca)
 
@@ -290,8 +464,14 @@ class VentanaPrincipal(QMainWindow):
             self.a_nuevo_elemento,
             self.a_incorporar,
             self.a_nuevo_pendiente,
+            self.a_historial,
+            self.a_encargo,
         ):
             a.setEnabled(hay)
+        self.a_leer_medicion.setEnabled(hay and bool(self._documentos_legibles()))
+        hay_mediciones = hay and self.tabla_mediciones.rowCount() > 0
+        self.a_exportar_excel.setEnabled(hay_mediciones)
+        self.a_quitar_medicion.setEnabled(hay_mediciones and self._medicion_elegida() is not None)
         self.a_restaurar.setEnabled(hay)
         self.a_abrir_doc.setEnabled(hay and self.tabla_documentos.currentRow() >= 0)
         self.a_resolver.setEnabled(hay and self.tabla_pendientes.currentRow() >= 0)
@@ -308,12 +488,165 @@ class VentanaPrincipal(QMainWindow):
 
     def refrescar(self) -> None:
         seleccion = self.elemento_seleccionado()
+        self._refrescar_pasos()
         self._refrescar_arbol(seleccion["id"] if seleccion else None)
         self._refrescar_propiedades()
         self._refrescar_documentos()
+        self._refrescar_mediciones()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()
+
+    # --- Mediciones ------------------------------------------------------------------------
+
+    def _documentos_legibles(self) -> list[dict]:
+        if self.proyecto is None:
+            return []
+        formatos = self.proyecto.FORMATOS_MEDICION
+        return [d for d in self.proyecto.documentos() if d["extension"] in formatos]
+
+    def _medicion_elegida(self) -> str | None:
+        fila = self.tabla_mediciones.currentRow()
+        item = self.tabla_mediciones.item(fila, 0) if fila >= 0 else None
+        return item.data(Qt.UserRole) if item else None
+
+    def _refrescar_mediciones(self) -> None:
+        elegida = self._medicion_elegida()
+        self.tabla_mediciones.blockSignals(True)
+        try:
+            if self.proyecto is None:
+                _llenar(self.tabla_mediciones, [])
+            else:
+                meds = self.proyecto.mediciones()
+                filas = []
+                for m in meds:
+                    total, sin_precio = self._total(m["id"])
+                    filas.append(
+                        [
+                            m["documento_nombre"],
+                            CLASES_MEDICION[m["clase"]],
+                            m["proveedor"] or "",
+                            str(m["n_partidas"]),
+                            _dinero(total) + (" (parcial)" if sin_precio else ""),
+                            str(len(m["avisos"])) if m["avisos"] else "",
+                        ]
+                    )
+                ids = [m["id"] for m in meds]
+                _llenar(self.tabla_mediciones, filas, ids)
+                if elegida in ids:
+                    self.tabla_mediciones.setCurrentCell(ids.index(elegida), 0)
+                elif ids:
+                    self.tabla_mediciones.setCurrentCell(len(ids) - 1, 0)
+        finally:
+            self.tabla_mediciones.blockSignals(False)
+        self._refrescar_partidas()
+
+    def _total(self, medicion_id: str) -> tuple[float, int]:
+        """Suma de importes y número de partidas sin precio o sin cantidad (no se suman)."""
+        ps = self.proyecto.partidas(medicion_id)
+        return (
+            sum(p["importe"] for p in ps if p["importe"] is not None),
+            sum(1 for p in ps if p["importe"] is None),
+        )
+
+    def _refrescar_partidas(self) -> None:
+        self.arbol_partidas.clear()
+        self.lista_avisos.clear()
+        med_id = self._medicion_elegida()
+        if self.proyecto is None or med_id is None:
+            self.total_medicion.setText("")
+            return
+        capitulos: dict[tuple, QTreeWidgetItem] = {}
+        for p in self.proyecto.partidas(med_id):
+            padre = self.arbol_partidas.invisibleRootItem()
+            ruta: tuple = ()
+            for codigo, resumen in p["capitulo"]:
+                ruta += (codigo,)
+                if ruta not in capitulos:
+                    item = QTreeWidgetItem([codigo, resumen])
+                    fuente = item.font(0)
+                    fuente.setBold(True)
+                    item.setFont(0, fuente)
+                    item.setFont(1, fuente)
+                    padre.addChild(item)
+                    capitulos[ruta] = item
+                padre = capitulos[ruta]
+            padre.addChild(
+                QTreeWidgetItem(
+                    [
+                        p["etiqueta"] or p["codigo"] or "",
+                        p["resumen"] or NO_CONSTA,
+                        p["unidad"] or "",
+                        "" if p["cantidad"] is None else escribir_numero(p["cantidad"]),
+                        _dinero(p["precio"]) if p["precio"] is not None else NO_CONSTA,
+                        _dinero(p["importe"]),
+                        p["localizador"],
+                    ]
+                )
+            )
+        self.arbol_partidas.expandAll()
+        med = next(m for m in self.proyecto.mediciones() if m["id"] == med_id)
+        for a in med["avisos"]:
+            self.lista_avisos.addItem(f"⚠ {a}")
+        total, sin_precio = self._total(med_id)
+        texto = f"<b>Total: {_dinero(total)}</b>"
+        if sin_precio:
+            texto += f" — {sin_precio} partida(s) sin precio o sin cantidad no sumadas"
+        self.total_medicion.setText(texto)
+
+    def _al_elegir_medicion(self) -> None:
+        self._refrescar_partidas()
+        self._actualizar_estado()
+
+    def accion_leer_medicion(self) -> None:
+        docs = self._documentos_legibles()
+        if not docs:
+            self.preguntas.aviso(
+                "Leer medición",
+                "Primero incorpora el documento (paso Documentación). Formatos que ya se "
+                f"leen: {', '.join(self.proyecto.FORMATOS_MEDICION)}.",
+            )
+            return
+        r = self.preguntas.leer_medicion(docs)
+        if r is None:
+            return
+        doc_id, clase, proveedor = r
+        _, avisos = self.proyecto.leer_medicion(doc_id, clase, proveedor)
+        self.refrescar()
+        if "mediciones" in [p[0] for p in PASOS if self.proyecto.encargo in p[2]]:
+            self.ir_a_paso("mediciones")
+        if avisos:
+            self.preguntas.informacion(
+                "Leído con avisos",
+                f"Se ha leído con {len(avisos)} aviso(s). Revísalos debajo de las partidas.",
+            )
+
+    def accion_exportar_excel(self) -> None:
+        sugerido = self.proyecto.carpeta.exportaciones / f"{self.proyecto.nombre} - partidas.xlsx"
+        destino = self.preguntas.destino_excel(sugerido)
+        if destino is None:
+            return
+        ruta = self.proyecto.exportar_excel(destino)
+        self.statusBar().showMessage(f"Excel guardado: {ruta}", 10000)
+
+    def accion_quitar_medicion(self) -> None:
+        med_id = self._medicion_elegida()
+        if med_id is None:
+            return
+        if self.preguntas.confirmar(
+            "Quitar medición",
+            "Se quitan del proyecto las partidas leídas de este documento (el documento se "
+            "conserva). Se puede deshacer. ¿Continuar?",
+        ):
+            self._ejecutar(QuitarMedicion(med_id))
+
+    def accion_historial(self) -> None:
+        self.dock_historial.setVisible(not self.dock_historial.isVisible())
+
+    def accion_encargo(self) -> None:
+        nuevo = self.preguntas.encargo(self.proyecto.encargo)
+        if nuevo is not None and nuevo != self.proyecto.encargo:
+            self._ejecutar(CambiarEncargo(nuevo))
 
     def _refrescar_arbol(self, seleccionar: str | None) -> None:
         self.arbol.blockSignals(True)
@@ -411,6 +744,14 @@ class VentanaPrincipal(QMainWindow):
                 afecta = f"{afecta} · {fila['clave']}"
             elif c["entidad"] == "documento":
                 afecta = fila["nombre_original"]
+            elif c["entidad"] == "medicion":
+                afecta = f"medición «{fila['nombre']}»"
+            elif c["entidad"] == "partida":
+                afecta = f"partida {fila['codigo'] or fila['orden']}"
+            elif c["entidad"] == "meta":
+                afecta = f"proyecto · {fila['clave']}"
+            elif c["entidad"] == "pendiente":
+                afecta = afecta or "pendiente"
             filas.append([_fecha(c["fecha"]), c["autor"], c["orden"], afecta, c["campo"] or ""])
         _llenar(self.tabla_historial, filas)
 
@@ -450,9 +791,9 @@ class VentanaPrincipal(QMainWindow):
         r = self.preguntas.nuevo_proyecto()
         if r is None:
             return
-        destino, nombre = r
+        destino, nombre, encargo = r
         try:
-            p = Proyecto.crear(destino, nombre)
+            p = Proyecto.crear(destino, nombre, encargo)
         except Exception as exc:
             self.preguntas.aviso("No se ha creado el proyecto", str(exc))
             return

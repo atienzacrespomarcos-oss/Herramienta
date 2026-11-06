@@ -22,6 +22,7 @@ class PreguntasPreparadas:
     def __init__(self) -> None:
         self.respuestas: dict[str, deque] = {}
         self.avisos: list[str] = []
+        self.informaciones: list[str] = []
 
     def preparar(self, metodo: str, *valores) -> None:
         self.respuestas.setdefault(metodo, deque()).extend(valores)
@@ -60,7 +61,16 @@ class PreguntasPreparadas:
         self.avisos.append(texto)
 
     def informacion(self, titulo, texto):
-        pass
+        self.informaciones.append(texto)
+
+    def encargo(self, actual):
+        return self._siguiente("encargo")
+
+    def leer_medicion(self, documentos):
+        return self._siguiente("leer_medicion")
+
+    def destino_excel(self, sugerido):
+        return self._siguiente("destino_excel")
 
 
 @pytest.fixture
@@ -130,7 +140,7 @@ def test_todas_las_acciones_se_ejecutan_sin_error(qtbot, tmp_path, pdf_3_paginas
 
 def test_un_error_de_disco_se_avisa_y_no_revienta(ventana, tmp_path, monkeypatch):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
 
     def disco_lleno():
@@ -143,7 +153,7 @@ def test_un_error_de_disco_se_avisa_y_no_revienta(ventana, tmp_path, monkeypatch
 
 def test_no_se_ejecutan_ficheros_incorporados(ventana, tmp_path, monkeypatch):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
     bat = tmp_path / "peligroso.bat"
     bat.write_text("echo hola", encoding="utf-8")
@@ -158,7 +168,7 @@ def test_no_se_ejecutan_ficheros_incorporados(ventana, tmp_path, monkeypatch):
 
 def test_restaurar_sin_copias_avisa(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
     v.a_restaurar.trigger()
     assert "no tiene copias" in q.avisos[-1]
@@ -190,7 +200,7 @@ def _elegir_propiedad(v: VentanaPrincipal, etiqueta: str) -> None:
 def test_escenario_aceptacion_etapa_1_desde_la_interfaz(ventana, tmp_path, pdf_3_paginas):
     v, q = ventana
     # Crear proyecto
-    q.preparar("nuevo_proyecto", (tmp_path / "Nave A", "Nave A"))
+    q.preparar("nuevo_proyecto", (tmp_path / "Nave A", "Nave A", "instalacion"))
     v.a_nuevo.trigger()
     assert v.windowTitle() == "TRAZA — Nave A"
 
@@ -274,7 +284,7 @@ def test_escenario_aceptacion_etapa_1_desde_la_interfaz(ventana, tmp_path, pdf_3
 
 def test_pendientes_desde_la_interfaz(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
     q.preparar("texto", "Confirmar tensión de la UTA")
     v.a_nuevo_pendiente.trigger()
@@ -288,7 +298,7 @@ def test_pendientes_desde_la_interfaz(ventana, tmp_path):
 
 def test_borrar_valor_y_jerarquia(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
     q.preparar("nuevo_elemento", ("equipo", "UTA-01", None))
     v.a_nuevo_elemento.trigger()
@@ -307,7 +317,7 @@ def test_borrar_valor_y_jerarquia(ventana, tmp_path):
 
 def test_restaurar_copia_desde_la_interfaz(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
     v.a_copia.trigger()  # copia 1: sin elementos
     q.preparar("nuevo_elemento", ("equipo", "UTA-01", None))
@@ -389,3 +399,94 @@ def test_autoprueba_informa_del_fallo(tmp_path, monkeypatch):
 
 def test_conftest_pdf_existe(pdf_3_paginas: Path):
     assert pdf_3_paginas.is_file()
+
+
+# --- Pasos del proyecto y mediciones (Etapa 2) -------------------------------------------
+
+BC3_PRUEBA = (
+    "~V|AUTOR|FIEBDC-3/2016|PRUEBA||ANSI|Prueba|2|\n"
+    "~C|OBRA##||Nave|1500||0|\n~C|01#||Climatización|1500||0|\n"
+    "~C|UTA01|ud|Unidad de tratamiento de aire|1200||0|\n"
+    "~C|CND01|m2|Conducto de chapa galvanizada|30||0|\n"
+    "~C|REJ01|ud|Rejilla de impulsión||0|\n"
+    "~D|OBRA##|01#\\1\\1\\|\n~D|01#|UTA01\\1\\1\\CND01\\1\\10\\REJ01\\1\\4\\|\n"
+)
+
+
+def test_sin_proyecto_se_ve_la_bienvenida_y_ningun_paso(ventana):
+    v, _ = ventana
+    assert v.paginas.currentIndex() == 0 and v.lista_pasos.count() == 0
+
+
+def test_pasos_visibles_y_navegacion(ventana, tmp_path):
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    v.a_nuevo.trigger()
+    textos = [v.lista_pasos.item(i).text() for i in range(v.lista_pasos.count())]
+    assert textos == ["1. Documentación", "2. Mediciones y ofertas", "3. Equipos"]
+    assert v.paso_actual() == "documentacion"
+    v.ir_a_paso("equipos")
+    assert v.paginas.currentWidget() is v._pagina["equipos"]
+    v.refrescar()
+    assert v.paso_actual() == "equipos", "refrescar no debe devolverte al primer paso"
+
+
+def test_leer_medicion_exportar_y_quitar_desde_la_interfaz(ventana, tmp_path):
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "presupuesto"))
+    v.a_nuevo.trigger()
+    assert not v.a_leer_medicion.isEnabled(), "sin documentos legibles no se ofrece leer"
+    bc3 = tmp_path / "Oferta.bc3"
+    bc3.write_bytes(BC3_PRUEBA.encode("cp1252"))
+    q.preparar("documento", (bc3, "oferta"))
+    v.a_incorporar.trigger()
+    assert v.a_leer_medicion.isEnabled()
+
+    doc_id = v.tabla_documentos.item(0, 0).data(Qt.UserRole)
+    q.preparar("leer_medicion", (doc_id, "oferta", "Proveedor A"))
+    v.a_leer_medicion.trigger()
+    assert v.paso_actual() == "mediciones"
+    assert v.tabla_mediciones.rowCount() == 1
+    assert [v.tabla_mediciones.item(0, j).text() for j in range(5)] == [
+        "Oferta.bc3",
+        "Oferta",
+        "Proveedor A",
+        "3",
+        "1.500,00 (parcial)",
+    ]
+    capitulo = v.arbol_partidas.topLevelItem(0)
+    assert capitulo.text(0) == "01" and capitulo.childCount() == 3
+    rejilla = capitulo.child(2)
+    assert rejilla.text(4) == NO_CONSTA and rejilla.text(5) == ""
+    assert "1 partida(s) sin precio" in v.total_medicion.text()
+
+    destino = tmp_path / "salida.xlsx"
+    q.preparar("destino_excel", destino)
+    v.a_exportar_excel.trigger()
+    assert destino.is_file()
+
+    q.preparar("confirmar", True)
+    v.a_quitar_medicion.trigger()
+    assert v.tabla_mediciones.rowCount() == 0
+    v.a_deshacer.trigger()
+    assert v.tabla_mediciones.rowCount() == 1
+    assert q.avisos == []
+
+
+def test_cambiar_tipo_de_encargo(ventana, tmp_path):
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    v.a_nuevo.trigger()
+    q.preparar("encargo", "diseno")
+    v.a_encargo.trigger()
+    assert v.proyecto.encargo == "diseno"
+
+
+def test_historial_se_abre_desde_ver(ventana, tmp_path):
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    v.a_nuevo.trigger()
+    v.show()
+    assert not v.dock_historial.isVisible()
+    v.a_historial.trigger()
+    assert v.dock_historial.isVisible()
