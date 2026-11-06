@@ -29,7 +29,9 @@ from traza.app.ordenes import (
 )
 from traza.core.estados import Estado
 from traza.core.procedencia import Origen
-from traza.io import bc3
+from traza.io import bc3, bc3_modificar
+from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3
+from traza.io.bc3_escritura import escribir as escribir_bc3
 from traza.io.excel import exportar_modificado, exportar_partidas
 from traza.io.pdf import contar_paginas, renderizar_pagina
 from traza.persistence import carpeta as fs
@@ -566,3 +568,91 @@ class Proyecto:
         if not r.cambios:
             raise OrdenRechazada("El modificado no tiene cambios que exportar.")
         return exportar_modificado(Path(destino), self.nombre, mod, r)
+
+    def exportar_modificado_bc3(self, modificado_id: str, destino: Path) -> tuple[Path, list[str]]:
+        """BC3 del presupuesto completo actualizado (decisión del usuario, 06-11-2026).
+
+        Base leída de un BC3: se parte del fichero original (conserva descompuestos, textos y
+        todo lo que TRAZA no interpreta). Base leída de PDF o Excel: se genera con lo leído.
+        En ambos casos el fichero se relee y se compara antes de guardarlo.
+        """
+        mod = self.modificado(modificado_id)
+        if mod is None:
+            raise OrdenRechazada("Ese modificado no existe.")
+        r = self.resumen_modificado(modificado_id)
+        if not r.cambios:
+            raise OrdenRechazada("El modificado no tiene cambios que exportar.")
+        base = next(m for m in self.mediciones() if m["id"] == mod["medicion_id"])
+        destino = Path(destino)
+        if destino.suffix.lower() != ".bc3":
+            destino = destino.with_name(destino.name + ".bc3")
+        nuevas = [
+            PartidaBc3(x.codigo or "", x.unidad, x.resumen, None, x.cantidad_modificada, x.precio)
+            for x in r.cambios
+            if x.tipo == "nueva"
+        ]
+        try:
+            if base["lector"] == bc3.LECTOR:
+                partidas = {p["id"]: p for p in self.partidas(base["id"])}
+                variaciones = [
+                    bc3_modificar.Variacion(
+                        localizador=partidas[x.partida_id]["localizador"],
+                        codigo=x.codigo or "",
+                        cantidad_contrato=x.cantidad_contrato,
+                        cantidad_nueva=x.cantidad_modificada,
+                        precio=x.precio,
+                        capitulos=[c[0] for c in x.capitulo],
+                        comentario=f"{x.motivo}. {x.justificacion}",
+                    )
+                    for x in r.cambios
+                    if x.tipo != "nueva"
+                ]
+                return bc3_modificar.actualizar(
+                    self.ruta_documento(base["documento_id"]),
+                    destino,
+                    mod["numero"],
+                    variaciones,
+                    nuevas,
+                )
+            return self._bc3_generado(mod, r, destino, nuevas)
+        except (bc3_modificar.Bc3ModificarError, Bc3EscrituraError) as exc:
+            raise OrdenRechazada(str(exc)) from exc
+
+    def _bc3_generado(self, mod, r, destino: Path, nuevas) -> tuple[Path, list[str]]:
+        """Base que no es BC3 (leída de PDF o Excel): presupuesto generado con lo leído."""
+        raiz = CapituloBc3("OBRA", f"{self.nombre} - modificado nº {mod['numero']}")
+        capitulos: dict[str, CapituloBc3] = {}
+        usados: set[str] = set()
+        for n, x in enumerate((x for x in r.lineas if x.tipo != "nueva"), start=1):
+            nombre = " / ".join(c[0] for c in x.capitulo) or "Sin capítulo"
+            if nombre not in capitulos:
+                capitulos[nombre] = CapituloBc3(f"C{len(capitulos) + 1:02d}", nombre)
+                raiz.capitulos.append(capitulos[nombre])
+            codigo = (
+                x.codigo
+                if x.codigo and x.codigo not in usados and len(x.codigo) <= 20
+                else f"P{n:04d}"
+            )
+            usados.add(codigo)
+            capitulos[nombre].partidas.append(
+                PartidaBc3(codigo, x.unidad, x.resumen, None, x.cantidad_modificada, x.precio)
+            )
+        if nuevas:
+            cap = CapituloBc3(
+                f"MOD{mod['numero']}", f"Modificado nº {mod['numero']} - partidas nuevas"
+            )
+            for k, p in enumerate(nuevas, start=1):
+                if not p.codigo or p.codigo in usados or len(p.codigo) > 20:
+                    p.codigo = f"MOD{mod['numero']}.{k}"
+                usados.add(p.codigo)
+                cap.partidas.append(p)
+            raiz.capitulos.append(cap)
+        ruta, avisos = escribir_bc3(
+            destino, raiz, propiedad=self.nombre, comentario=f"Modificado nº {mod['numero']}"
+        )
+        avisos.insert(
+            0,
+            "La base se leyó de PDF o Excel: el BC3 se ha generado con lo leído (capítulos con "
+            "códigos C01, C02…; sin descompuestos ni textos originales).",
+        )
+        return ruta, avisos
