@@ -13,6 +13,17 @@ Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 decidir por él lo que es suyo (alcance, prioridades, aspecto, fusionar PR); sí resolver
 sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha del módulo.
 
+## Lo que el usuario quiere de la herramienta (06-11-2026)
+
+- **Muy intuitiva y a medida**: solo lo que usa. Nada de pantallas o funciones «por si
+  acaso». Antes de añadir algo, comprobar que responde a una necesidad que él ha dicho.
+- Organizada en **pasos del proyecto**, adaptados al **tipo de encargo** (diseño +
+  presupuesto + instalación / presupuesto + instalación / solo instalación). **Solo se ven
+  los pasos que funcionan.**
+- Prioridad 1: **leer ofertas, presupuestos y mediciones** (BC3, Excel y PDF), sacar un
+  **Excel con todo** para sus pedidos (los hace en su ERP) y preparar **ampliaciones y
+  modificaciones** (Excel y BC3). Ficha: `docs/modules/mediciones.md`.
+
 ## Antes de tocar nada
 
 1. Lee `docs/FEATURE_REGISTER.md` (estado real de cada funcionalidad) y la ficha del
@@ -37,7 +48,13 @@ sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha 
 6. **Motores puros.** `engines/` y `rules/` no importan Qt, base de datos ni IA
    (lo vigila import-linter). Toda magnitud que cruza un motor lleva unidad.
 7. **La IA solo propone órdenes**; no escribe en el modelo. Ningún documento sale del
-   equipo sin confirmación explícita por envío.
+   equipo sin confirmación explícita por envío. Excepción decidida por el usuario para la
+   **lectura de documentos** (ADR-0013): lo leído por la IA entra directo **solo si pasa las
+   comprobaciones deterministas** (texto literal presente en la página/celda citada, número
+   reinterpretado con la regla española, números en el mismo renglón que su descripción,
+   importes y totales con un céntimo de tolerancia); si no, «a revisar».
+   La IA se usa vía Claude Code con la suscripción del usuario (sin `--bare`, sin
+   `ANTHROPIC_API_KEY` en el entorno del proceso).
 8. **Toda modificación del modelo pasa por una orden** (deshacer + registro de cambios).
 9. **Toda aproximación se declara** en el registro de cálculo.
 

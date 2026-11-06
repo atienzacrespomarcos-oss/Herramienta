@@ -1,5 +1,10 @@
 # Hoja de ruta y riesgos
 
+> **Reordenación del 06-11-2026 (decisión del usuario).** Tras la Etapa 1 va
+> **«Mediciones, ofertas y modificados»** (`docs/modules/mediciones.md`): es donde más tiempo
+> pierde y sirve en todos sus tipos de encargo. La geometría DXF y las redes HVAC pasan detrás.
+> La interfaz se reorganiza en pasos del proyecto según el tipo de encargo.
+
 > Origen: especificación de Etapa 0 (`docs/ETAPA0_ESPECIFICACION.md`, 05-11-2026).
 > Marcas de rigor: **[V]** verificado con fuente · **[V2]** solo fuentes secundarias · **[C]** conocimiento sin verificar aún · **[P]** propuesta · **[?]** dato pendiente.
 

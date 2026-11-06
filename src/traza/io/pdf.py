@@ -21,3 +21,36 @@ def pagina_citada(localizador: str) -> int | None:
     """Número de página que cita el localizador, o None si no cita página."""
     m = _PAGINA.match(localizador)
     return int(m.group(1)) if m else None
+
+
+def texto_paginas(ruta: Path) -> list[str]:
+    """Texto de cada página (índice 0 = página 1). Cadena vacía si la página es imagen."""
+    with pymupdf.open(ruta) as doc:
+        return [p.get_text() for p in doc]
+
+
+def renderizar_paginas(ruta: Path, carpeta: Path, ppp: int = 150) -> list[Path]:
+    """Imágenes PNG de cada página, para PDF escaneados (sin texto que extraer)."""
+    carpeta.mkdir(parents=True, exist_ok=True)
+    rutas = []
+    with pymupdf.open(ruta) as doc:
+        for i, p in enumerate(doc, start=1):
+            destino = carpeta / f"pagina_{i:03d}.png"
+            p.get_pixmap(dpi=ppp).save(destino)
+            rutas.append(destino)
+    return rutas
+
+
+def palabras_paginas(ruta: Path) -> list[list[tuple[float, float, float, float, str]]]:
+    """Palabras de cada página con su caja (x0, y0, x1, y1, texto), para saber en qué
+    renglón está cada dato. Lista vacía en páginas sin texto (escaneadas)."""
+    with pymupdf.open(ruta) as doc:
+        return [[(w[0], w[1], w[2], w[3], w[4]) for w in p.get_text("words")] for p in doc]
+
+
+def renderizar_pagina(ruta: Path, pagina: int, destino: Path, ppp: int = 150) -> Path:
+    """Imagen PNG de una página (1 = primera)."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    with pymupdf.open(ruta) as doc:
+        doc[pagina - 1].get_pixmap(dpi=ppp).save(destino)
+    return destino

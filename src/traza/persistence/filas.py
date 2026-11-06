@@ -22,6 +22,9 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "documento": ("id",),
     "decision": ("id",),
     "pendiente": ("id",),
+    "medicion": ("id",),
+    "meta": ("clave",),
+    "partida": ("id",),
 }
 
 

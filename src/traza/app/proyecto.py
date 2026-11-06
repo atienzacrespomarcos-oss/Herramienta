@@ -5,23 +5,32 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from traza.ai import claude_code
+from traza.app import lectura_ia
 from traza.app.ordenes import (
+    ENCARGOS,
     CambiarEstado,
     CrearPendiente,
     FijarPropiedad,
+    ImportarMedicion,
     Orden,
     OrdenRechazada,
+    PartidaNueva,
     RegistrarDocumento,
     ahora,
     nuevo_id,
 )
 from traza.core.estados import Estado
 from traza.core.procedencia import Origen
-from traza.io.pdf import contar_paginas
+from traza.io import bc3
+from traza.io.excel import exportar_partidas
+from traza.io.pdf import contar_paginas, renderizar_pagina
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
 
@@ -44,12 +53,14 @@ class Proyecto:
         self.carpeta = c
         self._con = con
         self._deshacer: list[_Paso] = []
+        #: Quién lee PDF y Excel. Por defecto Claude Code (ADR-0013); las pruebas lo sustituyen.
+        self.extractor_ia = claude_code.extraer
         self._rehacer: list[_Paso] = []
 
     # --- Ciclo de vida -----------------------------------------------------------------
 
     @classmethod
-    def crear(cls, destino: Path, nombre: str) -> Proyecto:
+    def crear(cls, destino: Path, nombre: str, encargo: str = "diseno") -> Proyecto:
         if not nombre.strip():
             raise OrdenRechazada("El proyecto necesita un nombre.")
         if set('<>:"/\\|?*') & set(nombre) or ".." in nombre:
@@ -62,6 +73,9 @@ class Proyecto:
             con.execute("BEGIN IMMEDIATE")
             con.execute("INSERT INTO meta VALUES ('nombre', ?)", (nombre.strip(),))
             con.execute("INSERT INTO meta VALUES ('creado', ?)", (ahora(),))
+            if encargo not in ENCARGOS:
+                raise OrdenRechazada(f"Tipo de encargo desconocido: «{encargo}».")
+            con.execute("INSERT INTO meta VALUES ('encargo', ?)", (encargo,))
             con.execute("COMMIT")
         except BaseException:
             # Un proyecto a medio crear dejaría ocupado el nombre («ya existe») sin servir
@@ -90,6 +104,13 @@ class Proyecto:
     @property
     def nombre(self) -> str:
         return self._con.execute("SELECT valor FROM meta WHERE clave='nombre'").fetchone()[0]
+
+    @property
+    def encargo(self) -> str:
+        fila = self._con.execute("SELECT valor FROM meta WHERE clave='encargo'").fetchone()
+        # Proyectos creados antes de existir el tipo de encargo: se tratan como diseño
+        # completo, que es el que muestra todos los pasos (no oculta nada).
+        return fila[0] if fila else "diseno"
 
     def copia_de_seguridad(self) -> Path:
         return fs.copia_de_seguridad(self.carpeta, self._con, etiqueta="manual")
@@ -324,3 +345,167 @@ class Proyecto:
             " ORDER BY e.codigo, p.clave",
             (documento_id,),
         )
+
+    # --- Mediciones, ofertas y presupuestos ---------------------------------------------
+
+    #: Formatos que se pueden leer como medición. Se amplía con cada lector (Excel, PDF).
+    #: BC3 se lee sin IA (exacto). PDF y Excel se leen con IA + comprobaciones (ADR-0013).
+    FORMATOS_MEDICION = (".bc3", ".pdf", ".xlsx", ".xlsm")
+    FORMATOS_CON_IA = (".pdf", ".xlsx", ".xlsm")
+
+    def leer_medicion(
+        self,
+        documento_id: str,
+        clase: str,
+        proveedor: str | None = None,
+        esperar: Callable[[Callable[[], Any]], Any] | None = None,
+    ) -> tuple[str, list[str]]:
+        """Lee un documento incorporado como medición/oferta/presupuesto y guarda sus partidas.
+
+        Se lee la copia del almacén (la verificada por su huella), no el original.
+        Devuelve (id de la medición, avisos del lector).
+
+        `esperar` ejecuta la parte lenta (la llamada a la IA, que no toca la base de datos)
+        mientras la interfaz sigue respondiendo; por defecto se ejecuta sin más.
+        """
+        doc = leer(self._con, "documento", {"id": documento_id})
+        if doc is None:
+            raise OrdenRechazada("Documento no incorporado.")
+        if doc["extension"] not in self.FORMATOS_MEDICION:
+            raise OrdenRechazada(
+                f"Todavía no se pueden leer mediciones en formato «{doc['extension']}». "
+                f"Formatos disponibles: {', '.join(self.FORMATOS_MEDICION)}."
+            )
+        previa = self._con.execute(
+            "SELECT nombre FROM medicion WHERE documento_id = ?", (documento_id,)
+        ).fetchone()
+        if previa:
+            # Antes de leer: así no se envía a la IA (ni se gasta suscripción) en balde.
+            raise OrdenRechazada(
+                f"«{previa['nombre']}» ya está leído. Quita esa medición si quieres volver a "
+                "leerlo."
+            )
+        ruta = self.ruta_documento(documento_id)
+        if doc["extension"] in self.FORMATOS_CON_IA:
+            return self._leer_con_ia(doc, ruta, clase, proveedor, esperar or (lambda f: f()))
+        try:
+            leido = bc3.leer_bc3(ruta)
+        except bc3.Bc3Error as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        resultado = bc3.leer_partidas(leido)
+        ps = resultado.partidas
+        avisos = leido.avisos + resultado.avisos
+        orden = ImportarMedicion(
+            documento_id=documento_id,
+            titulo=doc["nombre_original"],
+            clase=clase,
+            proveedor=proveedor,
+            lector=bc3.LECTOR,
+            version_lector=bc3.VERSION_LECTOR,
+            partidas=[
+                PartidaNueva(
+                    capitulo=[list(c) for c in p.capitulos],
+                    codigo=p.codigo,
+                    etiqueta=p.etiqueta,
+                    unidad=p.unidad,
+                    resumen=p.resumen,
+                    texto=p.texto,
+                    cantidad=p.cantidad,
+                    precio=p.precio,
+                    localizador=p.localizador,
+                )
+                for p in ps
+            ],
+            avisos=avisos,
+            omitidas=resultado.omitidas,
+        )
+        self.ejecutar(orden)
+        return orden.id, avisos
+
+    def _leer_con_ia(
+        self,
+        doc: dict[str, Any],
+        ruta: Path,
+        clase: str,
+        proveedor: str | None,
+        esperar: Callable[[Callable[[], Any]], Any],
+    ) -> tuple[str, list[str]]:
+        avisos: list[str] = []
+        imagenes: dict[int, Path] = {}
+        temporal: Path | None = None
+        if doc["extension"] == ".pdf":
+            fuente: lectura_ia.Fuente = lectura_ia.FuentePdf(ruta)
+            sin_texto = fuente.paginas_sin_texto
+            if sin_texto:
+                # Páginas escaneadas (todas o algunas): la IA las lee como imagen, pero no hay
+                # texto con que comprobarlas: sus líneas quedan «a revisar».
+                avisos.append(
+                    f"Páginas sin texto (escaneadas): {', '.join(map(str, sin_texto))}. La IA "
+                    "las lee como imagen; sus líneas no se pueden comprobar y quedan «a revisar»."
+                )
+                temporal = Path(tempfile.mkdtemp(prefix="traza-pdf-"))
+                imagenes = {
+                    n: renderizar_pagina(ruta, n, temporal / f"pagina_{n:03d}.png")
+                    for n in sin_texto
+                }
+        else:
+            fuente = lectura_ia.FuenteExcel(ruta)
+            avisos += fuente.avisos
+        texto = fuente.texto_para_ia()
+        try:
+            extraido = esperar(lambda: self.extractor_ia(texto, imagenes or None))
+        except (claude_code.IaNoDisponible, claude_code.IaError) as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        finally:
+            if temporal is not None:
+                shutil.rmtree(temporal, ignore_errors=True)
+        r = lectura_ia.comprobar(extraido, fuente)
+        if r.proveedor and not proveedor:
+            # Leído por la IA y no comprobado: se dice, no se guarda como dato.
+            avisos.append(f"La IA identifica el proveedor como «{r.proveedor}» (sin comprobar).")
+        avisos += r.avisos
+        orden = ImportarMedicion(
+            documento_id=doc["id"],
+            titulo=doc["nombre_original"],
+            clase=clase,
+            proveedor=proveedor,
+            lector=claude_code.PROVEEDOR,
+            version_lector=claude_code.VERSION,
+            partidas=r.partidas,
+            avisos=avisos,
+            total_documento=r.total_documento,
+        )
+        self.ejecutar(orden, autor="importacion")
+        return orden.id, avisos
+
+    def mediciones(self) -> list[dict[str, Any]]:
+        filas = self._filas(
+            "SELECT m.*, d.nombre_original AS documento_nombre,"
+            " (SELECT count(*) FROM partida p WHERE p.medicion_id = m.id) AS n_partidas"
+            " FROM medicion m JOIN documento d ON d.id = m.documento_id ORDER BY m.leido"
+        )
+        for f in filas:
+            f["avisos"] = json.loads(f["avisos"])
+        return filas
+
+    def partidas(self, medicion_id: str) -> list[dict[str, Any]]:
+        filas = self._filas(
+            "SELECT * FROM partida WHERE medicion_id = ? ORDER BY orden", (medicion_id,)
+        )
+        for f in filas:
+            f["capitulo"] = json.loads(f["capitulo"])
+            f["motivos"] = json.loads(f["motivos"])
+            f["importe"] = (
+                f["cantidad"] * f["precio"]
+                if f["cantidad"] is not None and f["precio"] is not None
+                else None
+            )
+        return filas
+
+    def exportar_excel(self, destino: Path, medicion_ids: list[str] | None = None) -> Path:
+        """El «Excel con todo» para hacer los pedidos en el ERP del usuario."""
+        meds = [m for m in self.mediciones() if medicion_ids is None or m["id"] in medicion_ids]
+        if not meds:
+            raise OrdenRechazada("No hay mediciones leídas que exportar.")
+        bloques = [(m, self.partidas(m["id"])) for m in meds]
+        return exportar_partidas(Path(destino), self.nombre, bloques)

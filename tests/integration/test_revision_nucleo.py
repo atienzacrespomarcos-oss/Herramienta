@@ -114,19 +114,46 @@ def test_copia_antes_de_migrar_conserva_el_esquema_anterior(tmp_path, monkeypatc
     p = Proyecto.crear(tmp_path / "N", "N")
     raiz = p.carpeta.raiz
     p.cerrar()
-    v2 = "CREATE TABLE prueba_v2 (x INTEGER);"
-    monkeypatch.setattr(bd, "MIGRACIONES", (*bd.MIGRACIONES, v2))
-    monkeypatch.setattr(bd, "VERSION_ACTUAL", 2)
-    monkeypatch.setattr(fs, "VERSION_ACTUAL", 2)
+    v = bd.VERSION_ACTUAL
+    siguiente = "CREATE TABLE prueba_siguiente (x INTEGER);"
+    monkeypatch.setattr(bd, "MIGRACIONES", (*bd.MIGRACIONES, siguiente))
+    monkeypatch.setattr(bd, "VERSION_ACTUAL", v + 1)
+    monkeypatch.setattr(fs, "VERSION_ACTUAL", v + 1)
     Proyecto.abrir(raiz).cerrar()
-    previas = [c for c in fs.copias(fs.Carpeta(raiz)) if "antes-de-migrar-v1" in c.name]
+    previas = [c for c in fs.copias(fs.Carpeta(raiz)) if f"antes-de-migrar-v{v}" in c.name]
     assert len(previas) == 1
     con = sqlite3.connect(previas[0])
     try:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 1
-        assert not con.execute("SELECT 1 FROM sqlite_master WHERE name = 'prueba_v2'").fetchone()
+        assert con.execute("PRAGMA user_version").fetchone()[0] == v
+        assert not con.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'prueba_siguiente'"
+        ).fetchone()
     finally:
         con.close()
+
+
+def test_un_proyecto_v1_se_actualiza_a_la_version_actual(tmp_path):
+    """Un proyecto creado antes de existir las mediciones (esquema V1) se abre y se migra."""
+    from traza.persistence.esquema import MIGRACIONES, VERSION_ACTUAL
+
+    raiz = tmp_path / "Antiguo.traza"
+    for sub in ("documentos", "copias", "exportaciones"):
+        (raiz / sub).mkdir(parents=True)
+    con = bd.conectar(raiz / fs.BD)
+    con.execute("BEGIN IMMEDIATE")
+    for s in bd._sentencias(MIGRACIONES[0]):
+        con.execute(s)
+    con.execute("PRAGMA user_version = 1")
+    con.execute("INSERT INTO meta VALUES ('nombre', 'Antiguo')")
+    con.execute("COMMIT")
+    con.close()
+    p = Proyecto.abrir(raiz)
+    try:
+        assert bd.version(p._con) == VERSION_ACTUAL
+        assert p.mediciones() == []
+        assert p.encargo == "diseno"  # sin tipo de encargo: se muestran todos los pasos
+    finally:
+        p.cerrar()
 
 
 def test_se_restaura_aunque_la_base_de_datos_este_danada(tmp_path):

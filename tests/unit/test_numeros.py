@@ -38,3 +38,36 @@ def test_escribir():
     assert escribir_numero(2400.0) == "2400"
     assert escribir_numero(12.5) == "12,5"
     assert escribir_numero(3) == "3"
+
+
+@pytest.mark.parametrize(
+    "texto,esperado",
+    [
+        ("1.234,56", [1234.56]),
+        ("1,234.56", [1234.56]),
+        ("2.400", [2400.0, 2.4]),
+        ("2,400", [2400.0, 2.4]),
+        ("12,5", [12.5]),
+        ("12.5", [12.5]),
+        ("1.250.000", [1250000.0]),
+        ("1.250.000,75 €", [1250000.75]),
+        ("350 €", [350.0]),
+        ("-3,5", [-3.5]),
+        ("2.40", [2.4]),
+        ("abc", []),
+        ("", []),
+        ("1.2.3", []),
+        # Revisión 06-11-2026:
+        ("2 400", [2400.0]),
+        ("2 400,50 €", [2400.5]),
+        ("12 5", []),
+        ("1 2 3", []),
+        ("0,500", [0.5]),
+        ("0.500", [0.5]),
+        ("15 %", [15.0]),
+    ],
+)
+def test_interpretaciones_documento(texto, esperado):
+    from traza.core.numeros import interpretaciones_documento
+
+    assert interpretaciones_documento(texto) == pytest.approx(esperado)

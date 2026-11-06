@@ -13,6 +13,9 @@ normativa, coordinación y documentación para AutoCAD.
 3. Abrir `TRAZA.exe`. Si Windows SmartScreen avisa: «Más información» → «Ejecutar de todas
    formas» (el ejecutable no está firmado).
 
+Para leer **PDF y Excel con IA** hace falta Claude Code instalado con tu suscripción: ver
+«Instalar Claude Code en tu Windows» en `docs/modules/mediciones.md`. El BC3 no lo necesita.
+
 Para desarrollo: `uv sync` y `uv run python -m traza`.
 
 ## Documentación

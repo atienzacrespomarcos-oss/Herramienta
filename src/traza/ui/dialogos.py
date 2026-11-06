@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from traza.app.ordenes import CLASES_MEDICION, ENCARGOS
 from traza.core.numeros import leer_numero
 from traza.core.procedencia import Origen, Procedencia, ProcedenciaInvalida
 from traza.core.tipos import Clase, TipoElemento
@@ -178,18 +179,73 @@ class DialogoElemento(QDialog):
         self.accept()
 
 
+class DialogoMedicion(QDialog):
+    """Elegir qué documento leer como medición, oferta o presupuesto, y de qué proveedor."""
+
+    def __init__(self, padre: QWidget, documentos: list[dict]) -> None:
+        super().__init__(padre)
+        self.setWindowTitle("Leer medición u oferta")
+        self.resultado: tuple[str, str, str | None] | None = None
+        self.documento = QComboBox()
+        for d in documentos:
+            self.documento.addItem(d["nombre_original"], d["id"])
+        self.clase = QComboBox()
+        for clave, texto in CLASES_MEDICION.items():
+            self.clase.addItem(texto, clave)
+        self.proveedor = QLineEdit()
+        self.proveedor.setPlaceholderText("opcional")
+        f = QFormLayout(self)
+        f.addRow("Documento", self.documento)
+        f.addRow("Es una", self.clase)
+        f.addRow("Proveedor", self.proveedor)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.accepted.connect(self._aceptar)
+        botones.rejected.connect(self.reject)
+        f.addRow(botones)
+
+    def _aceptar(self) -> None:
+        self.resultado = (
+            self.documento.currentData(),
+            self.clase.currentData(),
+            self.proveedor.text().strip() or None,
+        )
+        self.accept()
+
+
 class Preguntas:
     """Implementación real con diálogos de Qt."""
 
     def __init__(self, ventana: QWidget) -> None:
         self.v = ventana
 
-    def nuevo_proyecto(self) -> tuple[Path, str] | None:
+    def nuevo_proyecto(self) -> tuple[Path, str, str] | None:
         nombre, ok = QInputDialog.getText(self.v, "Nuevo proyecto", "Nombre del proyecto:")
         if not ok or not nombre.strip():
             return None
+        encargo = self.encargo(None)
+        if encargo is None:
+            return None
         carpeta = QFileDialog.getExistingDirectory(self.v, "Carpeta donde crear el proyecto")
-        return (Path(carpeta) / nombre.strip(), nombre.strip()) if carpeta else None
+        return (Path(carpeta) / nombre.strip(), nombre.strip(), encargo) if carpeta else None
+
+    def encargo(self, actual: str | None) -> str | None:
+        claves = list(ENCARGOS)
+        textos = [ENCARGOS[k] for k in claves]
+        inicial = claves.index(actual) if actual in claves else 0
+        texto, ok = QInputDialog.getItem(
+            self.v, "Tipo de encargo", "¿Qué incluye este encargo?", textos, inicial, False
+        )
+        return claves[textos.index(texto)] if ok else None
+
+    def leer_medicion(self, documentos: list[dict]) -> tuple[str, str, str | None] | None:
+        d = DialogoMedicion(self.v, documentos)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def destino_excel(self, sugerido: Path) -> Path | None:
+        ruta, _ = QFileDialog.getSaveFileName(
+            self.v, "Exportar Excel con todo", str(sugerido), "Excel (*.xlsx)"
+        )
+        return Path(ruta) if ruta else None
 
     def proyecto_existente(self) -> Path | None:
         carpeta = QFileDialog.getExistingDirectory(self.v, "Abrir proyecto (carpeta .traza)")

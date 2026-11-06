@@ -8,6 +8,7 @@ dependencies = [
     "PySide6>=6.8",
     "pint>=0.24",
     "PyMuPDF>=1.24",
+    "openpyxl>=3.1",
 ]
 
 [dependency-groups]
@@ -74,3 +75,8 @@ allow_indirect_imports = true
 type = "forbidden"
 source_modules = ["traza.ai"]
 forbidden_modules = ["traza.persistence", "sqlite3", "traza.ui"]
+
+[tool.ruff.lint.per-file-ignores]
+# Los registros BC3 de prueba se escriben en una línea, como en un fichero real.
+"tests/unit/test_bc3.py" = ["E501"]
+"tests/unit/test_bc3_escritura.py" = ["E501"]

@@ -29,3 +29,8 @@ declarados).
 | RF-160 | Estructura (solo geometría) | 7 | Pendiente | Sin cálculo estructural (decisión del usuario). |
 | RF-024…029, 301, 302 | IA y documentos | 8 | Pendiente | Proveedor externo con permiso por envío. |
 | RF-207 | DWG | — | Fuera de alcance | ADR-0008. |
+| — | Mediciones: lector BC3 | 2 | Implementada | Según FIEBDC-3/2024. Validada solo con ficheros de prueba construidos según la norma: falta un BC3 real del usuario. |
+| — | Mediciones: lector PDF y Excel con IA + comprobaciones | 2 | Implementada | ADR-0013. Probado con IA simulada; pendiente de Claude Code real y documentos del usuario. |
+| — | Excel «con todo» para pedidos en el ERP | 2 | Implementada | Pendiente de que el usuario confirme columnas y que su ERP lo importa. |
+| — | Ampliaciones y modificaciones (Excel y BC3) | 2 | Pendiente | |
+| — | Interfaz por pasos según tipo de encargo | 2 | Implementada | Pasos: Documentación, Mediciones y ofertas, Equipos. Historial en «Ver». |
