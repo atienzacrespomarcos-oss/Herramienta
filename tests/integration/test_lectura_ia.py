@@ -284,7 +284,9 @@ def test_ia_no_disponible_se_explica(proyecto, pdf_oferta):
 SIMULADOR = r"""
 import json, os, sys
 args = sys.argv[1:]
-entrada = sys.stdin.read()
+# TRAZA envía la entrada en UTF-8. Leerla con sys.stdin.read() usaría la página de códigos
+# de Windows (cp1252) y «Página» llegaría como «PÃ¡gina» (fallo visto en CI de Windows).
+entrada = sys.stdin.buffer.read().decode("utf-8")
 registro = {
     "args": args,
     "api_key_presente": "ANTHROPIC_API_KEY" in os.environ,

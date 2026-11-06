@@ -131,6 +131,34 @@ Limitaciones iniciales del lector (se declaran al usuario, no se ocultan):
 - Registros no usados todavía (`~K` salvo lectura, `~P`, `~L`, `~G`, `~E`, `~O`, `~X`…) se
   conservan sin interpretar.
 
+## Ampliaciones y modificaciones (decisiones del usuario, 06-11-2026)
+
+- **Base:** un modificado parte de una medición o presupuesto **ya leído** en TRAZA (el
+  contratado).
+- **Cambios posibles:**
+  - **Variación** de una partida de la base: nueva cantidad (aumento o disminución, incluida
+    la anulación con cantidad 0). El precio es el de la base.
+  - **Partida nueva**: se elige una línea de una **oferta leída** en el proyecto; su código,
+    unidad, descripción y precio vienen de esa oferta y quedan **enlazados a su origen**. La
+    cantidad la pone el usuario.
+  - Una «propuesta económicamente mejor» se expresa como: disminución (o anulación) de la
+    partida de la base + partida nueva de la oferta.
+- **Motivo obligatorio** en cada cambio: error de medición, fallo de diseño, mejora económica
+  u otro, siempre con texto.
+- **Salidas:**
+  - **Excel**: contrato, modificado y diferencia por partida, en cantidad e importe, con
+    motivo y origen del precio; totales.
+  - **BC3: presupuesto completo actualizado** (el original con las cantidades nuevas y las
+    partidas nuevas añadidas en un capítulo propio del modificado).
+    - Si la base es un BC3, se parte del **fichero original** para conservar todo lo que
+      TRAZA no interpreta (descompuestos, textos, pliegos…).
+    - Si la base vino de PDF o Excel, el BC3 se genera solo con lo leído (sin
+      descompuestos) y se avisa.
+    - El BC3 generado se **vuelve a leer con el lector de TRAZA** y sus cantidades y precios
+      se comparan con los del modificado antes de darlo por bueno.
+- Validación pendiente: importar el BC3 en Presto o Arquímedes. El usuario no tiene esos
+  programas; lo confirmará quien reciba el fichero.
+
 ## Pasos del proyecto (interfaz)
 
 Decisión del usuario: la herramienta se organiza en **pasos del proyecto**, adaptados al
