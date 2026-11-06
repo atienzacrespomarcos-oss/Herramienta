@@ -13,6 +13,7 @@ on:
 jobs:
   exe:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -26,9 +27,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          $p = Start-Process -FilePath dist\TRAZA\TRAZA.exe -ArgumentList "--autoprueba" -Wait -PassThru
+          $informe = Join-Path $env:RUNNER_TEMP "autoprueba.txt"
+          $p = Start-Process -FilePath dist\TRAZA\TRAZA.exe -ArgumentList "--autoprueba","--informe","`"$informe`"" -Wait -PassThru
+          if (Test-Path $informe) { Get-Content $informe -Encoding utf8 } else { Write-Output "(sin informe)" }
           if ($p.ExitCode -ne 0) { throw "La autoprueba del ejecutable ha fallado (código $($p.ExitCode))" }
-          Write-Output "Autoprueba del ejecutable correcta"
       - uses: actions/upload-artifact@v4
         with:
           name: TRAZA-windows

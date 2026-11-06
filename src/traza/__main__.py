@@ -16,8 +16,8 @@ from pathlib import Path
 def _autoprueba() -> int:
     import pymupdf
 
-    from traza.app.ordenes import Aprobar, CrearElemento, FijarPropiedad, OrdenRechazada
-    from traza.app.proyecto import Proyecto
+    from traza.app.ordenes import Aprobar, CrearElemento, FijarPropiedad
+    from traza.app.proyecto import ElementoBloqueado, Proyecto
     from traza.core.procedencia import Origen, Procedencia
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -39,15 +39,15 @@ def _autoprueba() -> int:
             p.ejecutar(Aprobar(o.id, "autoprueba"))
             try:
                 p.ejecutar(FijarPropiedad(o.id, "caudal_aire", 1, "m³/h", usuario))
-                print("FALLO: se modificó un elemento aprobado")
-                return 1
-            except OrdenRechazada:
-                pass
-            p.deshacer()
-            p.rehacer()
+                raise AssertionError("se modificó un elemento aprobado")
+            except ElementoBloqueado:
+                pass  # solo vale el rechazo POR estar aprobado, no cualquier otro
+            if p.deshacer() != "Aprobar" or p.elemento(o.id)["estado"] != "borrador":
+                raise AssertionError("deshacer no revirtió la aprobación")
+            if p.rehacer() != "Aprobar" or p.elemento(o.id)["estado"] != "aprobado":
+                raise AssertionError("rehacer no repuso la aprobación")
         finally:
             p.cerrar()
-    print("Autoprueba correcta")
     return 0
 
 
@@ -55,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="traza")
     parser.add_argument("proyecto", nargs="?", help="carpeta .traza a abrir")
     parser.add_argument("--autoprueba", action="store_true")
+    parser.add_argument(
+        "--informe",
+        help="fichero donde escribir el resultado de la autoprueba (TRAZA.exe no tiene consola)",
+    )
     args = parser.parse_args(argv)
 
     if args.autoprueba:
@@ -62,10 +66,21 @@ def main(argv: list[str] | None = None) -> int:
 
         from traza.ui.ventana import VentanaPrincipal
 
-        app = QApplication.instance() or QApplication(sys.argv[:1])
-        VentanaPrincipal()  # la interfaz también tiene que poder construirse
-        codigo = _autoprueba()
-        app.quit()
+        # Cualquier excepción se convierte en código 1 y en texto: si escapara, el .exe sin
+        # consola mostraría un cuadro modal y el CI esperaría a que alguien lo cerrara.
+        try:
+            app = QApplication.instance() or QApplication(sys.argv[:1])
+            VentanaPrincipal()  # la interfaz también tiene que poder construirse
+            codigo, texto = _autoprueba(), "Autoprueba correcta"
+            app.quit()
+        except BaseException:  # noqa: BLE001
+            import traceback
+
+            codigo, texto = 1, "Autoprueba FALLIDA\n" + traceback.format_exc()
+        if args.informe:
+            Path(args.informe).write_text(texto, encoding="utf-8")
+        if sys.stdout is not None:  # None en el .exe con ventana
+            print(texto)
         return codigo
 
     from PySide6.QtWidgets import QApplication

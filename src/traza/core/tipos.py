@@ -39,6 +39,9 @@ class DefPropiedad:
     clase: Clase
     unidad_si: str | None = None  # solo números: magnitud de referencia en SI
     obligatoria_para_aprobar: bool = False
+    #: Potencias, caudales, tensiones o masas negativas no tienen sentido físico: un signo
+    #: tecleado de más no debe pasar. Solo las magnitudes que lo admiten lo declaran.
+    admite_negativo: bool = False
 
     def __post_init__(self) -> None:
         if self.clase is Clase.NUMERO and self.unidad_si is None:
@@ -78,6 +81,8 @@ def validar_valor(defn: DefPropiedad, valor: object, unidad: str | None) -> None
         raise ValorInvalido(f"«{defn.etiqueta}» espera un número.")
     if valor != valor or valor in (float("inf"), float("-inf")):
         raise ValorInvalido(f"«{defn.etiqueta}»: valor no finito.")
+    if valor < 0 and not defn.admite_negativo:
+        raise ValorInvalido(f"«{defn.etiqueta}» no admite valores negativos.")
     if unidad is None:
         raise ValorInvalido(f"«{defn.etiqueta}» necesita unidad (magnitud {defn.unidad_si}).")
     assert defn.unidad_si is not None

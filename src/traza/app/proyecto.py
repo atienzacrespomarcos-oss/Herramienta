@@ -52,6 +52,9 @@ class Proyecto:
     def crear(cls, destino: Path, nombre: str) -> Proyecto:
         if not nombre.strip():
             raise OrdenRechazada("El proyecto necesita un nombre.")
+        if set('<>:"/\\|?*') & set(nombre) or ".." in nombre:
+            # Con «/» o «..» el proyecto acabaría fuera de la carpeta elegida.
+            raise OrdenRechazada('El nombre no puede contener < > : " / \\ | ? * ni «..».')
         c = fs.crear(destino)
         con = None
         try:
@@ -307,7 +310,10 @@ class Proyecto:
             sql += " WHERE estado = 'abierto'"
         return self._filas(sql + " ORDER BY creado")
 
-    def cambios(self, limite: int = 500) -> list[dict[str, Any]]:
+    def cambios(self, limite: int | None = None) -> list[dict[str, Any]]:
+        """Registro de cambios, el más reciente primero. Sin límite: se muestra entero."""
+        if limite is None:
+            return self._filas("SELECT * FROM cambio ORDER BY n DESC")
         return self._filas("SELECT * FROM cambio ORDER BY n DESC LIMIT ?", (limite,))
 
     def usos_de_documento(self, documento_id: str) -> list[dict[str, Any]]:

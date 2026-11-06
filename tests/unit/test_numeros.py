@@ -26,7 +26,9 @@ def test_ambiguos(texto):
         leer_numero(texto)
 
 
-@pytest.mark.parametrize("texto", ["", "abc", "nan", "inf", "12 kW"])
+@pytest.mark.parametrize(
+    "texto", ["", "abc", "nan", "inf", "12 kW", "2 400", "2 4", "1_000", "2_4", "٢٤٠٠", "1,", ",5"]
+)
 def test_no_numeros(texto):
     with pytest.raises(ValueError):
         leer_numero(texto)

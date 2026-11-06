@@ -191,3 +191,27 @@ def test_notacion_espanola_de_transmitancia():
     assert a_si(1, "kg·m/s²", "N") == pytest.approx(1)
     with pytest.raises(UnidadInvalida, match="ambigua"):
         a_si(1, "m/s/s", "m/s**2")
+
+
+# --- Revisión de la interfaz (06-11-2026) -------------------------------------------------
+
+
+def test_no_se_admiten_valores_negativos_sin_sentido_fisico(proyecto):
+    el = _equipo(proyecto)
+    with pytest.raises(OrdenRechazada, match="no admite valores negativos"):
+        proyecto.ejecutar(FijarPropiedad(el, "potencia_frigorifica", -3, "kW", USUARIO))
+
+
+@pytest.mark.parametrize("nombre", ["../fuera", "a/b", "nave:1", "nave?"])
+def test_nombre_de_proyecto_que_saldria_de_la_carpeta(tmp_path, nombre):
+    with pytest.raises(OrdenRechazada):
+        Proyecto.crear(tmp_path / nombre, nombre)
+
+
+def test_historial_completo_sin_corte(proyecto):
+    for i in range(260):
+        proyecto.ejecutar(CrearPendiente(f"dato {i}"))
+    assert len(proyecto.cambios()) == 260 * 1
+    for _ in range(260):
+        proyecto.deshacer()
+    assert len(proyecto.cambios()) == 520

@@ -24,7 +24,13 @@ Archivo (nuevo, abrir, cerrar, copia de seguridad, restaurar copia, salir) · Ed
 aprobar, reabrir) · Documentos (incorporar, abrir) · Pendientes (anotar, resolver) · Ayuda.
 
 Las acciones que no aplican se desactivan: sin proyecto solo se puede crear, abrir, salir y
-ver la ayuda; con un elemento aprobado solo se puede reabrir.
+ver la ayuda; con un elemento aprobado seleccionado se desactivan las acciones que lo
+modificarían (fijar, borrar, confirmar, aprobar) y se activa «Reabrir».
+
+Ningún error se queda sin avisar: cualquier fallo (disco lleno, permisos, fichero en uso) se
+muestra en un aviso y la operación no se da por hecha. Por seguridad, desde TRAZA solo se
+abren documentos de tipo documental (PDF, Office, DXF/DWG, BC3, imágenes, texto); un `.bat`
+o `.exe` incorporado no se ejecuta.
 
 ## Introducción de valores
 
@@ -32,7 +38,8 @@ ver la ayuda; con un elemento aprobado solo se puede reabrir.
   fabricante», «Hipótesis de diseño (justificada)». **No** se ofrecen «Cálculo» (lo escribe un
   motor) ni «Propuesta de IA» (la genera la IA).
 - Números con convención española. **«2.400» se rechaza por ambiguo** (¿2400 o 2,4?): hay que
-  escribir 2400 o 2,4. Sin separador de miles.
+  escribir 2400 o 2,4. Sin separador de miles ni espacios («2 400» también se rechaza).
+- Potencias, caudales, tensiones y masas no admiten valores negativos.
 - La unidad se escribe como en el documento (m³/h, kW, W/m²·K); se comprueba la magnitud.
 
 ## TRAZA.exe
@@ -42,7 +49,8 @@ ver la ayuda; con un elemento aprobado solo se puede reabrir.
   `TRAZA.exe`. No requiere instalar Python.
 - Antes de publicarse, el propio ejecutable ejecuta `--autoprueba` (crear proyecto, incorporar
   PDF, fijar valor citando página, aprobar, comprobar bloqueo, deshacer/rehacer). Si falla, no
-  se publica.
+  se publica. El resultado se escribe en un informe que el CI muestra; si el .exe fallara
+  sin terminar, el trabajo se corta a los 20 minutos.
 - `TRAZA.exe "C:\ruta\Proyecto.traza"` abre directamente un proyecto.
 
 ## Pruebas

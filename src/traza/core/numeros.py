@@ -15,11 +15,15 @@ class NumeroAmbiguo(ValueError):
     pass
 
 
-_MILES_CON_PUNTO = re.compile(r"^[+-]?\d{1,3}(\.\d{3})+$")
+_MILES_CON_PUNTO = re.compile(r"^[+-]?[0-9]{1,3}(\.[0-9]{3})+$")
+# Solo cifras ASCII, una coma o punto decimal y exponente opcional. Rechaza espacios
+# internos («2 4» no es 24), guiones bajos («1_000», que float() aceptaría) y cifras de
+# otros alfabetos.
+_NUMERO = re.compile(r"^[+-]?[0-9]+([.,][0-9]+)?([eE][+-]?[0-9]+)?$")
 
 
 def leer_numero(texto: str) -> int | float:
-    t = texto.strip().replace(" ", "").replace(" ", "")
+    t = texto.strip()  # strip() también quita el espacio duro (NBSP) de los PDF
     if not t:
         raise ValueError("Escribe un número.")
     if "," in t and "." in t:
@@ -32,13 +36,12 @@ def leer_numero(texto: str) -> int | float:
             f"«{texto}» es ambiguo: ¿{t.replace('.', '')} o {t.replace('.', ',')}? "
             "Escríbelo sin punto de miles."
         )
+    if not _NUMERO.match(t):
+        raise ValueError(f"«{texto}» no es un número (sin espacios ni separador de miles).")
     t = t.replace(",", ".")
-    try:
-        if re.fullmatch(r"[+-]?\d+", t):
-            return int(t)
-        valor = float(t)
-    except ValueError:
-        raise ValueError(f"«{texto}» no es un número.") from None
+    if re.fullmatch(r"[+-]?[0-9]+", t):
+        return int(t)
+    valor = float(t)
     if valor != valor or valor in (float("inf"), float("-inf")):
         raise ValueError(f"«{texto}» no es un número finito.")
     return valor

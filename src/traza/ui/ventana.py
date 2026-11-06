@@ -10,7 +10,9 @@ un test) y toda cifra muestra de dónde sale en la misma fila.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -66,6 +68,24 @@ ETIQUETA_ESTADO = {
     "aprobado": "Aprobado",
 }
 NO_CONSTA = "— no consta —"
+EXTENSIONES_ABRIBLES = {
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".csv",
+    ".txt",
+    ".dxf",
+    ".dwg",
+    ".bc3",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".bmp",
+}
 
 
 def _tabla(columnas: list[str]) -> QTableWidget:
@@ -96,6 +116,15 @@ def _llenar(tabla: QTableWidget, filas: list[list[str]], ids: list[str] | None =
             if ids is not None and j == 0:
                 item.setData(Qt.UserRole, ids[i])
             tabla.setItem(i, j, item)
+
+
+def _etiqueta_copia(ruta: Path) -> str:
+    """«proyecto-20261106T080336814459Z-manual.db» → «2026-11-06 08:03:36 UTC · manual»."""
+    m = re.match(r"proyecto-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})\d*Z-?(.*)$", ruta.stem)
+    if not m:
+        return ruta.name
+    a, mes, d, h, mi, s, tipo = m.groups()
+    return f"{a}-{mes}-{d} {h}:{mi}:{s} UTC · {tipo.replace('-', ' ') or 'sin etiqueta'}"
 
 
 def _fecha(iso: str) -> str:
@@ -164,9 +193,31 @@ class VentanaPrincipal(QMainWindow):
         a = QAction(texto, self)
         if atajo is not None:
             a.setShortcut(QKeySequence(atajo))
-        a.triggered.connect(lambda _marcado=False: funcion())
+        a.triggered.connect(lambda _marcado=False: self._proteger(texto, funcion))
         menu.addAction(a)
         return a
+
+    def _proteger(self, texto: str, funcion: Callable[[], None]) -> None:
+        """Ningún error escapa de una acción en silencio.
+
+        En TRAZA.exe no hay consola: una excepción no capturada no la vería nadie y el
+        usuario creería, por ejemplo, que tiene una copia de seguridad que no existe.
+        """
+        try:
+            funcion()
+        except OrdenRechazada as exc:
+            self.preguntas.aviso("No se ha aplicado", str(exc))
+        except Exception as exc:  # noqa: BLE001 — se muestra siempre al usuario
+            self.preguntas.aviso(
+                f"Error en «{texto.rstrip('…')}»",
+                f"{type(exc).__name__}: {exc}\n\nNo se ha completado la operación.",
+            )
+        finally:
+            if self.proyecto is not None:
+                with contextlib.suppress(Exception):  # el aviso anterior ya informa
+                    self.refrescar()
+            else:
+                self._actualizar_estado()
 
     def _crear_acciones(self) -> None:
         mb = self.menuBar()
@@ -266,33 +317,35 @@ class VentanaPrincipal(QMainWindow):
 
     def _refrescar_arbol(self, seleccionar: str | None) -> None:
         self.arbol.blockSignals(True)
-        self.arbol.clear()
-        if self.proyecto is not None:
-            elementos = self.proyecto.elementos()
-            nodos: dict[str, QTreeWidgetItem] = {}
-            pendientes = list(elementos)
-            # Padres antes que hijos, sea cual sea el orden alfabético.
-            while pendientes:
-                resto = []
-                for e in pendientes:
-                    padre = e["padre_id"]
-                    if padre and padre not in nodos:
-                        resto.append(e)
-                        continue
-                    item = QTreeWidgetItem(
-                        [e["codigo"], tipo_de(e["tipo"]).etiqueta, ETIQUETA_ESTADO[e["estado"]]]
-                    )
-                    item.setData(0, Qt.UserRole, e["id"])
-                    (nodos[padre] if padre else self.arbol.invisibleRootItem()).addChild(item)
-                    nodos[e["id"]] = item
-                if len(resto) == len(pendientes):
-                    raise RuntimeError("Jerarquía de elementos con referencias circulares.")
-                pendientes = resto
-            self.arbol.expandAll()
-            if seleccionar in nodos:
-                nodos[seleccionar].setSelected(True)
-                self.arbol.setCurrentItem(nodos[seleccionar])
-        self.arbol.blockSignals(False)
+        try:
+            self.arbol.clear()
+            if self.proyecto is not None:
+                elementos = self.proyecto.elementos()
+                nodos: dict[str, QTreeWidgetItem] = {}
+                pendientes = list(elementos)
+                # Padres antes que hijos, sea cual sea el orden alfabético.
+                while pendientes:
+                    resto = []
+                    for e in pendientes:
+                        padre = e["padre_id"]
+                        if padre and padre not in nodos:
+                            resto.append(e)
+                            continue
+                        item = QTreeWidgetItem(
+                            [e["codigo"], tipo_de(e["tipo"]).etiqueta, ETIQUETA_ESTADO[e["estado"]]]
+                        )
+                        item.setData(0, Qt.UserRole, e["id"])
+                        (nodos[padre] if padre else self.arbol.invisibleRootItem()).addChild(item)
+                        nodos[e["id"]] = item
+                    if len(resto) == len(pendientes):
+                        raise RuntimeError("Jerarquía de elementos con referencias circulares.")
+                    pendientes = resto
+                self.arbol.expandAll()
+                if seleccionar in nodos:
+                    nodos[seleccionar].setSelected(True)
+                    self.arbol.setCurrentItem(nodos[seleccionar])
+        finally:
+            self.arbol.blockSignals(False)
 
     def _refrescar_propiedades(self) -> None:
         el = self.elemento_seleccionado()
@@ -439,17 +492,20 @@ class VentanaPrincipal(QMainWindow):
         self.statusBar().showMessage(f"Copia guardada: {ruta.name}", 8000)
 
     def accion_restaurar(self) -> None:
-        copias = self.proyecto.copias()
-        i = self.preguntas.elegir(
-            "Restaurar copia", "Copia a restaurar:", [c.name for c in reversed(copias)]
-        )
+        copias = list(reversed(self.proyecto.copias()))  # la más reciente primero
+        if not copias:
+            self.preguntas.aviso("Restaurar copia", "Este proyecto no tiene copias de seguridad.")
+            return
+        etiquetas = [_etiqueta_copia(c) for c in copias]
+        i = self.preguntas.elegir("Restaurar copia", "Copia a restaurar:", etiquetas)
         if i is None:
             return
-        copia = list(reversed(copias))[i]
+        copia = copias[i]
         if not self.preguntas.confirmar(
             "Restaurar copia",
-            f"Se cerrará el proyecto y se sustituirá por «{copia.name}». El estado actual se "
-            "guarda antes como copia «antes-de-restaurar». ¿Continuar?",
+            f"Se cerrará el proyecto y se sustituirá por la copia «{etiquetas[i]}». El estado "
+            "actual se guarda antes como copia «antes de restaurar». Se perderá la lista de "
+            "deshacer de esta sesión. ¿Continuar?",
         ):
             return
         raiz = self.proyecto.carpeta.raiz
@@ -551,7 +607,20 @@ class VentanaPrincipal(QMainWindow):
         if fila < 0:
             return
         doc_id = self.tabla_documentos.item(fila, 0).data(Qt.UserRole)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.proyecto.ruta_documento(doc_id))))
+        ruta = self.proyecto.ruta_documento(doc_id)
+        if ruta.suffix.lower() not in EXTENSIONES_ABRIBLES:
+            # Abrir con el programa asociado de Windows EJECUTARÍA un .bat, .exe o .lnk.
+            self.preguntas.aviso(
+                "Abrir documento",
+                f"Por seguridad no se abren ficheros «{ruta.suffix}» desde TRAZA. "
+                f"Está guardado en: {ruta}",
+            )
+            return
+        if not ruta.is_file():
+            self.preguntas.aviso("Abrir documento", f"No se encuentra el fichero: {ruta}")
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(ruta))):
+            self.preguntas.aviso("Abrir documento", f"Windows no ha podido abrir {ruta.name}.")
 
     def accion_nuevo_pendiente(self) -> None:
         el = self.elemento_seleccionado()
