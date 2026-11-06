@@ -16,12 +16,19 @@ def conectar(ruta: Path) -> sqlite3.Connection:
     # isolation_level=None: las transacciones se abren a mano (BEGIN IMMEDIATE) para que
     # una orden se aplique entera o no se aplique.
     con = sqlite3.connect(ruta, isolation_level=None)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA foreign_keys = ON")
-    # Diario clásico (no WAL): el proyecto queda en UN fichero, sin -wal/-shm sueltos que
-    # se pierden al copiar la carpeta. FULL: la orden confirmada sobrevive a un corte.
-    con.execute("PRAGMA journal_mode = DELETE")
-    con.execute("PRAGMA synchronous = FULL")
+    try:
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys = ON")
+        # Diario clásico (no WAL): el proyecto queda en UN fichero, sin -wal/-shm sueltos
+        # que se pierden al copiar la carpeta. FULL: la orden confirmada sobrevive a un corte.
+        con.execute("PRAGMA journal_mode = DELETE")
+        con.execute("PRAGMA synchronous = FULL")
+    except BaseException:
+        # Con un fichero dañado, `connect` funciona y el primer PRAGMA falla. Si no se
+        # cierra aquí, Windows mantiene el fichero bloqueado y no se puede apartar para
+        # restaurar una copia (fallo visto en CI de Windows, 06-11-2026).
+        con.close()
+        raise
     return con
 
 
