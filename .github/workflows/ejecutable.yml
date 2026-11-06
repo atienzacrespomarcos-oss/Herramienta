@@ -1,0 +1,36 @@
+name: Ejecutable Windows
+
+# Genera TRAZA.exe y lo deja como artefacto descargable de la ejecución
+# (pestaña Actions → ejecución → «TRAZA-windows»). Antes de publicarlo, el propio
+# ejecutable pasa su autoprueba: un .exe que compila pero no funciona no se publica.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - name: Construir TRAZA.exe
+        run: >
+          uv run pyinstaller --noconfirm --clean --windowed --name TRAZA
+          --collect-data pint scripts/traza_exe.py
+      - name: Autoprueba del ejecutable
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $p = Start-Process -FilePath dist\TRAZA\TRAZA.exe -ArgumentList "--autoprueba" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "La autoprueba del ejecutable ha fallado (código $($p.ExitCode))" }
+          Write-Output "Autoprueba del ejecutable correcta"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TRAZA-windows
+          path: dist/TRAZA
+          retention-days: 30

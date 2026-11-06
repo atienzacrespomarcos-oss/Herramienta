@@ -91,6 +91,14 @@ class Proyecto:
     def copia_de_seguridad(self) -> Path:
         return fs.copia_de_seguridad(self.carpeta, self._con, etiqueta="manual")
 
+    def copias(self) -> list[Path]:
+        return fs.copias(self.carpeta)
+
+    @staticmethod
+    def restaurar_copia(raiz: Path, copia: Path) -> None:
+        """Restaura una copia. El proyecto debe estar cerrado (lo exige la interfaz)."""
+        fs.restaurar(fs.Carpeta(raiz), copia)
+
     # --- Órdenes -----------------------------------------------------------------------
 
     def ejecutar(self, orden: Orden, autor: str = "usuario") -> str:

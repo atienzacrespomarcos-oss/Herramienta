@@ -2,6 +2,14 @@
 
 ## [Sin publicar]
 
+### Etapa 1 · bloque 2 — interfaz y ejecutable (06-11-2026)
+- Ventana principal clásica: árbol de elementos, propiedades con procedencia y fuente en cada
+  fila («no consta» visible), pestañas Documentos/Historial/Pendientes.
+- Menús completos del núcleo; acciones desactivadas cuando no aplican.
+- Lectura de números con convención española; «2.400» se rechaza por ambiguo.
+- TRAZA.exe generado en GitHub Actions con autoprueba previa a su publicación.
+- Forma de trabajo «pregunta → opciones → decide el usuario → ejecuta Claude» en CLAUDE.md.
+
 ### Etapa 1 · bloque 1 — núcleo sin interfaz (06-11-2026)
 - Proyecto como carpeta `.traza` con base SQLite, almacén de documentos de solo lectura y
   copias de seguridad (al abrir, manual, antes de restaurar; se conservan 30).
