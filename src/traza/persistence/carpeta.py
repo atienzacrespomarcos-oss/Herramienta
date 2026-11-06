@@ -15,17 +15,22 @@ import shutil
 import sqlite3
 import stat
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
-from traza.persistence.bd import conectar, migrar
+from traza.persistence.bd import conectar, migrar, version
+from traza.persistence.esquema import VERSION_ACTUAL
 
 EXTENSION = ".traza"
 BD = "proyecto.db"
 DOCUMENTOS = "documentos"
 EXPORTACIONES = "exportaciones"
 COPIAS = "copias"
-COPIAS_CONSERVADAS = 30
+# Solo se podan las copias automáticas de apertura. Las manuales, las de antes de
+# restaurar y las de antes de migrar no se borran nunca solas: son las que alguien quiso
+# conservar o las únicas que guardan un estado anterior a una operación delicada.
+COPIAS_APERTURA_CONSERVADAS = 30
+ETIQUETA_APERTURA = "apertura"
 
 
 class CarpetaNoValida(RuntimeError):
@@ -78,8 +83,13 @@ def abrir(raiz: Path) -> tuple[Carpeta, sqlite3.Connection]:
         sub.mkdir(exist_ok=True)
     con = conectar(c.bd)
     try:
+        v = version(con)
+        if 0 < v < VERSION_ACTUAL:
+            # La copia se hace ANTES de migrar: si la migración transforma datos y algo
+            # sale mal, el proyecto tal como estaba sigue existiendo.
+            copia_de_seguridad(c, con, etiqueta=f"antes-de-migrar-v{v}")
         migrar(con)
-    except Exception:
+    except BaseException:
         con.close()
         raise
     return c, con
@@ -124,15 +134,25 @@ def ruta_documento(c: Carpeta, sha: str, extension: str) -> Path:
 
 
 def copia_de_seguridad(c: Carpeta, con: sqlite3.Connection, etiqueta: str = "") -> Path:
-    """Copia coherente de la base de datos con la API de backup de SQLite."""
-    sello = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    """Copia coherente de la base de datos con la API de backup de SQLite.
+
+    Se escribe con otro nombre y se renombra al terminar: una copia a medias nunca aparece
+    en la lista de copias restaurables. Sello en UTC: el cambio de hora no altera el orden.
+    """
+    sello = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     sufijo = f"-{etiqueta}" if etiqueta else ""
     destino = c.copias / f"proyecto-{sello}{sufijo}.db"
-    dst = sqlite3.connect(destino)
+    temporal = destino.with_suffix(".parcial")
     try:
-        con.backup(dst)
-    finally:
-        dst.close()
+        dst = sqlite3.connect(temporal)
+        try:
+            con.backup(dst)
+        finally:
+            dst.close()
+        os.replace(temporal, destino)
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise
     _podar_copias(c)
     return destino
 
@@ -142,25 +162,33 @@ def copias(c: Carpeta) -> list[Path]:
 
 
 def _podar_copias(c: Carpeta) -> None:
-    existentes = copias(c)
-    for vieja in existentes[: max(0, len(existentes) - COPIAS_CONSERVADAS)]:
+    apertura = [p for p in copias(c) if p.stem.endswith(f"-{ETIQUETA_APERTURA}")]
+    for vieja in apertura[: max(0, len(apertura) - COPIAS_APERTURA_CONSERVADAS)]:
         vieja.unlink()
 
 
 def restaurar(c: Carpeta, copia: Path) -> None:
     """Sustituye proyecto.db por una copia. El proyecto debe estar cerrado.
 
-    Antes se guarda una copia del estado actual: restaurar tampoco destruye nada.
+    Antes se guarda el estado actual: restaurar tampoco destruye nada. Si la base de datos
+    actual está dañada y no admite copia (el caso para el que sirve restaurar), se aparta
+    tal cual a copias/ con la etiqueta «danada» y se restaura igualmente.
     """
     if copia.parent != c.copias or not copia.is_file():
         raise CarpetaNoValida("La copia a restaurar debe estar en la carpeta copias/ del proyecto.")
-    # Primero se aparta la copia elegida: la copia de seguridad previa poda las más
-    # antiguas y, si la elegida era la más vieja, la borraría antes de restaurarla.
     temporal = c.bd.with_suffix(".restaurando")
     shutil.copyfile(copia, temporal)
-    con = conectar(c.bd)
     try:
-        copia_de_seguridad(c, con, etiqueta="antes-de-restaurar")
-    finally:
-        con.close()
-    os.replace(temporal, c.bd)
+        try:
+            con = conectar(c.bd)
+            try:
+                copia_de_seguridad(c, con, etiqueta="antes-de-restaurar")
+            finally:
+                con.close()
+        except sqlite3.DatabaseError:
+            sello = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            os.replace(c.bd, c.copias / f"proyecto-{sello}-danada.db")
+        os.replace(temporal, c.bd)
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise

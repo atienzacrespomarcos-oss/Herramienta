@@ -25,6 +25,10 @@ CLAVES: dict[str, tuple[str, ...]] = {
 }
 
 
+class Conflicto(RuntimeError):
+    """La fila no está como la orden esperaba: no se aplica nada."""
+
+
 @dataclass(frozen=True)
 class Delta:
     tabla: str
@@ -66,7 +70,7 @@ def aplicar(con: sqlite3.Connection, d: Delta) -> None:
     """Aplica un delta comprobando que la base está en el estado `antes` esperado."""
     actual = leer(con, d.tabla, d.clave)
     if actual != d.antes:
-        raise RuntimeError(
+        raise Conflicto(
             f"Conflicto en {d.tabla} {d.id_legible}: el estado no es el esperado; "
             "no se aplica el cambio."
         )

@@ -25,15 +25,28 @@ def registro() -> pint.UnitRegistry:
 
 
 def normalizar(unidad: str) -> str:
-    """Admite la notación habitual en documentos técnicos españoles (m³/h, W/m²·K)."""
-    return unidad.strip().translate(_SUPERINDICES)
+    """Admite la notación habitual en documentos técnicos españoles (m³/h, W/m²·K).
+
+    En esa notación todo lo que sigue a la barra es denominador: «W/m²·K» es W/(m²·K).
+    pint lee de izquierda a derecha y lo tomaría como (W/m²)·K, que es otra magnitud
+    (fallo detectado en revisión el 06-11-2026). Por eso el denominador se encierra entre
+    paréntesis, y una expresión con dos barras y sin paréntesis se rechaza por ambigua.
+    """
+    u = unidad.strip().translate(_SUPERINDICES)
+    if "(" in u or "/" not in u:
+        return u
+    if u.count("/") > 1:
+        raise UnidadInvalida(f"«{unidad}» es ambigua (dos barras); usa paréntesis.")
+    num, den = u.split("/")
+    return f"{num or '1'}/({den})"
 
 
 def comprobar_compatible(unidad: str, referencia: str) -> None:
     """Falla si `unidad` no mide la misma magnitud que `referencia`."""
     ureg = registro()
+    normalizada = normalizar(unidad)  # fuera del try: su error «ambigua» debe llegar tal cual
     try:
-        u = ureg.Unit(normalizar(unidad))
+        u = ureg.Unit(normalizada)
     except Exception as exc:  # pint lanza varias clases según el fallo
         raise UnidadInvalida(f"Unidad no reconocida: «{unidad}».") from exc
     ref = ureg.Unit(normalizar(referencia))

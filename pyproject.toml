@@ -60,12 +60,16 @@ forbidden_modules = ["traza.ui", "traza.persistence", "traza.app", "traza.ai", "
 
 [[tool.importlinter.contracts]]
 name = "La interfaz no toca la base de datos: solo la capa de aplicación"
+# Directo prohibido; a través de traza.app (que sí usa la base de datos) permitido.
+allow_indirect_imports = true
 type = "forbidden"
 source_modules = ["traza.ui"]
 forbidden_modules = ["traza.persistence", "sqlite3"]
 
 [[tool.importlinter.contracts]]
 name = "La IA solo propone órdenes: no accede a la base de datos"
+# Directo prohibido; a través de traza.app (que sí usa la base de datos) permitido.
+allow_indirect_imports = true
 type = "forbidden"
 source_modules = ["traza.ai"]
 forbidden_modules = ["traza.persistence", "sqlite3", "traza.ui"]

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from traza.app.ordenes import (
+    CambiarEstado,
+    CrearPendiente,
+    FijarPropiedad,
     Orden,
     OrdenRechazada,
     RegistrarDocumento,
@@ -16,9 +20,10 @@ from traza.app.ordenes import (
     nuevo_id,
 )
 from traza.core.estados import Estado
+from traza.core.procedencia import Origen
 from traza.io.pdf import contar_paginas
 from traza.persistence import carpeta as fs
-from traza.persistence.filas import Delta, a_json, aplicar, leer
+from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
 
 AUTORES = ("usuario", "motor", "ia", "importacion")
 
@@ -48,18 +53,32 @@ class Proyecto:
         if not nombre.strip():
             raise OrdenRechazada("El proyecto necesita un nombre.")
         c = fs.crear(destino)
-        _, con = fs.abrir(c.raiz)
-        con.execute("BEGIN IMMEDIATE")
-        con.execute("INSERT INTO meta VALUES ('nombre', ?)", (nombre.strip(),))
-        con.execute("INSERT INTO meta VALUES ('creado', ?)", (ahora(),))
-        con.execute("COMMIT")
+        con = None
+        try:
+            _, con = fs.abrir(c.raiz)
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("INSERT INTO meta VALUES ('nombre', ?)", (nombre.strip(),))
+            con.execute("INSERT INTO meta VALUES ('creado', ?)", (ahora(),))
+            con.execute("COMMIT")
+        except BaseException:
+            # Un proyecto a medio crear dejaría ocupado el nombre («ya existe») sin servir
+            # para nada. La carpeta la acabamos de crear nosotros: se puede retirar.
+            if con is not None:
+                con.close()
+            shutil.rmtree(c.raiz, ignore_errors=True)
+            raise
         return cls(c, con)
 
     @classmethod
     def abrir(cls, raiz: Path) -> Proyecto:
+        # La copia «antes de migrar», si hace falta, la hace fs.abrir antes de tocar nada.
         c, con = fs.abrir(raiz)
-        # Copia al abrir: si algo sale mal durante la sesión, el estado de partida existe.
-        fs.copia_de_seguridad(c, con, etiqueta="apertura")
+        try:
+            # Copia al abrir: si algo sale mal durante la sesión, el estado de partida existe.
+            fs.copia_de_seguridad(c, con, etiqueta=fs.ETIQUETA_APERTURA)
+        except BaseException:
+            con.close()
+            raise
         return cls(c, con)
 
     def cerrar(self) -> None:
@@ -78,7 +97,13 @@ class Proyecto:
         """Aplica una orden entera o nada. Devuelve el id de la orden."""
         if autor not in AUTORES:
             raise ValueError(f"Autor no válido: {autor}")
-        paso = self._transaccion(orden.nombre, autor, lambda: self._planificar(orden))
+        self._comprobar_autor(orden, autor)
+        try:
+            paso = self._transaccion(orden.nombre, autor, lambda: self._planificar(orden))
+        except (sqlite3.IntegrityError, Conflicto) as exc:
+            # Segunda barrera (CHECK, claves únicas, estado inesperado): la orden no entra y
+            # la transacción ya se ha deshecho entera.
+            raise OrdenRechazada(f"No se aplica el cambio: {exc}") from exc
         self._deshacer.append(paso)
         self._rehacer.clear()
         return paso.orden_id
@@ -108,6 +133,36 @@ class Proyecto:
     def puede_rehacer(self) -> bool:
         return bool(self._rehacer)
 
+    @staticmethod
+    def _comprobar_autor(orden: Orden, autor: str) -> None:
+        """Quién puede hacer qué.
+
+        - La IA solo propone (línea roja 7): valores con origen «ia_propuesta» y avisos de
+          información pendiente. No confirma, no aprueba, no reabre.
+        - «Calculado» y «comprobado» solo los fija un motor: marcarlos a mano sería mostrar
+          un indicador de cumplimiento sin haber ejecutado la comprobación.
+        """
+        if autor == "ia":
+            propone = (
+                isinstance(orden, FijarPropiedad)
+                and orden.procedencia.origen is Origen.IA_PROPUESTA
+            )
+            if not (propone or isinstance(orden, CrearPendiente)):
+                raise OrdenRechazada(
+                    "La IA solo puede proponer valores (origen «propuesta de IA») o señalar "
+                    "información pendiente; lo demás lo decide el usuario."
+                )
+        elif isinstance(orden, FijarPropiedad) and orden.procedencia.origen is Origen.IA_PROPUESTA:
+            raise OrdenRechazada("Solo la IA genera propuestas de IA.")
+        if (
+            isinstance(orden, CambiarEstado)
+            and orden.estado in (Estado.CALCULADO, Estado.COMPROBADO)
+            and autor != "motor"
+        ):
+            raise OrdenRechazada(
+                f"El estado «{orden.estado}» lo fija un motor de cálculo al ejecutarse, no a mano."
+            )
+
     def _planificar(self, orden: Orden) -> tuple[Delta, ...]:
         deltas = tuple(orden.planificar(self._con))
         if not deltas:
@@ -121,6 +176,9 @@ class Proyecto:
         """Línea roja 5: lo aprobado no se toca sin reabrirlo con una decisión escrita."""
         if d.tabla == "elemento":
             el = d.antes
+            if el is None and d.despues is not None and d.despues["padre_id"]:
+                # Añadir un componente a un conjunto aprobado también lo modifica.
+                el = leer(self._con, "elemento", {"id": d.despues["padre_id"]})
         elif d.tabla in ("propiedad", "decision"):
             fila = d.antes or d.despues
             assert fila is not None
@@ -158,7 +216,8 @@ class Proyecto:
                     ),
                 )
             con.execute("COMMIT")
-        except Exception:
+        except BaseException:
+            # BaseException: también una interrupción (Ctrl+C) deshace la transacción.
             con.execute("ROLLBACK")
             raise
         return _Paso(orden_id, nombre, deltas)
@@ -175,18 +234,20 @@ class Proyecto:
         if not origen.is_file():
             raise OrdenRechazada(f"No se encuentra el fichero «{origen}».")
         extension = origen.suffix.lower()
+        sha, almacenado = fs.guardar_documento(self.carpeta, origen)
+        # Páginas y tamaño se leen de la copia verificada, no del original: si el original
+        # cambiara entre medias, el registro describiría otro fichero.
         paginas = None
         if extension == ".pdf":
             try:
-                paginas = contar_paginas(origen)
+                paginas = contar_paginas(almacenado)
             except Exception as exc:
                 raise OrdenRechazada(f"«{origen.name}» no se puede leer como PDF: {exc}") from exc
-        sha, _ = fs.guardar_documento(self.carpeta, origen)
         orden = RegistrarDocumento(
             sha256=sha,
             nombre_original=origen.name,
             extension=extension,
-            tamano=origen.stat().st_size,
+            tamano=almacenado.stat().st_size,
             paginas=paginas,
             clasificacion=clasificacion,
         )
@@ -226,9 +287,10 @@ class Proyecto:
 
     def decisiones(self, elemento_id: str | None = None) -> list[dict[str, Any]]:
         if elemento_id is None:
-            return self._filas("SELECT * FROM decision ORDER BY fecha")
+            return self._filas("SELECT * FROM decision ORDER BY fecha, rowid")
+        # rowid desempata decisiones del mismo segundo (aprobar y reabrir seguidos).
         return self._filas(
-            "SELECT * FROM decision WHERE elemento_id = ? ORDER BY fecha", (elemento_id,)
+            "SELECT * FROM decision WHERE elemento_id = ? ORDER BY fecha, rowid", (elemento_id,)
         )
 
     def pendientes(self, solo_abiertos: bool = True) -> list[dict[str, Any]]:

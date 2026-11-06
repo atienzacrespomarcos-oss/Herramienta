@@ -71,7 +71,8 @@ CREATE TABLE propiedad (
     CHECK ((documento_id IS NULL) = (localizador IS NULL)),
     CHECK ((origen = 'calculo') = (registro_calculo_id IS NOT NULL)),
     CHECK (origen <> 'hipotesis' OR length(trim(coalesce(nota,''))) > 0),
-    CHECK (origen <> 'ia_propuesta' OR confirmado = 0)
+    CHECK (origen <> 'ia_propuesta' OR confirmado = 0),
+    CHECK (origen = 'ia_propuesta' OR confirmado = 1)
 );
 
 CREATE TABLE decision (

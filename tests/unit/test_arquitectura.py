@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -19,13 +20,17 @@ def test_contratos_de_capas():
 
 def test_ninguna_escritura_al_modelo_fuera_de_las_ordenes():
     """Solo persistence/ y la transacción de app/proyecto.py escriben en la base de datos."""
-    permitidos = {"persistence", "proyecto.py"}
-    patron = ("INSERT INTO", "UPDATE ", "DELETE FROM")
+    paquete = RAIZ / "src" / "traza"
+    permitidos = {paquete / "app" / "proyecto.py"}
+    patron = re.compile(
+        r"\b(insert|replace)\s+into\b|\bupdate\s+\w+\s+set\b|\bdelete\s+from\b"
+        r"|executemany|executescript",
+        re.IGNORECASE,
+    )
     infractores = []
-    for f in (RAIZ / "src" / "traza").rglob("*.py"):
-        if permitidos & set(f.relative_to(RAIZ / "src" / "traza").parts):
+    for f in paquete.rglob("*.py"):
+        if f in permitidos or (paquete / "persistence") in f.parents:
             continue
-        texto = f.read_text(encoding="utf-8")
-        if any(p in texto for p in patron):
+        if patron.search(f.read_text(encoding="utf-8")):
             infractores.append(str(f.relative_to(RAIZ)))
     assert not infractores, infractores

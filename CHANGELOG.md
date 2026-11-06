@@ -10,7 +10,12 @@
 - Estados con aprobación y reapertura motivadas; bloqueo de lo aprobado.
 - Órdenes con deshacer/rehacer y registro de cambios inalterable.
 - Citas de PDF comprobadas contra el número real de páginas.
-- Pruebas: 41 (incluye 40 secuencias aleatorias de deshacer/rehacer). CI en Windows y Linux.
+- Pruebas: 52 (incluye 60 secuencias aleatorias de deshacer/rehacer). CI en Windows y Linux.
+- Corregido tras revisión independiente: la IA podía confirmar sus propias propuestas;
+  «calculado»/«comprobado» se podían marcar a mano; la notación «W/m²·K» se interpretaba
+  como (W/m²)·K; la copia «al abrir» se hacía después de actualizar el formato; no se podía
+  restaurar una base de datos dañada; las copias manuales se perdían tras 30 aperturas; se
+  podían colgar componentes de un elemento aprobado; varias fugas en fallos a medias.
 - ADR-0003 aceptado: `sqlite3` con migraciones propias en lugar de SQLAlchemy/Alembic.
 
 ### Etapa 0 — 05-11-2026

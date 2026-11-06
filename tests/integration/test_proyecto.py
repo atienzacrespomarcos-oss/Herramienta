@@ -109,6 +109,7 @@ def test_cita_de_pagina_inexistente_o_sin_pagina(proyecto, pdf_3_paginas):
 def test_documento_original_intacto_y_sin_duplicar(proyecto, pdf_3_paginas):
     original = pdf_3_paginas.read_bytes()
     doc = proyecto.incorporar_documento(pdf_3_paginas)
+    assert pdf_3_paginas.read_bytes() == original, "el original no se toca"
     copia = proyecto.ruta_documento(doc)
     assert copia.read_bytes() == original
     assert not copia.stat().st_mode & stat.S_IWUSR, "el almacén es de solo lectura"
@@ -124,7 +125,8 @@ def test_aprobar_exige_obligatorias_y_propuestas_confirmadas(proyecto):
         proyecto.ejecutar(Aprobar(orden.id, "ok"))
     proyecto.ejecutar(FijarPropiedad(orden.id, "fabricante", "X", None, USUARIO))
     proyecto.ejecutar(
-        FijarPropiedad(orden.id, "modelo", "Y", None, Procedencia(Origen.IA_PROPUESTA))
+        FijarPropiedad(orden.id, "modelo", "Y", None, Procedencia(Origen.IA_PROPUESTA)),
+        autor="ia",
     )
     with pytest.raises(OrdenRechazada, match="propuestas sin confirmar"):
         proyecto.ejecutar(Aprobar(orden.id, "ok"))
@@ -138,7 +140,7 @@ def test_propuesta_ia_con_cita_se_confirma_como_documento(proyecto, pdf_3_pagina
     doc = proyecto.incorporar_documento(pdf_3_paginas)
     el = _equipo_completo(proyecto)
     ia = Procedencia(Origen.IA_PROPUESTA, documento_id=doc, localizador="p. 1")
-    proyecto.ejecutar(FijarPropiedad(el, "potencia_frigorifica", 25.3, "kW", ia))
+    proyecto.ejecutar(FijarPropiedad(el, "potencia_frigorifica", 25.3, "kW", ia), autor="ia")
     proyecto.ejecutar(ConfirmarPropuesta(el, "potencia_frigorifica"))
     fila = {r["clave"]: r for r in proyecto.propiedades(el)}["potencia_frigorifica"]
     assert fila["origen"] == "documento" and fila["localizador"] == "p. 1"
@@ -157,8 +159,13 @@ def test_resultados_de_calculo_no_se_escriben_a_mano(proyecto):
 def test_transiciones_de_estado(proyecto):
     el = _equipo_completo(proyecto)
     proyecto.ejecutar(CambiarEstado(el, Estado.PROPUESTO))
-    with pytest.raises(OrdenRechazada):
+    with pytest.raises(OrdenRechazada, match="lo fija un motor"):
+        proyecto.ejecutar(CambiarEstado(el, Estado.CALCULADO))
+    proyecto.ejecutar(CambiarEstado(el, Estado.CALCULADO), autor="motor")
+    with pytest.raises(OrdenRechazada, match="lo fija un motor"):
         proyecto.ejecutar(CambiarEstado(el, Estado.COMPROBADO))
+    with pytest.raises(OrdenRechazada):
+        proyecto.ejecutar(CambiarEstado(el, Estado.PROPUESTO), autor="motor")
     with pytest.raises(OrdenRechazada, match="orden Aprobar"):
         proyecto.ejecutar(CambiarEstado(el, Estado.APROBADO))
 
@@ -214,6 +221,9 @@ def test_la_base_de_datos_rechaza_valores_sin_procedencia(proyecto):
         ("calculo", None, None, None, None, 1),
         ("ia_propuesta", None, None, None, None, 1),
         ("usuario", None, "p. 1", None, None, 1),
+        ("usuario", None, None, "r", None, 1),
+        ("usuario", None, None, None, None, 0),  # solo una propuesta de IA va sin confirmar
+        ("catalogo", None, None, None, None, 1),
     ]
     for origen, doc, loc, reg, nota, conf in malos:
         with pytest.raises(sqlite3.IntegrityError):
