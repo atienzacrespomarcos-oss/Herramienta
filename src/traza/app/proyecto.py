@@ -611,16 +611,29 @@ class Proyecto:
                     for x in r.cambios
                     if x.tipo != "nueva"
                 ]
-                return bc3_modificar.actualizar(
+                ruta, avisos = bc3_modificar.actualizar(
                     self.ruta_documento(base["documento_id"]),
                     destino,
                     mod["numero"],
                     variaciones,
                     nuevas,
                 )
-            return self._bc3_generado(mod, r, destino, nuevas)
+            else:
+                ruta, avisos = self._bc3_generado(mod, r, destino, nuevas)
+                if r.omitidas_base:
+                    # Partiendo del original, lo omitido sigue en el fichero; generándolo, no.
+                    avisos.append(
+                        f"El BC3 generado NO incluye {r.omitidas_base} línea(s) de la base que "
+                        "el lector no pudo convertir en partida."
+                    )
         except (bc3_modificar.Bc3ModificarError, Bc3EscrituraError, bc3.Bc3Error) as exc:
             raise OrdenRechazada(str(exc)) from exc
+        if r.a_revisar_base:
+            avisos.append(
+                f"{r.a_revisar_base} partida(s) de la base están «a revisar»: se escriben con "
+                "lo leído, sin comprobar."
+            )
+        return ruta, avisos
 
     def _bc3_generado(self, mod, r, destino: Path, nuevas) -> tuple[Path, list[str]]:
         """Base que no es BC3 (leída de PDF o Excel): presupuesto generado con lo leído."""

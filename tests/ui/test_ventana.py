@@ -725,3 +725,8 @@ def test_dialogo_de_cambio_distingue_partidas_iguales(qtbot):
         d.justificacion.setText("x")
         d._aceptar()
         assert d.resultado.partida_id == esperado
+    # Texto escrito a mano (no elegido de la lista): se busca la partida con ese texto exacto.
+    d.partida.setCurrentIndex(0)
+    d.partida.setEditText(textos[2])
+    d._aceptar()
+    assert d.resultado.partida_id == "c"

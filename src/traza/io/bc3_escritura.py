@@ -161,6 +161,8 @@ def escribir(
                 avisos.append(f"«{pc}» se escribe sin precio (no consta).")
             if p.cantidad is None:
                 avisos.append(f"«{pc}» se escribe sin cantidad (no consta).")
+            elif _cifra(p.cantidad) is None:
+                avisos.append(AVISO_ANULACION.format(codigo=pc))
 
     capitulo(raiz, "##", [])
     contenido = "\r\n".join(lineas) + "\r\n"
@@ -183,6 +185,15 @@ def _esperadas(cap: CapituloBc3) -> list[tuple[str, float | None, float | None]]
         filas += _esperadas(sub)
     filas += [(p.codigo, _cifra(p.cantidad), _cifra(p.precio)) for p in cap.partidas]
     return filas
+
+
+#: Una anulación se escribe con 0, que la pág. 2 define como «campo anulado»; el lector de
+#: TRAZA lo lee como «no consta». Cómo lo interpreta otro programa no está comprobado (la
+#: pág. 9 da 1 por defecto al rendimiento): se dice siempre.
+AVISO_ANULACION = (
+    "«{codigo}» se anula escribiendo cantidad 0, que en BC3 es «campo anulado» (pág. 2). "
+    "Comprueba que el programa que lo importe la deja a cero."
+)
 
 
 def _cifra(v: float | None) -> float | None:

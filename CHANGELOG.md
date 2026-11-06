@@ -25,6 +25,12 @@
   - Las cantidades admiten como máximo 6 decimales.
   - Una oferta no se añade a sí misma como partida nueva.
   - Errores de lectura con mensaje claro.
+- Segunda revisión, centrada en las correcciones:
+  - Se rechaza una `~M` que en el original no coincide con su `~D`.
+  - La línea añadida cuadra exacta con la cantidad nueva.
+  - Las anulaciones (escritas con 0) se avisan.
+  - Se aceptan registros válidos sin separador final.
+  - El BC3 avisa de las líneas omitidas y de las partidas «a revisar» de la base.
 
 ### Etapa 2 · mediciones (06-11-2026, en curso)
 - Lector BC3 según la especificación oficial FIEBDC-3/2024 (páginas citadas).

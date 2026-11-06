@@ -182,7 +182,15 @@ Limitaciones iniciales del lector (se declaran al usuario, no se ocultan):
         programa de origen recalcula el total con las líneas;
       - tiene registros `~N`, que añaden líneas a la medición (pág. 23);
       - es de una partida repetida en el capítulo cuya `~M` no se puede identificar por
-        POSICION (pág. 22).
+        POSICION (pág. 22);
+      - no coincide en el original con el rendimiento del `~D`, porque no se sabe cuál de los
+        dos es el bueno;
+      - tiene líneas pero el total vacío.
+
+      La línea que se añade es lo que falta para que las líneas sumen **exactamente** la
+      cantidad nueva.
+    - Una anulación se escribe con cantidad 0, que en BC3 es «campo anulado» (pág. 2), y
+      **siempre se avisa**. Cómo lo interpreta otro programa no está comprobado.
     - Si un capítulo aplica porcentajes («%»/«&»), su precio se corrige solo con la
       diferencia de importe y se avisa.
     - Base leída de PDF o Excel: los códigos que faltan, se repiten, superan los 20

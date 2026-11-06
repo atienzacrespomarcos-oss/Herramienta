@@ -349,6 +349,7 @@ def test_base_de_pdf_anulada_y_codigos_que_chocan(proyecto, tmp_path):
     ]
     assert r.partidas[0].capitulos == [("C01.1", "Difusión")]
     assert any("«C01» → «P0002»" in a for a in avisos)
+    assert any("«C01» se anula" in a for a in avisos)
 
 
 def test_partida_repetida_con_una_sola_medicion_no_toca_la_de_otra_linea(proyecto, tmp_path):
@@ -379,3 +380,73 @@ def test_verificacion_caza_una_medicion_que_no_cuadra(tmp_path):
     v = bc3_modificar.Variacion(leido.partidas[0].localizador, "P1", 6, 8, 10, ["C1"], "x")
     with pytest.raises(bc3_modificar.Bc3ModificarError, match="avisos"):
         bc3_modificar._verificar(malo, leido, [v], [], {})
+
+
+# --- Segunda revisión (06-11-2026) --------------------------------------------------------
+
+
+def test_original_con_m_y_d_distintos_no_se_modifica(proyecto, tmp_path):
+    # ~D dice 10 y la ~M (con líneas) 8: no se sabe cuál es la buena. Antes se añadía
+    # 12-10 = 2 y las líneas acababan sumando 10 con un total de 12.
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\10\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|8|\\A\\8\\\\\\\\|\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 12, "medicion", "x"))
+    with pytest.raises(OrdenRechazada, match="no se sabe cuál es la buena"):
+        proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+
+
+def test_linea_anadida_cuadra_exacta_con_la_cantidad_nueva(proyecto, tmp_path):
+    # Las líneas suman 5,999 y el total es 6 (dentro de la centésima): la línea añadida es
+    # lo que falta hasta 8 (2,001), no la diferencia con el contrato (2).
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|6|\\A\\5.999\\\\\\\\|\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 8, "medicion", "x"))
+    ruta, _ = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert "\\Modificado nº 1: Error de medición. x\\2.001\\" in ruta.read_bytes().decode("cp1252")
+
+
+def test_d_sin_rendimiento_final_y_m_sin_barra_final(proyecto, tmp_path):
+    # Ficheros válidos (pág. 2: el separador final es opcional) que antes se rechazaban o
+    # dejaban las líneas de la ~M sin tocar.
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~C|P2|m|Otro|5||0|\r\n~D|O##|C1#\\1\\1\\|\r\n"
+        "~D|C1#|P1\\1\\6\\P2\\1|\r\n~M|C1#\\P1|1\\1\\|6|\\A\\6\\\\\\\\\r\n",
+    )
+    p1, p2 = ps
+    assert p2["cantidad"] is None  # sin rendimiento ni ~M: no consta
+    proyecto.ejecutar(VariarPartida(m, p1["id"], 8, "medicion", "x"))
+    ruta, _ = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    texto = ruta.read_bytes().decode("cp1252")
+    assert (
+        "~M|C1#\\P1|1\\1\\|8|\\A\\6\\\\\\\\\\Modificado nº 1: Error de medición. x\\2\\\\\\\\|"
+        in texto
+    )
+
+
+def test_variar_ultima_linea_sin_rendimiento_explicito(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1|\r\n~M|C1#\\P1|1\\1\\|6||\r\n",
+    )
+    assert ps[0]["cantidad"] == 6  # sale de la ~M
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 7, "medicion", "x"))
+    ruta, _ = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert bc3.leer_partidas(bc3.leer_bc3(ruta)).partidas[0].cantidad == 7
+
+
+def test_anulacion_se_avisa_en_los_dos_caminos(mod, tmp_path):
+    p, m, ids, _, _ = mod
+    p.ejecutar(VariarPartida(m, ids["REJ01"], 0, "diseno", "Se quitan"))
+    _, avisos = p.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert any("«REJ01» se anula" in a for a in avisos)

@@ -37,7 +37,10 @@ from datetime import date
 from pathlib import Path
 
 from traza.io import bc3
-from traza.io.bc3_escritura import PartidaBc3, _num, codigo_valido
+
+# Una sola `_cifra` (cómo se relee una cifra escrita) para las dos verificaciones: si
+# divergieran, una aceptaría lo que la otra rechaza.
+from traza.io.bc3_escritura import AVISO_ANULACION, PartidaBc3, _cifra, _num, codigo_valido
 
 # Pág. 2: «|», «\» y «~» son separadores. En el COMENTARIO de una línea de medición «#»
 # separa los ID_BIM (pág. 21), así que también se sustituye.
@@ -78,6 +81,12 @@ class _Registro:
             corte = crudo.rfind("|")
             self.campos = crudo[:corte].split("|")
             self.cola = crudo[corte + 1 :]
+            if self.cola.strip():
+                # Registro sin «|» final: lo que queda también es un campo (p. ej. las líneas
+                # de una ~M). Si no, se cambiaría el total y las líneas quedarían sin tocar.
+                contenido = crudo.rstrip(" \t\r\n")
+                self.campos = contenido.split("|")
+                self.cola = crudo[len(contenido) :]
         else:
             self.campos, self.cola = [crudo], ""
         self.tocado = False
@@ -154,6 +163,8 @@ def _actualizar(original, destino, numero, variaciones, nuevas) -> tuple[Path, l
         padre, n = resolver(m["padre"].strip()), int(m["n"])
         _variar_d(ultimo("D", padre), padre, n, v, resolver)
         _variar_m(registros, modelo, padre, n, v, numero, resolver, avisos)
+        if _cifra(v.cantidad_nueva) is None:
+            avisos.append(AVISO_ANULACION.format(codigo=v.codigo))
         if v.precio is None:
             avisos.append(
                 f"«{v.codigo}» no tiene precio: no se corrigen los precios de sus capítulos."
@@ -215,11 +226,15 @@ def _variar_d(reg: _Registro | None, padre: str, n: int, v: Variacion, resolver)
             continue
         subs = campo.split("\\")
         inicio = (n - 1) * paso
-        if len(subs) <= inicio + 2 or resolver(subs[inicio].strip()) != v.codigo:
+        if len(subs) <= inicio or resolver(subs[inicio].strip()) != v.codigo:
             raise Bc3ModificarError(
                 f"La línea {n} de la descomposición de «{padre}» no es «{v.codigo}»: el fichero "
                 "no coincide con lo leído."
             )
+        # La última línea puede venir sin rendimiento ni separador final (pág. 2: el
+        # separador final es opcional): se completa en vez de rechazar un fichero válido.
+        while len(subs) <= inicio + 2:
+            subs.append("")
         subs[inicio + 2] = _num(v.cantidad_nueva)
         reg.poner(i, "\\".join(subs))
         cambiado = True
@@ -272,17 +287,33 @@ def _variar_m(registros, modelo, padre, n, v, numero, resolver, avisos) -> None:
             total_antiguo = float(r.campo(3).strip())
         except ValueError:
             total_antiguo = None
-        if total_antiguo is None or abs(suma - total_antiguo) > TOL_MEDICION:
+        if total_antiguo is None:
+            raise Bc3ModificarError(
+                f"La medición de «{v.codigo}» tiene líneas pero su total está vacío: TRAZA no "
+                "lo recalcula para no suponer cómo lo hace el programa de origen. Revisa esa "
+                "medición en el programa de origen."
+            )
+        if abs(suma - total_antiguo) > TOL_MEDICION:
             raise Bc3ModificarError(
                 f"Las líneas de medición de «{v.codigo}» suman {_num(round(suma, 6))} y su "
-                f"total es {r.campo(3).strip() or 'vacío'}: el programa de origen recalcula el "
-                "total con las líneas (pág. 22), así que añadir la diferencia no daría la "
-                "cantidad nueva. Revisa esa medición en el programa de origen."
+                f"total es {r.campo(3).strip()}: el programa de origen recalcula el total con "
+                "las líneas (pág. 22), así que añadir la diferencia no daría la cantidad "
+                "nueva. Revisa esa medición en el programa de origen."
+            )
+        if abs(total_antiguo - v.cantidad_contrato) > TOL_MEDICION:
+            # La ~M y el ~D del original no coinciden (el lector ya lo avisa y usa el ~D):
+            # no se sabe cuál de las dos es la buena (revisión 06-11-2026).
+            raise Bc3ModificarError(
+                f"En el original, la medición (~M) de «{v.codigo}» suma {r.campo(3).strip()} "
+                f"y el ~D dice {_num(v.cantidad_contrato)}: no se sabe cuál es la buena. "
+                "Corrígelo en el programa de origen antes de hacer el modificado."
             )
         base = lineas.rstrip(" \t\r\n")
         if not base.endswith("\\"):
             base += "\\"
-        diferencia = v.cantidad_nueva - v.cantidad_contrato
+        # Lo que falta para que las líneas sumen EXACTAMENTE la cantidad nueva (y no la
+        # diferencia con el contrato, que deja el redondeo de la tolerancia arrastrado).
+        diferencia = round(v.cantidad_nueva - suma, 6)
         comentario = _limpio(f"Modificado nº {numero}: {v.comentario}", _RESERVADOS_COMENTARIO)
         # Línea: TIPO \ COMENTARIO \ UNIDADES \ LONGITUD \ LATITUD \ ALTURA \ (pág. 21)
         r.poner(4, base + "\\".join(["", comentario, _num(diferencia), "", "", ""]) + "\\")
@@ -412,15 +443,6 @@ def _anadir_nuevas(registros, modelo, numero, nuevas, ultimo, avisos) -> list[st
     return cabecera + lineas
 
 
-def _cifra(v: float | None) -> float | None:
-    """Como se relee una cifra escrita: 6 decimales, y un 0 explícito es campo anulado
-    (pág. 2), que el lector de TRAZA lee como «no consta»."""
-    if v is None:
-        return None
-    v = round(v, 6)
-    return None if v == 0 else v
-
-
 def _verificar(ruta: Path, original, variaciones, nuevas, precios_capitulo) -> None:
     modelo = bc3.leer_bc3(ruta)
     leido = bc3.leer_partidas(modelo)
@@ -437,9 +459,17 @@ def _verificar(ruta: Path, original, variaciones, nuevas, precios_capitulo) -> N
             f"Diferencias (esperado, leído): {distintos or (len(esperado), len(obtenido))}"
         )
     # Un aviso nuevo del lector delata algo mal actualizado aunque las cifras cuadren (p. ej.
-    # una ~M que ya no coincide con su ~D). Los de «campo anulado» son los de las
-    # anulaciones, esperados.
-    nuevos = [a for a in leido.avisos if a not in original.avisos and "campo anulado" not in a]
+    # una ~M que ya no coincide con su ~D). Solo se esperan los de «campo anulado» de lo que
+    # se ha escrito con 0 a propósito: las anulaciones pedidas y un precio 0 de una partida
+    # nueva. Cualquier otro, aunque diga «campo anulado», se considera un fallo.
+    esperados = {f"«{v.codigo}» en " for v in variaciones if _cifra(v.cantidad_nueva) is None} | {
+        f"«{p.codigo}»: precio 0" for p in nuevas if p.precio is not None and not _cifra(p.precio)
+    }
+
+    def esperado_aviso(a: str) -> bool:
+        return "campo anulado" in a and any(a.startswith(e) for e in esperados)
+
+    nuevos = [a for a in leido.avisos if a not in original.avisos and not esperado_aviso(a)]
     if nuevos:
         raise Bc3ModificarError(
             "El BC3 actualizado se relee con avisos que el original no tenía; no se guarda: "
