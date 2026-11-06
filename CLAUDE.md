@@ -13,6 +13,17 @@ Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 decidir por él lo que es suyo (alcance, prioridades, aspecto, fusionar PR); sí resolver
 sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha del módulo.
 
+## Lo que el usuario quiere de la herramienta (06-11-2026)
+
+- **Muy intuitiva y a medida**: solo lo que usa. Nada de pantallas o funciones «por si
+  acaso». Antes de añadir algo, comprobar que responde a una necesidad que él ha dicho.
+- Organizada en **pasos del proyecto**, adaptados al **tipo de encargo** (diseño +
+  presupuesto + instalación / presupuesto + instalación / solo instalación). **Solo se ven
+  los pasos que funcionan.**
+- Prioridad 1: **leer ofertas, presupuestos y mediciones** (BC3, Excel y PDF), sacar un
+  **Excel con todo** para sus pedidos (los hace en su ERP) y preparar **ampliaciones y
+  modificaciones** (Excel y BC3). Ficha: `docs/modules/mediciones.md`.
+
 ## Antes de tocar nada
 
 1. Lee `docs/FEATURE_REGISTER.md` (estado real de cada funcionalidad) y la ficha del
