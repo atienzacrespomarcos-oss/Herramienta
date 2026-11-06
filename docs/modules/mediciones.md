@@ -33,7 +33,7 @@ instalación, así que este módulo sirve en **todos** los tipos de encargo.
 
 Fuente: *Formato FIEBDC-3/2024*, Asociación FIEBDC,
 https://www.fiebdc.es/web2/datos/uploads/Formato-FIEBDC-3-2024.pdf (consultado 06-11-2026).
-Reglas tomadas literalmente del documento (págs. 2-23):
+Reglas tomadas del documento (págs. 2-23; páginas comprobadas sobre el PDF):
 
 - Registros que empiezan por `~`; campos separados por `|`, subcampos por `\`. Se ignora lo
   que haya entre el último `|` de un registro y el siguiente `~`, y los blancos, tabuladores
@@ -49,7 +49,7 @@ Reglas tomadas literalmente del documento (págs. 2-23):
   con preferencia; FACTOR y RENDIMIENTO valen 1.0 por defecto; los hijos con `%` o `&` son
   porcentajes (págs. 9-10). Si un precio sale a la vez de `~C` y de `~D`, **prima `~D`**
   (pág. 10).
-- `~T | CODIGO | TEXTO |` (pág. 19).
+- `~T | CODIGO | TEXTO |` (pág. 15).
 - `~M | [PADRE\]HIJO | {POSICION\} | MEDICION_TOTAL | {líneas} | [ETIQUETA] |`;
   MEDICION_TOTAL debe coincidir con el rendimiento del `~D` correspondiente (págs. 21-23).
 
