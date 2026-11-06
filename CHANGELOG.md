@@ -2,6 +2,22 @@
 
 ## [Sin publicar]
 
+### Etapa 1 · bloque 1 — núcleo sin interfaz (06-11-2026)
+- Proyecto como carpeta `.traza` con base SQLite, almacén de documentos de solo lectura y
+  copias de seguridad (al abrir, manual, antes de restaurar; se conservan 30).
+- Procedencia obligatoria por valor, comprobada en el programa y en la base de datos.
+- Unidades comprobadas por magnitud; valores guardados tal como los da su fuente.
+- Estados con aprobación y reapertura motivadas; bloqueo de lo aprobado.
+- Órdenes con deshacer/rehacer y registro de cambios inalterable.
+- Citas de PDF comprobadas contra el número real de páginas.
+- Pruebas: 52 (incluye 60 secuencias aleatorias de deshacer/rehacer). CI en Windows y Linux.
+- Corregido tras revisión independiente: la IA podía confirmar sus propias propuestas;
+  «calculado»/«comprobado» se podían marcar a mano; la notación «W/m²·K» se interpretaba
+  como (W/m²)·K; la copia «al abrir» se hacía después de actualizar el formato; no se podía
+  restaurar una base de datos dañada; las copias manuales se perdían tras 30 aperturas; se
+  podían colgar componentes de un elemento aprobado; varias fugas en fallos a medias.
+- ADR-0003 aceptado: `sqlite3` con migraciones propias en lugar de SQLAlchemy/Alembic.
+
 ### Etapa 0 — 05-11-2026
 - Especificación y arquitectura iniciales.
 - Decisiones del usuario: AutoCAD completo 2013–2017 (DXF R2013), todos los sistemas HVAC,
