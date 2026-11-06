@@ -2,6 +2,21 @@
 
 ## [Sin publicar]
 
+### Etapa 3 · geometría DXF, bloque A (06-11-2026)
+- Lector DXF (ezdxf). Hace inventario del espacio modelo:
+  - capas;
+  - contornos cerrados, incluidas las polilíneas que cierran de hecho;
+  - textos;
+  - bloques con atributos;
+  - longitudes por capa en planta.
+- La unidad del dibujo se propone desde `$INSUNITS` y la confirma el usuario.
+- Avisa de bloques que contienen el plano, xref, SPLINE y ELLIPSE, y entidades fuera de
+  planta.
+- Geometría de contornos con arcos (bulge): superficie y perímetro exactos, estables con
+  bulges diminutos y con coordenadas UTM.
+- La autoprueba de TRAZA.exe lee también un DXF.
+- ADR-0014 y ficha `docs/modules/geometria.md`, con las fuentes de Autodesk citadas.
+
 ### Etapa 2 · modificados (06-11-2026)
 - Paso «Modificados»: sobre una medición leída, variaciones de cantidad (aumento,
   disminución, anulación) y partidas nuevas tomadas de ofertas leídas, con motivo y

@@ -48,7 +48,26 @@ def _autoprueba() -> int:
                 raise AssertionError("rehacer no repuso la aprobación")
         finally:
             p.cerrar()
+        _autoprueba_dxf(Path(tmp))
     return 0
+
+
+def _autoprueba_dxf(carpeta: Path) -> None:
+    """El lector DXF dentro del .exe: un ezdxf empaquetado a medias falla aquí, no en un
+    plano del usuario."""
+    import ezdxf
+
+    from traza.io.dxf import leer_dxf
+
+    doc = ezdxf.new("R2013")
+    doc.header["$INSUNITS"] = 4
+    doc.modelspace().add_lwpolyline([(0, 0), (40000, 0), (40000, 25000), (0, 25000)], close=True)
+    ruta = carpeta / "autoprueba.dxf"
+    doc.saveas(ruta)
+    plano = leer_dxf(ruta)
+    area = plano.contornos[0].contorno.escalado(0.001).area
+    if plano.unidad_propuesta != "mm" or abs(area - 1000) > 1e-9:
+        raise AssertionError(f"lector DXF: unidad {plano.unidad_propuesta}, superficie {area}")
 
 
 def main(argv: list[str] | None = None) -> int:
