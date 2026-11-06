@@ -74,6 +74,18 @@ def _texto(v: str | None, avisos: list[str], donde: str) -> str:
     return limpio
 
 
+#: En un código, además de los separadores: «#» marca raíz y capítulo (pág. 8) y «%»/«&»
+#: convierten la línea del ~D en un porcentaje (pág. 9). Un código así no se lee como partida.
+_RESERVADOS_CODIGO = re.compile(r"[|\\~#%&]")
+
+
+def codigo_valido(codigo: str) -> bool:
+    """Código que se puede escribir tal cual en un BC3 y se relee igual (pág. 8: hasta 20
+    caracteres)."""
+    c = codigo.strip()
+    return bool(c) and c == codigo and len(c) <= 20 and not _RESERVADOS_CODIGO.search(c)
+
+
 def _codigo_limpio(codigo: str) -> str:
     return _RESERVADOS.sub("/", codigo).strip().rstrip("#")
 
@@ -102,12 +114,17 @@ def escribir(
     codigos: set[str] = set()
 
     def registrar(codigo: str, donde: str) -> str:
-        c = _texto(codigo, avisos, donde).strip().rstrip("#")
-        if not c:
+        c = codigo
+        if not c.strip():
             raise Bc3EscrituraError(f"{donde}: código vacío.")
-        if len(c) > 20:
-            # Pág. 8: el código admite hasta 20 caracteres.
-            raise Bc3EscrituraError(f"{donde}: el código «{c}» supera 20 caracteres.")
+        if not codigo_valido(c):
+            # Pág. 8: hasta 20 caracteres, y sin los que el formato reserva. Quien llama
+            # tiene que dar códigos válidos (y avisar si los cambia): aquí no se retocan en
+            # silencio, porque entonces el fichero no diría lo que se quiso escribir.
+            raise Bc3EscrituraError(
+                f"{donde}: el código «{c}» no es válido en BC3 (más de 20 caracteres o con "
+                "| \\ ~ # % &)."
+            )
         if c in codigos:
             raise Bc3EscrituraError(f"{donde}: código «{c}» repetido.")
         codigos.add(c)
@@ -144,6 +161,8 @@ def escribir(
                 avisos.append(f"«{pc}» se escribe sin precio (no consta).")
             if p.cantidad is None:
                 avisos.append(f"«{pc}» se escribe sin cantidad (no consta).")
+            elif _cifra(p.cantidad) is None:
+                avisos.append(AVISO_ANULACION.format(codigo=pc))
 
     capitulo(raiz, "##", [])
     contenido = "\r\n".join(lineas) + "\r\n"
@@ -164,14 +183,33 @@ def _esperadas(cap: CapituloBc3) -> list[tuple[str, float | None, float | None]]
     filas = []
     for sub in cap.capitulos:
         filas += _esperadas(sub)
-    filas += [(p.codigo, p.cantidad, p.precio) for p in cap.partidas]
+    filas += [(p.codigo, _cifra(p.cantidad), _cifra(p.precio)) for p in cap.partidas]
     return filas
+
+
+#: Una anulación se escribe con 0, que la pág. 2 define como «campo anulado»; el lector de
+#: TRAZA lo lee como «no consta». Cómo lo interpreta otro programa no está comprobado (la
+#: pág. 9 da 1 por defecto al rendimiento): se dice siempre.
+AVISO_ANULACION = (
+    "«{codigo}» se anula escribiendo cantidad 0, que en BC3 es «campo anulado» (pág. 2). "
+    "Comprueba que el programa que lo importe la deja a cero."
+)
+
+
+def _cifra(v: float | None) -> float | None:
+    """Como se relee una cifra escrita: con 6 decimales, y un 0 explícito es un campo
+    anulado (pág. 2), que el lector lee como «no consta». Sin esto, anular una partida
+    (cantidad 0) hacía fallar siempre la verificación (revisión 06-11-2026)."""
+    if v is None:
+        return None
+    v = round(v, 6)
+    return None if v == 0 else v
 
 
 def _verificar(ruta: Path, raiz: CapituloBc3) -> None:
     """Relee el fichero con el lector de TRAZA: debe dar exactamente lo escrito."""
     leido = bc3.leer_partidas(bc3.leer_bc3(ruta))
-    obtenidas = [(p.codigo, p.cantidad, p.precio) for p in leido.partidas]
+    obtenidas = [(p.codigo, _cifra(p.cantidad), _cifra(p.precio)) for p in leido.partidas]
     if obtenidas != _esperadas(raiz):
         ruta.unlink(missing_ok=True)
         raise Bc3EscrituraError(

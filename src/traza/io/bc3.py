@@ -394,13 +394,18 @@ def leer_partidas(b: Bc3) -> _Resultado:
 
 def _medicion_de(b: Bc3, padre: str, linea: LineaD, r: _Resultado) -> MedicionM | None:
     candidatas = [m for m in b.mediciones if m.padre == padre and m.hijo == linea.hijo]
-    if len(candidatas) <= 1:
+    repetido = sum(1 for x in b.descomposiciones.get(padre, []) if x.hijo == linea.hijo) > 1
+    if not repetido and len(candidatas) <= 1:
         return candidatas[0] if candidatas else None
     # Pág. 22: POSICION identifica la medición cuando un hijo se repite en la
-    # descomposición; su último valor es la posición dentro de este padre.
+    # descomposición; su último valor es la posición dentro de este padre. Si el hijo se
+    # repite, una ~M única tampoco se da por buena sin POSICION: podría ser la de la otra
+    # línea (revisión 06-11-2026).
     exactas = [m for m in candidatas if m.posicion and m.posicion[-1] == linea.numero]
     if len(exactas) == 1:
         return exactas[0]
+    if not exactas and all(m.posicion for m in candidatas):
+        return None  # todas dicen su posición y ninguna es esta línea: no tiene ~M
     r.avisos.append(
         f"«{linea.hijo}» aparece varias veces en «{padre}» y sus mediciones no indican "
         "posición: no se puede saber cuál es cuál; se usa solo la cantidad del ~D."

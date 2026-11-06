@@ -139,3 +139,125 @@ def exportar_partidas(
     wb.save(temporal)
     temporal.replace(destino)
     return destino
+
+
+# --- Modificados --------------------------------------------------------------------------
+
+COLUMNAS_MODIFICADO = [
+    ("Tipo", 14),
+    ("Capítulo", 26),
+    ("Código", 12),
+    ("Descripción", 46),
+    ("Ud", 6),
+    ("Cant. contrato", 13),
+    ("Cant. modificada", 14),
+    ("Dif. cantidad", 12),
+    ("Precio", 12),
+    ("Importe contrato", 15),
+    ("Importe modificado", 16),
+    ("Dif. importe", 14),
+    ("Motivo", 18),
+    ("Justificación", 50),
+    ("Origen del precio", 40),
+]
+TIPOS_MODIFICADO = {
+    "sin_cambio": "Sin cambio",
+    "aumento": "Aumento",
+    "disminucion": "Disminución",
+    "anulacion": "Anulación",
+    "nueva": "Partida nueva",
+}
+
+
+def _hoja_modificado(ws, lineas, titulo_total: bool, resumen) -> None:
+    ws.append([c for c, _ in COLUMNAS_MODIFICADO])
+    for celda in ws[1]:
+        celda.font = Font(bold=True)
+    for i, (_, ancho) in enumerate(COLUMNAS_MODIFICADO, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+    for x in lineas:
+        ws.append(
+            [
+                _texto(v)
+                for v in [
+                    TIPOS_MODIFICADO[x.tipo],
+                    _capitulo(x.capitulo),
+                    x.codigo,
+                    x.resumen,
+                    x.unidad,
+                    x.cantidad_contrato,
+                    x.cantidad_modificada,
+                    x.diferencia_cantidad,
+                    x.precio,
+                    x.importe_contrato,
+                    x.importe_modificado,
+                    x.diferencia_importe,
+                    x.motivo,
+                    x.justificacion,
+                    x.origen_precio,
+                ]
+            ]
+        )
+        _sin_formulas(ws)
+        for col in range(6, 13):
+            ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
+    if titulo_total:
+        ws.append([])
+        # Cada total bajo su columna: Importe contrato (J), Importe modificado (K) y
+        # Dif. importe (L). Revisión 06-11-2026: los tres iban en la L.
+        filas = []
+        if len(lineas) != len(resumen.lineas):
+            filas.append(("Suma de estas líneas", *_sumas(lineas)))
+        filas.append(
+            (
+                "Presupuesto completo" + (" (parcial)" if resumen.parcial else ""),
+                resumen.total_contrato,
+                resumen.total_modificado,
+                resumen.diferencia,
+            )
+        )
+        for etiqueta, contrato, modificado, diferencia in filas:
+            ws.append([etiqueta] + [None] * 8 + [contrato, modificado, diferencia])
+            ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
+            for col in (10, 11, 12):
+                ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
+                ws.cell(row=ws.max_row, column=col).font = Font(bold=True)
+        for nota in resumen.notas():
+            ws.append([_texto(nota)])
+    ws.freeze_panes = "A2"
+
+
+def _sumas(lineas) -> tuple[float, float, float]:
+    """Sumas de los importes que constan (lo que no consta no se suma como 0: se dice en
+    las notas)."""
+    contrato = sum(x.importe_contrato for x in lineas if x.importe_contrato is not None)
+    modificado = sum(x.importe_modificado for x in lineas if x.importe_modificado is not None)
+    diferencia = sum(x.diferencia_importe for x in lineas if x.diferencia_importe is not None)
+    return contrato, modificado, diferencia
+
+
+def exportar_modificado(destino: Path, proyecto: str, modificado: dict, resumen) -> Path:
+    """Excel del modificado: hoja de cambios (con totales) y presupuesto completo actualizado."""
+    if destino.suffix.lower() != ".xlsx":
+        destino = destino.with_name(destino.name + ".xlsx")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Modificado nº {modificado['numero']}"
+    _hoja_modificado(ws, resumen.cambios, True, resumen)
+    wc = wb.create_sheet("Presupuesto actualizado")
+    _hoja_modificado(wc, resumen.lineas, True, resumen)
+    wi = wb.create_sheet("Información")
+    for fila in (
+        ["Proyecto", proyecto],
+        ["Modificado", f"nº {modificado['numero']} — {modificado['titulo']}"],
+        ["Base", modificado["base_nombre"]],
+        ["Generado por", "TRAZA"],
+        ["Nota", "Celdas vacías = no consta (no es cero). Los importes son cantidad × precio."],
+    ):
+        wi.append([_texto(v) for v in fila])
+        _sin_formulas(wi)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporal = destino.with_suffix(".xlsx.parcial")
+    wb.save(temporal)
+    temporal.replace(destino)
+    return destino

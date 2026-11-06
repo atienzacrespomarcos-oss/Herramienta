@@ -10,8 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -23,8 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from traza.app.ordenes import CLASES_MEDICION, ENCARGOS
-from traza.core.numeros import leer_numero
+from traza.app.ordenes import CLASES_MEDICION, ENCARGOS, MOTIVOS
+from traza.core.numeros import escribir_numero, leer_numero
 from traza.core.procedencia import Origen, Procedencia, ProcedenciaInvalida
 from traza.core.tipos import Clase, TipoElemento
 
@@ -212,6 +214,105 @@ class DialogoMedicion(QDialog):
         self.accept()
 
 
+@dataclass(frozen=True)
+class DatosCambio:
+    partida_id: str
+    cantidad: float
+    motivo: str
+    justificacion: str
+
+
+def _cifra(v: float) -> str:
+    """Cifra legible en español, sin notación científica (con «:g», 1234567 salía
+    «1.23457e+06»)."""
+    return escribir_numero(round(v, 6))
+
+
+def _texto_partida(p: dict) -> str:
+    cantidad = (
+        "" if p.get("cantidad") is None else f" · {_cifra(p['cantidad'])} {p.get('unidad') or ''}"
+    )
+    precio = "" if p.get("precio") is None else f" · {_cifra(p['precio'])} €"
+    origen = f"{p['documento_nombre']} · " if p.get("documento_nombre") else ""
+    # Capítulo y nº de línea: una misma partida repetida en dos capítulos (habitual en un
+    # BC3) tenía el mismo texto y no se distinguía.
+    capitulo = " / ".join(c[1] or c[0] for c in p.get("capitulo") or [])
+    donde = f" [{capitulo + ', ' if capitulo else ''}línea {p['orden']}]" if "orden" in p else ""
+    return f"{origen}{p.get('codigo') or '—'} — {p.get('resumen') or ''}{cantidad}{precio}{donde}"
+
+
+class DialogoCambio(QDialog):
+    """Cambio de un modificado: variación de una partida de la base o partida nueva de una
+    oferta. El buscador filtra por cualquier parte del texto (código, descripción, oferta)."""
+
+    def __init__(
+        self, padre: QWidget, titulo: str, partidas: list[dict], etiqueta_cantidad: str
+    ) -> None:
+        super().__init__(padre)
+        self.setWindowTitle(titulo)
+        self.resize(720, 0)
+        self.resultado: DatosCambio | None = None
+        self.partida = QComboBox()
+        self.partida.setEditable(True)
+        self.partida.setInsertPolicy(QComboBox.NoInsert)
+        vistos: dict[str, int] = {}
+        for p in partidas:
+            texto = _texto_partida(p)
+            # Textos únicos: el elegido se identifica por su texto si el usuario lo escribe.
+            vistos[texto] = vistos.get(texto, 0) + 1
+            if vistos[texto] > 1:
+                texto = f"{texto} ({vistos[texto]})"
+            self.partida.addItem(texto, p["id"])
+        buscador = self.partida.completer()
+        buscador.setFilterMode(Qt.MatchContains)
+        buscador.setCompletionMode(QCompleter.PopupCompletion)
+        self.cantidad = QLineEdit()
+        self.motivo = QComboBox()
+        for clave, texto in MOTIVOS.items():
+            self.motivo.addItem(texto, clave)
+        self.justificacion = QLineEdit()
+        self.justificacion.setPlaceholderText("Obligatoria: por qué se cambia")
+        self.error = QLabel()
+        self.error.setStyleSheet("color: #c0392b")
+        self.error.setWordWrap(True)
+        f = QFormLayout(self)
+        f.addRow("Partida", self.partida)
+        f.addRow(etiqueta_cantidad, self.cantidad)
+        f.addRow("Motivo", self.motivo)
+        f.addRow("Justificación", self.justificacion)
+        f.addRow(self.error)
+        botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        botones.accepted.connect(self._aceptar)
+        botones.rejected.connect(self.reject)
+        f.addRow(botones)
+
+    def _aceptar(self) -> None:
+        # El índice elegido manda; el texto solo si el usuario lo ha escrito a mano. Antes
+        # findText devolvía la PRIMERA con ese texto, aunque se eligiera otra igual
+        # (revisión 06-11-2026).
+        indice = self.partida.currentIndex()
+        if indice < 0 or self.partida.itemText(indice) != self.partida.currentText():
+            indice = self.partida.findText(self.partida.currentText(), Qt.MatchExactly)
+        if indice < 0:
+            self.error.setText("Elige una partida de la lista.")
+            return
+        try:
+            cantidad = float(leer_numero(self.cantidad.text()))
+        except ValueError as exc:
+            self.error.setText(str(exc))
+            return
+        if not self.justificacion.text().strip():
+            self.error.setText("La justificación es obligatoria.")
+            return
+        self.resultado = DatosCambio(
+            self.partida.itemData(indice),
+            cantidad,
+            self.motivo.currentData(),
+            self.justificacion.text().strip(),
+        )
+        self.accept()
+
+
 class Preguntas:
     """Implementación real con diálogos de Qt."""
 
@@ -240,6 +341,37 @@ class Preguntas:
     def leer_medicion(self, documentos: list[dict]) -> tuple[str, str, str | None] | None:
         d = DialogoMedicion(self.v, documentos)
         return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def nuevo_modificado(self, mediciones: list[dict]) -> tuple[str, str] | None:
+        opciones = [f"{m['documento_nombre']} ({CLASES_MEDICION[m['clase']]})" for m in mediciones]
+        texto, ok = QInputDialog.getItem(
+            self.v,
+            "Nuevo modificado",
+            "Medición o presupuesto de base (el contratado):",
+            opciones,
+            0,
+            False,
+        )
+        if not ok:
+            return None
+        titulo, ok = QInputDialog.getText(self.v, "Nuevo modificado", "Título:")
+        if not ok or not titulo.strip():
+            return None
+        return mediciones[opciones.index(texto)]["id"], titulo.strip()
+
+    def variacion(self, partidas: list[dict]) -> DatosCambio | None:
+        d = DialogoCambio(self.v, "Cambiar cantidad", partidas, "Cantidad nueva (total)")
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def partida_nueva(self, lineas_oferta: list[dict]) -> DatosCambio | None:
+        d = DialogoCambio(self.v, "Añadir partida de una oferta", lineas_oferta, "Cantidad")
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def destino_bc3(self, sugerido: Path) -> Path | None:
+        ruta, _ = QFileDialog.getSaveFileName(
+            self.v, "Exportar BC3 del presupuesto actualizado", str(sugerido), "BC3 (*.bc3)"
+        )
+        return Path(ruta) if ruta else None
 
     def destino_excel(self, sugerido: Path) -> Path | None:
         ruta, _ = QFileDialog.getSaveFileName(

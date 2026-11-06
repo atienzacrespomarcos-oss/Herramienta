@@ -160,5 +160,35 @@ CREATE TABLE partida (
 CREATE INDEX partida_medicion ON partida(medicion_id);
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2)
+# V3 (06-11-2026): ampliaciones y modificaciones sobre una medición leída.
+# Un cambio es una VARIACIÓN (nueva cantidad de una partida de la base) o una partida NUEVA
+# tomada de una oferta leída. Motivo y justificación obligatorios (decisión del usuario).
+V3 = """
+CREATE TABLE modificado (
+    id TEXT PRIMARY KEY,
+    medicion_id TEXT NOT NULL REFERENCES medicion(id),
+    numero INTEGER NOT NULL CHECK (numero >= 1),
+    titulo TEXT NOT NULL CHECK (length(trim(titulo)) > 0),
+    creado TEXT NOT NULL,
+    UNIQUE (medicion_id, numero)
+);
+
+CREATE TABLE cambio_modificado (
+    id TEXT PRIMARY KEY,
+    modificado_id TEXT NOT NULL REFERENCES modificado(id),
+    orden INTEGER NOT NULL CHECK (orden >= 1),
+    tipo TEXT NOT NULL CHECK (tipo IN ('variacion','nueva')),
+    partida_id TEXT NOT NULL REFERENCES partida(id),
+    cantidad REAL NOT NULL CHECK (cantidad >= 0),
+    motivo TEXT NOT NULL CHECK (motivo IN ('medicion','diseno','economica','otro')),
+    justificacion TEXT NOT NULL CHECK (length(trim(justificacion)) > 0),
+    creado TEXT NOT NULL,
+    UNIQUE (modificado_id, orden),
+    UNIQUE (modificado_id, tipo, partida_id)
+);
+
+CREATE INDEX cambio_modificado_partida ON cambio_modificado(partida_id);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3)
 VERSION_ACTUAL = len(MIGRACIONES)

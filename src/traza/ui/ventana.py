@@ -11,6 +11,7 @@ un test) y toda cifra muestra de dónde sale en la misma fila.
 from __future__ import annotations
 
 import contextlib
+import html
 import json
 import re
 import threading
@@ -43,22 +44,29 @@ from PySide6.QtWidgets import (
 )
 
 from traza import __version__
+from traza.app.modificados import TIPOS as TIPOS_MODIFICADO
 from traza.app.ordenes import (
     CLASES_MEDICION,
     ENCARGOS,
+    ESTADOS_FIABLES,
+    AnadirPartidaNueva,
     Aprobar,
+    BorrarModificado,
     BorrarPropiedad,
     CambiarEncargo,
     ConfirmarPartida,
     ConfirmarPropuesta,
     CrearElemento,
+    CrearModificado,
     CrearPendiente,
     FijarPropiedad,
     Orden,
     OrdenRechazada,
+    QuitarCambio,
     QuitarMedicion,
     Reabrir,
     ResolverPendiente,
+    VariarPartida,
 )
 from traza.app.proyecto import Proyecto
 from traza.core.estados import Estado
@@ -115,6 +123,7 @@ TODOS = frozenset(ENCARGOS)
 PASOS = [
     ("documentacion", "Documentación", TODOS),
     ("mediciones", "Mediciones y ofertas", TODOS),
+    ("modificados", "Modificados", TODOS),
     ("equipos", "Equipos", TODOS),
 ]
 
@@ -313,9 +322,53 @@ class VentanaPrincipal(QMainWindow):
         )
         le.addWidget(division)
 
+        # Paso Modificados: ampliaciones y modificaciones sobre una medición leída.
+        self.tabla_modificados = _tabla(["Nº", "Título", "Base", "Cambios", "Diferencia"])
+        self.tabla_modificados.itemSelectionChanged.connect(self._al_elegir_modificado)
+        self.tabla_cambios = _tabla(
+            [
+                "Tipo",
+                "Código",
+                "Descripción",
+                "Ud",
+                "Cant. contrato",
+                "Cant. nueva",
+                "Dif.",
+                "Precio",
+                "Dif. importe",
+                "Motivo",
+                "Justificación",
+            ]
+        )
+        self.tabla_cambios.itemSelectionChanged.connect(self._actualizar_estado)
+        self.total_modificado = QLabel()
+        self.total_modificado.setTextFormat(Qt.RichText)
+        mo = QWidget()
+        lmo = QVBoxLayout(mo)
+        lmo.addWidget(
+            _barra(
+                [
+                    self.a_nuevo_modificado,
+                    self.a_variar,
+                    self.a_partida_nueva,
+                    self.a_quitar_cambio,
+                    self.a_exportar_mod_excel,
+                    self.a_exportar_mod_bc3,
+                    self.a_borrar_modificado,
+                ]
+            )
+        )
+        partes_mo = QSplitter(Qt.Vertical)
+        partes_mo.addWidget(self.tabla_modificados)
+        partes_mo.addWidget(self.tabla_cambios)
+        partes_mo.setStretchFactor(0, 1)
+        partes_mo.setStretchFactor(1, 4)
+        lmo.addWidget(partes_mo)
+        lmo.addWidget(self.total_modificado)
+
         self.paginas = QStackedWidget()
         self.paginas.addWidget(bienvenida)
-        self._pagina = {"documentacion": doc, "mediciones": med, "equipos": eq}
+        self._pagina = {"documentacion": doc, "mediciones": med, "modificados": mo, "equipos": eq}
         for p in self._pagina.values():
             self.paginas.addWidget(p)
 
@@ -466,6 +519,25 @@ class VentanaPrincipal(QMainWindow):
             m, "Confirmar partida revisada", self.accion_confirmar_partida
         )
 
+        m = mb.addMenu("M&odificados")
+        self.a_nuevo_modificado = self._accion(m, "Nuevo modificado…", self.accion_nuevo_modificado)
+        self.a_variar = self._accion(m, "Cambiar cantidad de una partida…", self.accion_variar)
+        self.a_partida_nueva = self._accion(
+            m, "Añadir partida de una oferta…", self.accion_partida_nueva
+        )
+        self.a_quitar_cambio = self._accion(m, "Quitar cambio", self.accion_quitar_cambio)
+        m.addSeparator()
+        self.a_exportar_mod_excel = self._accion(
+            m, "Exportar modificado a Excel…", self.accion_exportar_mod_excel
+        )
+        self.a_exportar_mod_bc3 = self._accion(
+            m, "Exportar presupuesto actualizado a BC3…", self.accion_exportar_mod_bc3
+        )
+        m.addSeparator()
+        self.a_borrar_modificado = self._accion(
+            m, "Borrar modificado", self.accion_borrar_modificado
+        )
+
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
         self.a_encargo = self._accion(m, "Tipo de encargo…", self.accion_encargo)
@@ -508,6 +580,16 @@ class VentanaPrincipal(QMainWindow):
         self.a_confirmar_partida.setEnabled(
             elegida is not None and elegida["estado"] == "a_revisar"
         )
+        self.a_nuevo_modificado.setEnabled(hay_mediciones)
+        mod = self._modificado_elegido() if hay else None
+        for a in (self.a_variar, self.a_borrar_modificado):
+            a.setEnabled(mod is not None)
+        # Exportar sin cambios lo rechaza la orden; mejor que el botón ni se ofrezca.
+        hay_cambios = mod is not None and self.tabla_cambios.rowCount() > 0
+        self.a_exportar_mod_excel.setEnabled(hay_cambios)
+        self.a_exportar_mod_bc3.setEnabled(hay_cambios)
+        self.a_partida_nueva.setEnabled(mod is not None and bool(self._lineas_de_oferta(mod)))
+        self.a_quitar_cambio.setEnabled(mod is not None and self._cambio_elegido() is not None)
         self.a_restaurar.setEnabled(hay)
         self.a_abrir_doc.setEnabled(hay and self.tabla_documentos.currentRow() >= 0)
         self.a_resolver.setEnabled(hay and self.tabla_pendientes.currentRow() >= 0)
@@ -529,6 +611,7 @@ class VentanaPrincipal(QMainWindow):
         self._refrescar_propiedades()
         self._refrescar_documentos()
         self._refrescar_mediciones()
+        self._refrescar_modificados()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()
@@ -778,6 +861,188 @@ class VentanaPrincipal(QMainWindow):
             "conserva). Se puede deshacer. ¿Continuar?",
         ):
             self._ejecutar(QuitarMedicion(med_id))
+
+    # --- Modificados -------------------------------------------------------------------------
+
+    def _modificado_elegido(self) -> str | None:
+        fila = self.tabla_modificados.currentRow()
+        item = self.tabla_modificados.item(fila, 0) if fila >= 0 else None
+        return item.data(Qt.UserRole) if item else None
+
+    def _cambio_elegido(self) -> str | None:
+        fila = self.tabla_cambios.currentRow()
+        item = self.tabla_cambios.item(fila, 0) if fila >= 0 else None
+        return item.data(Qt.UserRole) if item else None
+
+    def _refrescar_modificados(self) -> None:
+        elegido = self._modificado_elegido()
+        self.tabla_modificados.blockSignals(True)
+        try:
+            if self.proyecto is None:
+                _llenar(self.tabla_modificados, [])
+            else:
+                mods = self.proyecto.modificados()
+                filas = []
+                for m in mods:
+                    r = self.proyecto.resumen_modificado(m["id"])
+                    filas.append(
+                        [
+                            str(m["numero"]),
+                            m["titulo"],
+                            m["base_nombre"],
+                            str(m["n_cambios"]),
+                            _dinero(r.diferencia) + (" (parcial)" if r.parcial else ""),
+                        ]
+                    )
+                ids = [m["id"] for m in mods]
+                _llenar(self.tabla_modificados, filas, ids)
+                if elegido in ids:
+                    self.tabla_modificados.setCurrentCell(ids.index(elegido), 0)
+                elif ids:
+                    self.tabla_modificados.setCurrentCell(len(ids) - 1, 0)
+        finally:
+            self.tabla_modificados.blockSignals(False)
+        self._refrescar_cambios()
+
+    def _refrescar_cambios(self) -> None:
+        mod = self._modificado_elegido()
+        if self.proyecto is None or mod is None:
+            _llenar(self.tabla_cambios, [])
+            self.total_modificado.setText("")
+            return
+        r = self.proyecto.resumen_modificado(mod)
+
+        def n(v):
+            return "" if v is None else escribir_numero(round(v, 6))
+
+        filas = [
+            [
+                TIPOS_MODIFICADO[x.tipo],
+                x.codigo or "",
+                x.resumen or NO_CONSTA,
+                x.unidad or "",
+                n(x.cantidad_contrato),
+                n(x.cantidad_modificada),
+                n(x.diferencia_cantidad),
+                _dinero(x.precio) if x.precio is not None else NO_CONSTA,
+                _dinero(x.diferencia_importe),
+                x.motivo or "",
+                x.justificacion or "",
+            ]
+            for x in r.cambios
+        ]
+        _llenar(self.tabla_cambios, filas, [x.cambio_id for x in r.cambios])
+        texto = (
+            f"Contrato: <b>{_dinero(r.total_contrato)}</b> · Modificado: "
+            f"<b>{_dinero(r.total_modificado)}</b> · Diferencia: <b>{_dinero(r.diferencia)}</b>"
+        )
+        if r.parcial:
+            texto += " (parcial)"
+        notas = r.notas()
+        if notas:
+            # Las mismas notas que el Excel (Resumen.notas): las dos salidas dicen lo mismo.
+            texto += "<br>" + "<br>".join(f"⚠ {html.escape(n)}" for n in notas)
+        self.total_modificado.setText(texto)
+
+    def _al_elegir_modificado(self) -> None:
+        self._refrescar_cambios()
+        self._actualizar_estado()
+
+    def accion_nuevo_modificado(self) -> None:
+        r = self.preguntas.nuevo_modificado(self.proyecto.mediciones())
+        if r is None:
+            return
+        orden = CrearModificado(*r)
+        if self._ejecutar(orden):
+            self.ir_a_paso("modificados")
+            ids = [m["id"] for m in self.proyecto.modificados()]
+            self.tabla_modificados.setCurrentCell(ids.index(orden.id), 0)
+
+    def accion_variar(self) -> None:
+        mod = self.proyecto.modificado(self._modificado_elegido())
+        ya = {x.partida_id for x in self.proyecto.resumen_modificado(mod["id"]).cambios}
+        partidas = [
+            p
+            for p in self.proyecto.partidas(mod["medicion_id"])
+            if p["estado"] in ESTADOS_FIABLES and p["cantidad"] is not None and p["id"] not in ya
+        ]
+        if not partidas:
+            self.preguntas.aviso(
+                "Cambiar cantidad",
+                "No quedan partidas de la base que se puedan variar: las que tienen cantidad "
+                "fiable ya están en este modificado (o están «a revisar»).",
+            )
+            return
+        d = self.preguntas.variacion(partidas)
+        if d is not None:
+            self._ejecutar(
+                VariarPartida(mod["id"], d.partida_id, d.cantidad, d.motivo, d.justificacion)
+            )
+
+    def _lineas_de_oferta(self, modificado_id: str) -> list[dict]:
+        """Líneas de oferta que aún se pueden añadir a este modificado: ni ya añadidas ni de
+        la propia medición de base."""
+        mod = self.proyecto.modificado(modificado_id)
+        if mod is None:
+            return []
+        ya = {
+            x.partida_id
+            for x in self.proyecto.resumen_modificado(modificado_id).cambios
+            if x.tipo == "nueva"
+        }
+        return [
+            p
+            for p in self.proyecto.ofertas_utilizables()
+            if p["id"] not in ya and p["medicion_id"] != mod["medicion_id"]
+        ]
+
+    def accion_partida_nueva(self) -> None:
+        mod = self._modificado_elegido()
+        d = self.preguntas.partida_nueva(self._lineas_de_oferta(mod))
+        if d is not None:
+            self._ejecutar(
+                AnadirPartidaNueva(mod, d.partida_id, d.cantidad, d.motivo, d.justificacion)
+            )
+
+    def accion_quitar_cambio(self) -> None:
+        cambio = self._cambio_elegido()
+        if cambio is not None:
+            self._ejecutar(QuitarCambio(cambio))
+
+    def accion_borrar_modificado(self) -> None:
+        mod = self.proyecto.modificado(self._modificado_elegido())
+        if mod and self.preguntas.confirmar(
+            "Borrar modificado",
+            f"Se borra el modificado nº {mod['numero']} «{mod['titulo']}» con sus "
+            f"{mod['n_cambios']} cambio(s). Se puede deshacer. ¿Continuar?",
+        ):
+            self._ejecutar(BorrarModificado(mod["id"]))
+
+    def _nombre_salida(self, mod: dict) -> str:
+        return f"{self.proyecto.nombre} - modificado {mod['numero']}"
+
+    def accion_exportar_mod_excel(self) -> None:
+        mod = self.proyecto.modificado(self._modificado_elegido())
+        sugerido = self.proyecto.carpeta.exportaciones / f"{self._nombre_salida(mod)}.xlsx"
+        destino = self.preguntas.destino_excel(sugerido)
+        if destino is not None:
+            ruta = self.proyecto.exportar_modificado_excel(mod["id"], destino)
+            self.statusBar().showMessage(f"Excel guardado: {ruta}", 10000)
+
+    def accion_exportar_mod_bc3(self) -> None:
+        mod = self.proyecto.modificado(self._modificado_elegido())
+        sugerido = self.proyecto.carpeta.exportaciones / f"{self._nombre_salida(mod)}.bc3"
+        destino = self.preguntas.destino_bc3(sugerido)
+        if destino is None:
+            return
+        ruta, avisos = self.proyecto.exportar_modificado_bc3(mod["id"], destino)
+        self.statusBar().showMessage(f"BC3 guardado: {ruta}", 10000)
+        self.preguntas.informacion(
+            "BC3 guardado",
+            f"{ruta}\n\nSe ha vuelto a leer: códigos, cantidades y precios de todas las "
+            "partidas son los del modificado, y el lector no encuentra descuadres nuevos."
+            + ("\n\nAvisos:\n- " + "\n- ".join(avisos) if avisos else ""),
+        )
 
     def accion_historial(self) -> None:
         self.dock_historial.setVisible(not self.dock_historial.isVisible())

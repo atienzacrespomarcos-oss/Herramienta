@@ -13,6 +13,7 @@ from typing import Any
 
 from traza.ai import claude_code
 from traza.app import lectura_ia
+from traza.app import modificados as calculo_mod
 from traza.app.ordenes import (
     ENCARGOS,
     CambiarEstado,
@@ -28,8 +29,10 @@ from traza.app.ordenes import (
 )
 from traza.core.estados import Estado
 from traza.core.procedencia import Origen
-from traza.io import bc3
-from traza.io.excel import exportar_partidas
+from traza.io import bc3, bc3_modificar
+from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
+from traza.io.bc3_escritura import escribir as escribir_bc3
+from traza.io.excel import exportar_modificado, exportar_partidas
 from traza.io.pdf import contar_paginas, renderizar_pagina
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
@@ -509,3 +512,208 @@ class Proyecto:
             raise OrdenRechazada("No hay mediciones leídas que exportar.")
         bloques = [(m, self.partidas(m["id"])) for m in meds]
         return exportar_partidas(Path(destino), self.nombre, bloques)
+
+    # --- Ampliaciones y modificaciones ---------------------------------------------------
+
+    def modificados(self, medicion_id: str | None = None) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT o.*, d.nombre_original AS base_nombre,"
+            " (SELECT count(*) FROM cambio_modificado c WHERE c.modificado_id = o.id)"
+            " AS n_cambios"
+            " FROM modificado o JOIN medicion m ON m.id = o.medicion_id"
+            " JOIN documento d ON d.id = m.documento_id"
+        )
+        if medicion_id is None:
+            return self._filas(sql + " ORDER BY o.creado, o.numero")
+        return self._filas(sql + " WHERE o.medicion_id = ? ORDER BY o.numero", (medicion_id,))
+
+    def modificado(self, modificado_id: str) -> dict[str, Any] | None:
+        return next((m for m in self.modificados() if m["id"] == modificado_id), None)
+
+    def ofertas_utilizables(self) -> list[dict[str, Any]]:
+        """Líneas de ofertas leídas que pueden ser partida nueva: fiables y con precio."""
+        filas = self._filas(
+            "SELECT p.*, d.nombre_original AS documento_nombre, m.proveedor"
+            " FROM partida p JOIN medicion m ON m.id = p.medicion_id"
+            " JOIN documento d ON d.id = m.documento_id"
+            " WHERE m.clase = 'oferta' AND p.precio IS NOT NULL"
+            " AND p.estado IN ('exacta','comprobada','confirmada')"
+            " ORDER BY d.nombre_original, p.orden"
+        )
+        for f in filas:
+            f["capitulo"] = json.loads(f["capitulo"])
+        return filas
+
+    def resumen_modificado(self, modificado_id: str) -> calculo_mod.Resumen:
+        mod = leer(self._con, "modificado", {"id": modificado_id})
+        if mod is None:
+            raise OrdenRechazada("Ese modificado no existe.")
+        cambios = self._filas(
+            "SELECT * FROM cambio_modificado WHERE modificado_id = ? ORDER BY orden",
+            (modificado_id,),
+        )
+        nuevas = {}
+        for c in cambios:
+            if c["tipo"] == "nueva":
+                p = leer(self._con, "partida", {"id": c["partida_id"]})
+                nuevas[c["partida_id"]] = p
+        meds = self.mediciones()
+        nombres = {m["id"]: m["documento_nombre"] for m in meds}
+        base = next(m for m in meds if m["id"] == mod["medicion_id"])
+        return calculo_mod.calcular(
+            self.partidas(mod["medicion_id"]), cambios, nuevas, nombres, base["omitidas"]
+        )
+
+    def exportar_modificado_excel(self, modificado_id: str, destino: Path) -> Path:
+        mod = self.modificado(modificado_id)
+        if mod is None:
+            raise OrdenRechazada("Ese modificado no existe.")
+        r = self.resumen_modificado(modificado_id)
+        if not r.cambios:
+            raise OrdenRechazada("El modificado no tiene cambios que exportar.")
+        return exportar_modificado(Path(destino), self.nombre, mod, r)
+
+    def exportar_modificado_bc3(self, modificado_id: str, destino: Path) -> tuple[Path, list[str]]:
+        """BC3 del presupuesto completo actualizado (decisión del usuario, 06-11-2026).
+
+        Base leída de un BC3: se parte del fichero original (conserva descompuestos, textos y
+        todo lo que TRAZA no interpreta). Base leída de PDF o Excel: se genera con lo leído.
+        En ambos casos el fichero se relee y se compara antes de guardarlo.
+        """
+        mod = self.modificado(modificado_id)
+        if mod is None:
+            raise OrdenRechazada("Ese modificado no existe.")
+        r = self.resumen_modificado(modificado_id)
+        if not r.cambios:
+            raise OrdenRechazada("El modificado no tiene cambios que exportar.")
+        base = next(m for m in self.mediciones() if m["id"] == mod["medicion_id"])
+        destino = Path(destino)
+        if destino.suffix.lower() != ".bc3":
+            destino = destino.with_name(destino.name + ".bc3")
+        nuevas = [
+            PartidaBc3(x.codigo or "", x.unidad, x.resumen, None, x.cantidad_modificada, x.precio)
+            for x in r.cambios
+            if x.tipo == "nueva"
+        ]
+        try:
+            if base["lector"] == bc3.LECTOR:
+                partidas = {p["id"]: p for p in self.partidas(base["id"])}
+                variaciones = [
+                    bc3_modificar.Variacion(
+                        localizador=partidas[x.partida_id]["localizador"],
+                        codigo=x.codigo or "",
+                        cantidad_contrato=x.cantidad_contrato,
+                        cantidad_nueva=x.cantidad_modificada,
+                        precio=x.precio,
+                        capitulos=[c[0] for c in x.capitulo],
+                        comentario=f"{x.motivo}. {x.justificacion}",
+                    )
+                    for x in r.cambios
+                    if x.tipo != "nueva"
+                ]
+                ruta, avisos = bc3_modificar.actualizar(
+                    self.ruta_documento(base["documento_id"]),
+                    destino,
+                    mod["numero"],
+                    variaciones,
+                    nuevas,
+                )
+            else:
+                ruta, avisos = self._bc3_generado(mod, r, destino, nuevas)
+                if r.omitidas_base:
+                    # Partiendo del original, lo omitido sigue en el fichero; generándolo, no.
+                    avisos.append(
+                        f"El BC3 generado NO incluye {r.omitidas_base} línea(s) de la base que "
+                        "el lector no pudo convertir en partida."
+                    )
+        except (bc3_modificar.Bc3ModificarError, Bc3EscrituraError, bc3.Bc3Error) as exc:
+            raise OrdenRechazada(str(exc)) from exc
+        if r.a_revisar_base:
+            avisos.append(
+                f"{r.a_revisar_base} partida(s) de la base están «a revisar»: se escriben con "
+                "lo leído, sin comprobar."
+            )
+        return ruta, avisos
+
+    def _bc3_generado(self, mod, r, destino: Path, nuevas) -> tuple[Path, list[str]]:
+        """Base que no es BC3 (leída de PDF o Excel): presupuesto generado con lo leído."""
+        numero = mod["numero"]
+        base = [
+            PartidaBc3(x.codigo or "", x.unidad, x.resumen, None, x.cantidad_modificada, x.precio)
+            for x in r.lineas
+            if x.tipo != "nueva"
+        ]
+        # Códigos: primero se reservan los que ya son válidos y únicos; después se dan códigos
+        # nuevos a los demás (sin código, repetidos, de más de 20 caracteres o con caracteres
+        # reservados), y por último a capítulos y raíz, sin chocar con ninguno. Cada cambio de
+        # un código que sí existía se avisa (revisión 06-11-2026: antes era en silencio y un
+        # código «C01» de la base chocaba con el del capítulo).
+        usados: set[str] = set()
+        pendientes: list[tuple[PartidaBc3, str]] = []
+        for i, p in enumerate(base, start=1):
+            pendientes.append((p, f"P{i:04d}"))
+        for k, p in enumerate(nuevas, start=1):
+            pendientes.append((p, f"MOD{numero}.{k}"))
+        sin_codigo = 0
+        cambiados: list[str] = []
+        validos: set[int] = set()
+        for i, (p, _) in enumerate(pendientes):
+            if codigo_valido(p.codigo) and p.codigo not in usados:
+                usados.add(p.codigo)
+                validos.add(i)
+        for i, (p, alternativa) in enumerate(pendientes):
+            if i in validos:
+                continue
+            nuevo = _codigo_libre(alternativa, usados)
+            if p.codigo.strip():
+                cambiados.append(f"«{p.codigo}» → «{nuevo}»")
+            else:
+                sin_codigo += 1
+            p.codigo = nuevo
+        avisos_codigos = []
+        if cambiados:
+            avisos_codigos.append(
+                "Códigos repetidos o no válidos en BC3 que se escriben con otro código: "
+                + ", ".join(cambiados)
+                + "."
+            )
+        if sin_codigo:
+            avisos_codigos.append(f"{sin_codigo} partida(s) sin código reciben P0001, P0002…")
+
+        raiz = CapituloBc3(_codigo_libre("OBRA", usados), f"{self.nombre} - modificado nº {numero}")
+        capitulos: dict[str, CapituloBc3] = {}
+        lineas_base = [x for x in r.lineas if x.tipo != "nueva"]
+        for x, p in zip(lineas_base, base, strict=True):
+            nombre = " / ".join(c[0] for c in x.capitulo) or "Sin capítulo"
+            if nombre not in capitulos:
+                codigo = _codigo_libre(f"C{len(capitulos) + 1:02d}", usados)
+                capitulos[nombre] = CapituloBc3(codigo, nombre)
+                raiz.capitulos.append(capitulos[nombre])
+            capitulos[nombre].partidas.append(p)
+        if nuevas:
+            cap = CapituloBc3(
+                _codigo_libre(f"MOD{numero}", usados),
+                f"Modificado nº {numero} - partidas nuevas",
+            )
+            cap.partidas.extend(nuevas)
+            raiz.capitulos.append(cap)
+        ruta, avisos = escribir_bc3(
+            destino, raiz, propiedad=self.nombre, comentario=f"Modificado nº {numero}"
+        )
+        avisos[:0] = [
+            "La base se leyó de PDF o Excel: el BC3 se ha generado con lo leído (capítulos con "
+            "códigos C01, C02…; sin descompuestos ni textos originales).",
+            *avisos_codigos,
+        ]
+        return ruta, avisos
+
+
+def _codigo_libre(propuesto: str, usados: set[str]) -> str:
+    """Código BC3 libre a partir de `propuesto` (que ya es válido): si está usado, se le
+    añade «.1», «.2»… Lo reserva en `usados`."""
+    codigo, n = propuesto, 0
+    while codigo in usados:
+        n += 1
+        codigo = f"{propuesto}.{n}"
+    usados.add(codigo)
+    return codigo
