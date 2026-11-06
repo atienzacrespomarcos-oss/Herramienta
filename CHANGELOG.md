@@ -9,6 +9,9 @@
 - Interfaz por pasos (Documentación · Mediciones y ofertas · Equipos) según el tipo de
   encargo, con página de bienvenida sin proyecto e historial en «Ver».
 - Esquema de proyecto V2 (los proyectos V1 se actualizan solos, con copia previa).
+- Lectura de PDF y Excel con IA (Claude Code con la suscripción del usuario), con permiso
+  por envío y comprobaciones deterministas: lo que cuadra entra directo, lo que no queda
+  «a revisar» con su motivo y se puede confirmar tras revisarlo.
 
 ### Etapa 1 · bloque 2 — interfaz y ejecutable (06-11-2026)
 - Ventana principal clásica: árbol de elementos, propiedades con procedencia y fuente en cada

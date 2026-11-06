@@ -11,9 +11,38 @@ Especificación aprobada por decisiones del usuario (06-11-2026).
 | Excel con todo | Implementado |
 | Interfaz por pasos | Implementado (Documentación · Mediciones y ofertas · Equipos) |
 | Tipo de encargo | Se elige al crear el proyecto, se muestra en el título y se puede cambiar. **Hoy no oculta ningún paso**: los tres pasos actuales sirven para los tres encargos. Los pasos de cálculo y planos, cuando existan, solo se verán en «diseño». |
-| Lector Excel | Pendiente |
-| Lector PDF | Pendiente |
+| Lector PDF y Excel con IA (Claude Code, tu suscripción) | Implementado con comprobaciones deterministas (ADR-0013). Pendiente de probar con Claude Code real en tu equipo y con documentos tuyos. |
 | Ampliaciones y modificaciones (Excel y BC3) | Pendiente |
+
+## Lectura con IA de PDF y Excel
+
+Cuando eliges un PDF o un Excel, TRAZA te pide permiso para enviarlo a Claude. Después:
+
+- Cada línea entra **directa («Comprobada»)** si supera todas las comprobaciones: el texto
+  de cada número está en la página/celda citada; el número es el que pone (se vuelve a leer
+  con reglas propias); cantidad × precio = importe al céntimo.
+- Si no, entra **«⚠ A revisar»** en naranja, con el motivo (pasa el ratón por la columna
+  Estado o mira la lista de avisos). Tras comprobarla en el documento, «Confirmar partida
+  revisada» la marca como «Confirmada por ti» (se puede deshacer).
+- Si la suma de las partidas no da el total que declara el documento, se avisa: puede faltar
+  o sobrar alguna línea.
+- Un **PDF escaneado** se lee igualmente, pero sus líneas quedan todas «a revisar» (no hay
+  texto con que comparar).
+- El Excel sale con las columnas «Estado de la lectura» y «Motivo».
+
+### Instalar Claude Code en tu Windows (una vez)
+
+Según la guía oficial (https://code.claude.com/docs/en/setup.md): Windows 10 1809 o posterior,
+4 GB de RAM y plan Pro o superior. No hace falta ser administrador.
+
+1. Abre **PowerShell** y ejecuta: `irm https://claude.ai/install.ps1 | iex`
+2. Cierra y vuelve a abrir PowerShell, escribe `claude` e inicia sesión con tu cuenta de
+   Claude (tu suscripción). Después puedes cerrarlo.
+3. No definas la variable `ANTHROPIC_API_KEY`: si existiera, TRAZA la ignora a propósito para
+   que se use tu suscripción.
+
+TRAZA necesita la versión nativa (`claude.exe`); si solo encuentra la de npm (`claude.cmd`),
+lo dice.
 
 ## Cómo se usa
 

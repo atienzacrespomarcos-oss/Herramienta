@@ -505,3 +505,63 @@ def test_total_no_consta_si_no_hay_importes(ventana, tmp_path):
     v.a_leer_medicion.trigger()
     assert v.tabla_mediciones.item(0, 4).text() == NO_CONSTA
     assert "total no consta" in v.total_medicion.text()
+
+
+def test_leer_pdf_con_ia_pide_permiso_y_permite_confirmar_lo_dudoso(ventana, tmp_path):
+    import pymupdf
+
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    v.a_nuevo.trigger()
+    ruta = tmp_path / "oferta.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((40, 60), "Rejilla de impulsión   8   45,50   364,00", fontsize=9)
+    doc.save(ruta)
+    doc.close()
+    q.preparar("documento", (ruta, "oferta"))
+    v.a_incorporar.trigger()
+    llamadas = []
+
+    def falsa_ia(texto, imagenes):
+        llamadas.append(texto)
+        n = {"texto": None, "valor": None, "donde": None}
+        return {
+            "proveedor": None,
+            "total": n,
+            "partidas": [
+                {
+                    "capitulo": None,
+                    "codigo": None,
+                    "descripcion": "Rejilla de impulsión",
+                    "unidad": "ud",
+                    "donde": "p. 1",
+                    "cantidad": {"texto": "8", "valor": 8, "donde": "p. 1"},
+                    "precio": {"texto": "47,00", "valor": 47.0, "donde": "p. 1"},  # inventado
+                    "importe": n,
+                }
+            ],
+        }
+
+    v.proyecto.extractor_ia = falsa_ia
+    doc_id = v.proyecto.documentos()[0]["id"]
+
+    # Sin permiso, no se envía nada.
+    q.preparar("leer_medicion", (doc_id, "oferta", None))
+    q.preparar("confirmar", False)
+    v.a_leer_medicion.trigger()
+    assert llamadas == [] and v.tabla_mediciones.rowCount() == 0
+
+    q.preparar("leer_medicion", (doc_id, "oferta", None))
+    q.preparar("confirmar", True)
+    v.a_leer_medicion.trigger()
+    assert len(llamadas) == 1
+    partida = v.arbol_partidas.topLevelItem(0)
+    assert partida.text(6) == "⚠ A revisar"
+    assert "«47,00» no aparece en la p. 1" in partida.toolTip(6)
+    assert any("A revisar" in v.lista_avisos.item(i).text() for i in range(v.lista_avisos.count()))
+
+    v.arbol_partidas.setCurrentItem(partida)
+    assert v.a_confirmar_partida.isEnabled()
+    q.preparar("confirmar", True)
+    v.a_confirmar_partida.trigger()
+    assert v.arbol_partidas.topLevelItem(0).text(6) == "Confirmada por ti"

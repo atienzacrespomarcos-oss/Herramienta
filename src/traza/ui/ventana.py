@@ -17,9 +17,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QDockWidget,
     QHBoxLayout,
     QHeaderView,
@@ -46,6 +47,7 @@ from traza.app.ordenes import (
     Aprobar,
     BorrarPropiedad,
     CambiarEncargo,
+    ConfirmarPartida,
     ConfirmarPropuesta,
     CrearElemento,
     CrearPendiente,
@@ -70,6 +72,12 @@ ETIQUETA_ORIGEN = {
     "calculo": "Cálculo",
     "hipotesis": "Hipótesis",
     "ia_propuesta": "Propuesta IA — sin confirmar",
+}
+ESTADO_PARTIDA = {
+    "exacta": "Exacta (BC3)",
+    "comprobada": "Comprobada",
+    "a_revisar": "⚠ A revisar",
+    "confirmada": "Confirmada por ti",
 }
 ETIQUETA_ESTADO = {
     "borrador": "Borrador",
@@ -228,15 +236,34 @@ class VentanaPrincipal(QMainWindow):
         self.tabla_mediciones.itemSelectionChanged.connect(self._al_elegir_medicion)
         self.arbol_partidas = QTreeWidget()
         self.arbol_partidas.setHeaderLabels(
-            ["Capítulo / código", "Descripción", "Ud", "Cantidad", "Precio", "Importe", "Origen"]
+            [
+                "Capítulo / código",
+                "Descripción",
+                "Ud",
+                "Cantidad",
+                "Precio",
+                "Importe",
+                "Estado",
+                "Origen",
+            ]
         )
         self.arbol_partidas.setAlternatingRowColors(True)
+        self.arbol_partidas.itemSelectionChanged.connect(self._actualizar_estado)
         self.arbol_partidas.header().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.total_medicion = QLabel()
         self.lista_avisos = QListWidget()
         med = QWidget()
         lm = QVBoxLayout(med)
-        lm.addWidget(_barra([self.a_leer_medicion, self.a_exportar_excel, self.a_quitar_medicion]))
+        lm.addWidget(
+            _barra(
+                [
+                    self.a_leer_medicion,
+                    self.a_exportar_excel,
+                    self.a_quitar_medicion,
+                    self.a_confirmar_partida,
+                ]
+            )
+        )
         partes = QSplitter(Qt.Vertical)
         partes.addWidget(self.tabla_mediciones)
         partes.addWidget(self.arbol_partidas)
@@ -433,6 +460,9 @@ class VentanaPrincipal(QMainWindow):
             m, "Exportar Excel con todo…", self.accion_exportar_excel
         )
         self.a_quitar_medicion = self._accion(m, "Quitar medición", self.accion_quitar_medicion)
+        self.a_confirmar_partida = self._accion(
+            m, "Confirmar partida revisada", self.accion_confirmar_partida
+        )
 
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
@@ -472,6 +502,10 @@ class VentanaPrincipal(QMainWindow):
         hay_mediciones = hay and self.tabla_mediciones.rowCount() > 0
         self.a_exportar_excel.setEnabled(hay_mediciones)
         self.a_quitar_medicion.setEnabled(hay_mediciones and self._medicion_elegida() is not None)
+        elegida = self._partida_elegida() if hay else None
+        self.a_confirmar_partida.setEnabled(
+            elegida is not None and elegida["estado"] == "a_revisar"
+        )
         self.a_restaurar.setEnabled(hay)
         self.a_abrir_doc.setEnabled(hay and self.tabla_documentos.currentRow() >= 0)
         self.a_resolver.setEnabled(hay and self.tabla_pendientes.currentRow() >= 0)
@@ -582,28 +616,59 @@ class VentanaPrincipal(QMainWindow):
                     padre.addChild(item)
                     capitulos[ruta] = item
                 padre = capitulos[ruta]
-            padre.addChild(
-                QTreeWidgetItem(
-                    [
-                        p["etiqueta"] or p["codigo"] or "",
-                        p["resumen"] or NO_CONSTA,
-                        p["unidad"] or "",
-                        "" if p["cantidad"] is None else escribir_numero(p["cantidad"]),
-                        _dinero(p["precio"]) if p["precio"] is not None else NO_CONSTA,
-                        _dinero(p["importe"]),
-                        p["localizador"],
-                    ]
-                )
+            item = QTreeWidgetItem(
+                [
+                    p["etiqueta"] or p["codigo"] or "",
+                    p["resumen"] or NO_CONSTA,
+                    p["unidad"] or "",
+                    "" if p["cantidad"] is None else escribir_numero(p["cantidad"]),
+                    _dinero(p["precio"]) if p["precio"] is not None else NO_CONSTA,
+                    _dinero(p["importe"]),
+                    ESTADO_PARTIDA[p["estado"]],
+                    p["localizador"],
+                ]
             )
+            item.setData(0, Qt.UserRole, p["id"])
+            if p["estado"] == "a_revisar":
+                # Lo que no ha superado las comprobaciones se ve, y dice por qué.
+                item.setToolTip(6, "\n".join(p["motivos"]))
+                for col in range(item.columnCount()):
+                    item.setForeground(col, QColor("#b35900"))
+            padre.addChild(item)
         self.arbol_partidas.expandAll()
         med = next(m for m in self.proyecto.mediciones() if m["id"] == med_id)
         for a in med["avisos"]:
             self.lista_avisos.addItem(f"⚠ {a}")
+        revisar = [p for p in self.proyecto.partidas(med_id) if p["estado"] == "a_revisar"]
+        for p in revisar:
+            self.lista_avisos.addItem(
+                f"⚠ A revisar «{(p['resumen'] or '')[:50]}»: {'; '.join(p['motivos'])}"
+            )
         corto, explicacion = self._texto_total(med)
         texto = f"<b>Total: {corto}</b>"
         if explicacion:
             texto += f" — {explicacion}"
         self.total_medicion.setText(texto)
+
+    def _partida_elegida(self) -> dict | None:
+        items = self.arbol_partidas.selectedItems()
+        pid = items[0].data(0, Qt.UserRole) if items else None
+        med = self._medicion_elegida()
+        if pid is None or med is None:
+            return None
+        return next((p for p in self.proyecto.partidas(med) if p["id"] == pid), None)
+
+    def accion_confirmar_partida(self) -> None:
+        p = self._partida_elegida()
+        if p is None:
+            return
+        if self.preguntas.confirmar(
+            "Confirmar partida",
+            f"«{p['resumen']}» no superó estas comprobaciones:\n- "
+            + "\n- ".join(p["motivos"])
+            + f"\n\n¿La has revisado en el documento ({p['localizador']}) y es correcta?",
+        ):
+            self._ejecutar(ConfirmarPartida(p["id"]))
 
     def _al_elegir_medicion(self) -> None:
         self._refrescar_partidas()
@@ -622,7 +687,24 @@ class VentanaPrincipal(QMainWindow):
         if r is None:
             return
         doc_id, clase, proveedor = r
-        _, avisos = self.proyecto.leer_medicion(doc_id, clase, proveedor)
+        doc = next(d for d in docs if d["id"] == doc_id)
+        # Decisión del usuario: ningún documento sale del equipo sin su permiso expreso.
+        if doc["extension"] in self.proyecto.FORMATOS_CON_IA and not self.preguntas.confirmar(
+            "Leer con IA",
+            f"«{doc['nombre_original']}» se leerá con Claude (Claude Code con tu "
+            "suscripción): su contenido se envía a Anthropic. Las líneas que no superen "
+            "las comprobaciones quedarán «a revisar». Puede tardar unos minutos. "
+            "¿Continuar?",
+        ):
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.statusBar().showMessage(f"Leyendo «{doc['nombre_original']}»…")
+        QApplication.processEvents()
+        try:
+            _, avisos = self.proyecto.leer_medicion(doc_id, clase, proveedor)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.statusBar().clearMessage()
         self.refrescar()
         if "mediciones" in [p[0] for p in PASOS if self.proyecto.encargo in p[2]]:
             self.ir_a_paso("mediciones")

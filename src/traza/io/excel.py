@@ -33,7 +33,15 @@ COLUMNAS = [
     ("Precio", 12),
     ("Importe", 14),
     ("Origen en el documento", 36),
+    ("Estado de la lectura", 18),
+    ("Motivo", 60),
 ]
+ESTADOS = {
+    "exacta": "Exacta (BC3)",
+    "comprobada": "Comprobada",
+    "a_revisar": "A revisar",
+    "confirmada": "Confirmada por el usuario",
+}
 FORMATO_NUMERO = "#,##0.00"
 CLASES = {"medicion": "Medición", "oferta": "Oferta", "presupuesto": "Presupuesto"}
 
@@ -92,6 +100,8 @@ def exportar_partidas(
                         p["precio"],
                         p["importe"],
                         p["localizador"],
+                        ESTADOS.get(p["estado"], p["estado"]),
+                        "; ".join(p["motivos"]) or None,
                     ]
                 ]
             )
