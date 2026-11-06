@@ -210,3 +210,115 @@ def test_extension_del_dibujo(tmp_path):
     msp.add_text("X").set_placement((3, 30))
     p = leer_dxf(_guardar(doc, tmp_path))
     assert p.extension == (-5, 2, 10, 30)
+
+
+# --- Revisión independiente (06-11-2026) -------------------------------------------------
+
+
+def test_texto_centrado_se_situa_en_su_punto_de_alineacion(tmp_path):
+    from ezdxf.enums import TextEntityAlignment
+
+    doc, msp = _nuevo(6)
+    t = msp.add_text("OFICINA", dxfattribs={"height": 0.3})
+    t.set_placement((10, 5), align=TextEntityAlignment.MIDDLE_CENTER)
+    t.dxf.insert = (8.5, 4.8, 0)  # lo que AutoCAD guarda: izquierda de la línea base
+    a = msp.add_text("NAVE", dxfattribs={"height": 0.3})
+    a.set_placement((0, 0), (20, 0), align=TextEntityAlignment.ALIGNED)
+    p = leer_dxf(_guardar(doc, tmp_path))
+    pos = {x.texto: (x.x, x.y) for x in p.textos}
+    assert pos["OFICINA"] == (10, 5)
+    assert pos["NAVE"] == (10, 0)  # entre los dos puntos
+
+
+def test_linea_con_extrusion_no_se_descarta(tmp_path):
+    # En LINE la extrusión es la dirección del grosor: la línea sigue en planta.
+    doc, msp = _nuevo(6)
+    msp.add_line((0, 0), (3, 4), dxfattribs={"extrusion": (1, 0, 0), "layer": "L"})
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert p.capas["L"].longitud == pytest.approx(5)
+    assert not any("no están dibujadas en planta" in a for a in p.avisos)
+
+
+def test_espacio_papel_se_avisa(tmp_path):
+    doc, msp = _nuevo(6)
+    doc.layouts.get("Layout1").add_line((0, 0), (1, 1))
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert any("espacio papel" in a and "«Layout1» (1)" in a for a in p.avisos)
+
+
+def test_polilinea_ajustada_con_spline_usa_su_curva(tmp_path):
+    doc, msp = _nuevo(6)
+    pl = msp.add_polyline2d([(0, 0), (4, 0), (4, 3)], dxfattribs={"layer": "P"})
+    pl.dxf.flags |= 4  # ajustada con spline
+    # Vértice de control (flag 16) que no es de la curva y alargaría la medida.
+    pl.append_vertex((100, 100), dxfattribs={"flags": 16})
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert p.capas["P"].longitud == pytest.approx(7)
+    assert any("ajustada" in a for a in p.avisos)
+
+
+def test_contorno_que_se_corta_se_marca_y_el_nulo_no_se_propone(tmp_path):
+    doc, msp = _nuevo(6)
+    msp.add_lwpolyline([(0, 0), (2, 2), (2, 0), (0, 2)], close=True)  # corbata
+    msp.add_lwpolyline([(0, 0), (1, 0), (2, 0)], close=True)  # en línea: sin superficie
+    msp.add_circle((5, 5), 0)  # radio 0
+    p = leer_dxf(_guardar(doc, tmp_path))
+    [c] = p.contornos
+    assert c.autointersecante
+    assert any("se cortan a sí mismos" in a for a in p.avisos)
+    assert any("2 contorno(s) cerrado(s) sin superficie" in a for a in p.avisos)
+
+
+def test_tipos_no_leidos_se_avisan(tmp_path):
+    doc, msp = _nuevo(6)
+    h = msp.add_hatch(dxfattribs={"layer": "MUROS"})
+    h.paths.add_polyline_path([(0, 0), (1, 0), (1, 1)], is_closed=True)
+    msp.add_solid([(0, 0), (1, 0), (0, 1)])
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert any("HATCH (1)" in a and "SOLID (1)" in a for a in p.avisos)
+    assert p.capas["MUROS"].entidades == {"HATCH": 1}
+
+
+def test_plano_en_bloques_anidados_se_avisa(tmp_path):
+    doc, msp = _nuevo(6)
+    dentro = doc.blocks.new("MUROS")
+    for i in range(60):
+        dentro.add_line((i, 0), (i, 10))
+    fuera = doc.blocks.new("PLANTA")
+    fuera.add_blockref("MUROS", (0, 0))
+    msp.add_blockref("PLANTA", (0, 0))
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert any("dentro del bloque «PLANTA»" in a for a in p.avisos)
+
+
+def test_espejo_giro_de_bloque_cota_y_arco(tmp_path):
+    doc, msp = _nuevo(6)
+    doc.blocks.new("B")
+    espejo = {"extrusion": (0, 0, -1)}
+    msp.add_blockref("B", (2, 3), dxfattribs={"rotation": 30, **espejo})
+    msp.add_lwpolyline(
+        [(0, 0), (1, 0), (1, 1), (0, 1)], close=True, dxfattribs={"elevation": 4, **espejo}
+    )
+    msp.add_arc((0, 0), 1, 0, 90, dxfattribs={"layer": "ARC", **espejo})
+    p = leer_dxf(_guardar(doc, tmp_path))
+    [b] = p.bloques
+    assert (b.x, b.y) == (-2, 3) and b.rotacion == pytest.approx(150)
+    assert p.contornos[0].elevacion == pytest.approx(-4)  # cota en WCS
+    _, pts = next(t for t in p.trazos if t[0] == "ARC")
+    assert pts[0] == pytest.approx((-1, 0)) and pts[-1] == pytest.approx((0, 1), abs=1e-12)
+    assert p.capas["ARC"].longitud == pytest.approx(math.pi / 2)
+
+
+def test_arco_de_0_a_360_es_vuelta_entera(tmp_path):
+    doc, msp = _nuevo(6)
+    msp.add_arc((0, 0), 1, 0, 360, dxfattribs={"layer": "A"})
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert p.capas["A"].longitud == pytest.approx(2 * math.pi)
+
+
+def test_circulo_abierto_con_tres_puntos_se_propone(tmp_path):
+    doc, msp = _nuevo(6)
+    msp.add_lwpolyline([(0, 0, 0, 0, 1.0), (2, 0, 0, 0, 1.0), (0, 0, 0, 0, 0)], format="xyseb")
+    p = leer_dxf(_guardar(doc, tmp_path))
+    [c] = p.contornos
+    assert c.contorno.area == pytest.approx(math.pi) and not c.marcada_cerrada

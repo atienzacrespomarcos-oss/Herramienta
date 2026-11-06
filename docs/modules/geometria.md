@@ -43,26 +43,45 @@ Lee el **espacio modelo** y hace inventario, sin interpretar:
   - LWPOLYLINE y POLYLINE 2D con el bit «Closed», y CIRCLE;
   - las polilíneas **abiertas cuyo último punto coincide con el primero**, habituales en
     planos ajenos. Se proponen marcadas como «no venía cerrada».
+  - Contornos que **se cortan a sí mismos** (un «8», una corbata): se proponen
+    **marcados**, porque su superficie no tiene sentido físico.
+  - Contornos **sin superficie** (vértices en línea, círculo de radio 0, arcos que se anulan):
+    no se proponen y se avisa.
 - **Textos** (TEXT, MTEXT sin formato), para nombrar los espacios por el texto que caiga
-  dentro.
-- **Bloques insertados**: nombre, capa, punto, giro, escala y atributos.
+  dentro. La posición de un TEXT es la de su justificación:
+  - izquierda: el punto de inserción;
+  - ALIGNED y FIT: el punto medio de sus dos puntos;
+  - el resto: el punto de alineación.
+
+  Con un texto centrado, el punto de inserción puede caer en el local de al lado.
+- **Bloques insertados**: nombre, capa, punto, giro (en coordenadas universales), escala y
+  atributos.
 - **Longitud por capa** de LINE, ARC, CIRCLE, LWPOLYLINE y POLYLINE, **en planta**
   (proyección XY: una tubería 3D que sube 5 m cuenta solo su recorrido en planta).
 
-Coordenadas: las entidades planas se pasan de su sistema de objeto (OCS) al universal (WCS)
-con su extrusión. Con extrusión (0,0,-1), que es dibujo en espejo, el arco cambia de sentido
-y su bulge de signo.
+Coordenadas:
+- Las entidades en coordenadas de objeto (OCS: LWPOLYLINE, POLYLINE 2D, CIRCLE, ARC, TEXT,
+  INSERT) se pasan a las universales (WCS) con su extrusión: puntos, cotas y giros.
+- Con extrusión (0,0,-1), que es dibujo en espejo, el arco cambia de sentido y su bulge de
+  signo.
+- En LINE, MTEXT y POLYLINE 3D la extrusión no mueve la geometría y no se mira.
 
 **Lo que no lee, y siempre avisa:**
 
 | Caso | Aviso |
 |---|---|
-| Contenido de bloques | Si el plano entero está dentro de un bloque, dice cuál y pide descomponerlo (DESCOMP). |
+| Contenido de bloques | Si el plano está dentro de un bloque, aunque sea a través de otros bloques, dice cuál y pide descomponerlo (DESCOMP). |
 | Referencias externas (xref) | Pide unirlas (UNIRREF) antes de exportar. |
+| Espacio papel | Dice en qué presentaciones hay dibujo y cuántas entidades, y pide pasarlo al modelo (CAMBIOESPACIO). |
+| Otros tipos de entidad (sombreados, sólidos, cotas…) | Dice cuáles y cuántos. Si los muros o pilares están así, hay que elegir otra capa o dibujar su contorno. |
 | SPLINE y ELLIPSE | Se cuentan pero no se miden: su longitud no tiene fórmula cerrada. |
+| Polilíneas ajustadas con PEDIT (Curva o Spline) | Se quitan los puntos de control (VERTEX 16) y se usa la curva generada, que es una aproximación. |
 | Entidades fuera de planta (extrusión no vertical) | Se omiten. |
 | Defectos de formato | Se leen con la recuperación de ezdxf y se dice cuántos había. |
-| Espacio papel | No se lee. |
+| Una entidad que no se puede leer | Se dice cuál (handle, capa) y por qué; el resto del plano se lee. |
+
+**Aproximaciones de dibujo** (solo para el visor, nunca para medir): polilíneas y círculos
+se aplanan con una flecha de una milésima de su tamaño; los arcos sueltos, en pasos de 5°.
 
 ## Geometría (`core/geometria.py`, puro)
 
@@ -72,14 +91,22 @@ exactos**, sin aproximar los arcos:
 - ángulo incluido θ = 4·atan(bulge);
 - longitud del arco = c·(|θ|/2)/sen(|θ|/2), con c la cuerda;
 - superficie = polígono de cuerdas (fórmula de Gauss, con signo) + Σ segmentos circulares
-  (c²/8)·(θ − sen θ)/sen²(θ/2). Para |θ| < 1e-6 se usa su límite, c²·θ/12.
+  (c²/8)·(θ − sen θ)/sen²(θ/2). Si |θ| es pequeño, «θ − sen θ» resta dos números casi
+  iguales y pierde cifras. Por eso:
+  - para |θ| < 10⁻² se usa su serie θ³/6 − θ⁵/120 + θ⁷/5040;
+  - para |θ| < 10⁻⁶, su límite c²·θ/12.
 
 Las coordenadas se toman respecto al primer vértice: así un plano georreferenciado (UTM en mm,
 ~4·10⁹) no pierde cifras.
 
 **Aproximación declarada:** para saber si un punto (un texto, un bloque) cae dentro de un
 contorno, los arcos se sustituyen por cuerdas con una flecha máxima de **1 mm**. Solo se usa
-para clasificar puntos, nunca para medir.
+para clasificar puntos, nunca para medir. La flecha va en metros: el contorno se pasa antes a
+metros con la unidad confirmada. Un punto exactamente sobre el borde puede quedar dentro o
+fuera.
+
+**Autointersección:** dos tramos no contiguos que se cruzan o se tocan, o dos contiguos que
+vuelven uno sobre otro, se comprueban sobre el contorno aplanado.
 
 **Validación:** figuras de resultado conocido (rectángulo, círculo con dos semicírculos,
 semicírculo hacia fuera y hacia dentro, cuarto de círculo, arco de 270°), pruebas con

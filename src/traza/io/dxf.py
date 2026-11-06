@@ -12,21 +12,31 @@ Qué se lee, del ESPACIO MODELO (fuente: Autodesk, «DXF Reference», consultada
   confirma el usuario, con la medida total del dibujo a la vista para comprobarla.
 - Contornos cerrados: LWPOLYLINE y POLYLINE 2D con el bit 1 de su código 70 («Closed»), y
   CIRCLE. Los arcos de las polilíneas van con su «bulge» (código 42, ver core/geometria.py).
-- Textos (TEXT, MTEXT), para dar nombre a los espacios.
+- Textos (TEXT, MTEXT), para dar nombre a los espacios. La posición de un TEXT es la de su
+  justificación: para todas menos la izquierda es el punto de alineación (código 11).
 - Bloques insertados (INSERT): nombre, capa, punto, giro, escala y atributos.
 - Longitud por capa de LINE, ARC, CIRCLE, LWPOLYLINE y POLYLINE, medida **en planta**
   (proyección XY). SPLINE y ELLIPSE no se miden: se cuentan y se avisa.
 
 Coordenadas: las entidades planas (LWPOLYLINE, POLYLINE 2D, CIRCLE, ARC, TEXT, INSERT) se
 guardan en su sistema de coordenadas de objeto (OCS) y se pasan al universal (WCS) con su
-dirección de extrusión. Con la extrusión (0,0,-1) (dibujos en espejo) el arco cambia de
-sentido y su bulge de signo. Una entidad cuya extrusión no es vertical no está en planta:
-se omite y se avisa.
+dirección de extrusión: puntos, cotas y giro de los bloques. Con la extrusión (0,0,-1)
+(dibujos en espejo) el arco cambia de sentido y su bulge de signo. Una de esas entidades
+cuya extrusión no es vertical no está en planta: se omite y se avisa. En LINE, MTEXT y
+POLYLINE 3D la extrusión no mueve la geometría (está en WCS) y no se mira.
+
+Aproximaciones, todas solo para DIBUJAR en el visor (nunca para medir): polilíneas y
+círculos se aplanan con una flecha de una milésima de su tamaño; los arcos sueltos, en pasos
+de 5°.
 
 Lo que NO se lee, y se avisa:
 - el contenido de los bloques (si el plano entero está dentro de un bloque, se dice cuál);
 - las referencias externas (xref);
-- el espacio papel.
+- lo dibujado en el espacio papel;
+- los tipos de entidad que no son trazos ni textos (sombreados, sólidos, cotas…), con
+  cuántos hay;
+- las polilíneas ajustadas con PEDIT (Curva o Spline) se toman por los vértices de su curva
+  generada, que es una aproximación de la curva.
 """
 
 from __future__ import annotations
@@ -38,6 +48,7 @@ from pathlib import Path
 
 import ezdxf
 from ezdxf import recover
+from ezdxf.enums import TextEntityAlignment
 from ezdxf.math import OCS, Vec3
 
 from traza.core.geometria import (
@@ -57,6 +68,9 @@ UNIDADES_METRICAS = {4: ("mm", 0.001), 5: ("cm", 0.01), 6: ("m", 1.0), 14: ("dm"
 UNIDADES = {"mm": 0.001, "cm": 0.01, "dm": 0.1, "m": 1.0}
 _MEDIDAS = ("LINE", "ARC", "CIRCLE", "LWPOLYLINE", "POLYLINE")
 _NO_MEDIDAS = ("SPLINE", "ELLIPSE")
+_LEIDAS = {*_MEDIDAS, *_NO_MEDIDAS, "TEXT", "MTEXT", "INSERT"}
+#: Entidades en coordenadas de objeto (OCS): las únicas a las que la extrusión mueve.
+_OCS = {"LWPOLYLINE", "CIRCLE", "ARC", "TEXT", "INSERT"}  # y POLYLINE 2D
 
 
 class DxfError(RuntimeError):
@@ -69,9 +83,11 @@ class ContornoDxf:
     capa: str
     entidad: str
     contorno: Contorno  # en unidades del dibujo, coordenadas universales (WCS) en planta
-    elevacion: float
+    elevacion: float  # cota Z en WCS, en unidades del dibujo
     #: False si la polilínea no traía el bit «Closed» pero su último punto es el primero.
     marcada_cerrada: bool = True
+    #: Se corta a sí mismo: su superficie no tiene sentido físico (se avisa).
+    autointersecante: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,8 +107,8 @@ class BloqueDxf:
     nombre: str
     x: float
     y: float
-    rotacion: float
-    escala_x: float
+    rotacion: float  # grados, en WCS
+    escala_x: float  # como en el DXF (negativa = simetría)
     escala_y: float
     atributos: tuple[tuple[str, str], ...] = ()
 
@@ -135,10 +151,19 @@ class PlanoDxf:
         return (x1 - x0) * f, (y1 - y0) * f
 
 
+@dataclass
+class _Cuenta:
+    fuera_de_planta: int = 0
+    ajustadas: int = 0
+    sin_superficie: int = 0
+    autointersecantes: int = 0
+    no_leidas: Counter = field(default_factory=Counter)
+
+
 def leer_dxf(ruta: Path) -> PlanoDxf:
     try:
         doc, auditor = recover.readfile(str(ruta))
-    except (OSError, ezdxf.DXFStructureError) as exc:
+    except (OSError, ezdxf.DXFError, UnicodeDecodeError, ValueError) as exc:
         raise DxfError(f"No se puede leer el DXF: {exc}") from exc
     cab = doc.header
     plano = PlanoDxf(
@@ -161,22 +186,38 @@ def leer_dxf(ruta: Path) -> PlanoDxf:
             capa.dxf.name, visible=capa.is_on() and not capa.is_frozen()
         )
 
-    fuera_de_planta = 0
+    cuenta = _Cuenta()
     for e in doc.modelspace():
         tipo = e.dxftype()
         nombre_capa = e.dxf.get("layer", "0")
         capa = plano.capas.setdefault(nombre_capa, CapaDxf(nombre_capa))
         capa.entidades[tipo] += 1
+        if tipo not in _LEIDAS:
+            cuenta.no_leidas[tipo] += 1
+            continue
         try:
-            if not _en_planta(e):
-                fuera_de_planta += 1
+            if _es_ocs(e, tipo) and not _en_planta(e):
+                cuenta.fuera_de_planta += 1
                 continue
-            _leer_entidad(plano, capa, e, tipo)
-        except (ContornoInvalido, ValueError, ZeroDivisionError) as exc:
-            plano.avisos.append(f"Entidad {tipo} {e.dxf.handle} (capa «{nombre_capa}»): {exc}")
-    if fuera_de_planta:
+            _leer_entidad(plano, capa, e, tipo, cuenta)
+        except Exception as exc:  # noqa: BLE001
+            # Una entidad rara no puede tumbar la lectura del plano entero: se dice cuál y
+            # por qué, con el tipo de error para poder investigarlo.
+            plano.avisos.append(
+                f"Entidad {tipo} {e.dxf.handle} (capa «{nombre_capa}») no leída: "
+                f"{type(exc).__name__}: {exc}"
+            )
+    _avisos_de_cuenta(plano, cuenta)
+    _avisos_de_papel(doc, plano)
+    _avisos_de_bloques(doc, plano)
+    _extension(plano)
+    return plano
+
+
+def _avisos_de_cuenta(plano: PlanoDxf, cuenta: _Cuenta) -> None:
+    if cuenta.fuera_de_planta:
         plano.avisos.append(
-            f"{fuera_de_planta} entidad(es) no están dibujadas en planta (extrusión no "
+            f"{cuenta.fuera_de_planta} entidad(es) no están dibujadas en planta (extrusión no "
             "vertical): se omiten."
         )
     sin_medir = sum(c.sin_medir for c in plano.capas.values())
@@ -185,9 +226,34 @@ def leer_dxf(ruta: Path) -> PlanoDxf:
             f"{sin_medir} SPLINE/ELLIPSE no se miden (su longitud no tiene fórmula cerrada): "
             "no están en las longitudes por capa."
         )
-    _avisos_de_bloques(doc, plano)
-    _extension(plano)
-    return plano
+    if cuenta.ajustadas:
+        plano.avisos.append(
+            f"{cuenta.ajustadas} polilínea(s) ajustada(s) con PEDIT (Curva o Spline): se toman "
+            "por los vértices de su curva generada, que es una aproximación de la curva."
+        )
+    if cuenta.sin_superficie:
+        plano.avisos.append(
+            f"{cuenta.sin_superficie} contorno(s) cerrado(s) sin superficie (vértices en línea "
+            "o arcos que se anulan): no se proponen."
+        )
+    if cuenta.autointersecantes:
+        plano.avisos.append(
+            f"{cuenta.autointersecantes} contorno(s) se cortan a sí mismos: su superficie no "
+            "tiene sentido físico. Se marcan para que los revises."
+        )
+    if cuenta.no_leidas:
+        tipos = ", ".join(f"{t} ({n})" for t, n in sorted(cuenta.no_leidas.items()))
+        plano.avisos.append(
+            f"Tipos de entidad que no se leen (ni miden ni proponen): {tipos}. Si los muros o "
+            "los pilares están dibujados así (p. ej. sombreados), elige otra capa o dibuja "
+            "su contorno con polilínea."
+        )
+
+
+def _es_ocs(e, tipo: str) -> bool:
+    if tipo == "POLYLINE":
+        return bool(e.is_2d_polyline)
+    return tipo in _OCS
 
 
 def _en_planta(e) -> bool:
@@ -203,11 +269,15 @@ def _espejo(e) -> bool:
     return extrusion is not None and Vec3(extrusion).z < 0
 
 
-def _wcs(e, x: float, y: float) -> tuple[float, float]:
+def _wcs3(e, x: float, y: float, z: float = 0.0) -> Vec3:
     extrusion = e.dxf.get("extrusion", None)
     if extrusion is None:
-        return x, y
-    p = OCS(extrusion).to_wcs(Vec3(x, y, 0))
+        return Vec3(x, y, z)
+    return OCS(extrusion).to_wcs(Vec3(x, y, z))
+
+
+def _wcs(e, x: float, y: float) -> tuple[float, float]:
+    p = _wcs3(e, x, y)
     return p.x, p.y
 
 
@@ -217,16 +287,24 @@ def _vertices(e, puntos) -> list[Vertice]:
     return [Vertice(*_wcs(e, x, y), signo * b) for x, y, b in puntos]
 
 
-def _leer_entidad(plano: PlanoDxf, capa: CapaDxf, e, tipo: str) -> None:
+def _leer_entidad(plano: PlanoDxf, capa: CapaDxf, e, tipo: str, cuenta: _Cuenta) -> None:
     h = e.dxf.handle
     if tipo == "LWPOLYLINE":
         vs = _vertices(e, e.get_points(format="xyb"))
-        _polilinea(plano, capa, e, tipo, vs, bool(e.closed), float(e.dxf.get("elevation", 0)))
+        cota = _wcs3(e, 0, 0, float(e.dxf.get("elevation", 0) or 0)).z
+        _polilinea(plano, capa, e, tipo, vs, bool(e.closed), cota, cuenta)
     elif tipo == "POLYLINE":
         if not (e.is_2d_polyline or e.is_3d_polyline):
-            return  # mallas y caras: no son trazos en planta
+            cuenta.no_leidas["POLYLINE (malla)"] += 1
+            return
+        vertices = list(e.vertices)
+        if e.dxf.get("flags", 0) & 6:  # 2 = ajustada con curva, 4 = con spline (pág. POLYLINE)
+            cuenta.ajustadas += 1
+            # VERTEX 16 = «Spline frame control point»: es el polígono de control, no la
+            # curva. Se quitan; quedan los vértices de la curva generada.
+            vertices = [v for v in vertices if not v.dxf.get("flags", 0) & 16]
         puntos = [
-            (v.dxf.location.x, v.dxf.location.y, v.dxf.get("bulge", 0.0) or 0.0) for v in e.vertices
+            (v.dxf.location.x, v.dxf.location.y, v.dxf.get("bulge", 0.0) or 0.0) for v in vertices
         ]
         if e.is_3d_polyline:
             # Las 3D están en WCS y no admiten arcos: se miden en planta, sin contorno.
@@ -234,22 +312,30 @@ def _leer_entidad(plano: PlanoDxf, capa: CapaDxf, e, tipo: str) -> None:
             capa.longitud += longitud_polilinea(vs, e.is_closed)
             plano.trazos.append((capa.nombre, [(v.x, v.y) for v in vs]))
             return
-        elev = e.dxf.get("elevation", Vec3()).z if e.dxf.hasattr("elevation") else 0.0
-        _polilinea(plano, capa, e, tipo, _vertices(e, puntos), e.is_closed, float(elev))
+        z = e.dxf.get("elevation", Vec3()).z if e.dxf.hasattr("elevation") else 0.0
+        cota = _wcs3(e, 0, 0, float(z)).z
+        _polilinea(plano, capa, e, tipo, _vertices(e, puntos), e.is_closed, cota, cuenta)
     elif tipo == "LINE":
         a, b = e.dxf.start, e.dxf.end
         capa.longitud += math.hypot(b.x - a.x, b.y - a.y)
         plano.trazos.append((capa.nombre, [(a.x, a.y), (b.x, b.y)]))
     elif tipo == "CIRCLE":
         r = float(e.dxf.radius)
-        cx, cy = _wcs(e, e.dxf.center.x, e.dxf.center.y)
+        centro = _wcs3(e, e.dxf.center.x, e.dxf.center.y, e.dxf.center.z)
         capa.longitud += 2 * math.pi * r
+        if r <= 0:
+            cuenta.sin_superficie += 1
+            return
+        cx, cy = centro.x, centro.y
         contorno = Contorno((Vertice(cx - r, cy, 1.0), Vertice(cx + r, cy, 1.0)))
-        plano.contornos.append(ContornoDxf(h, capa.nombre, tipo, contorno, e.dxf.center.z))
+        plano.contornos.append(ContornoDxf(h, capa.nombre, tipo, contorno, centro.z))
         plano.trazos.append((capa.nombre, contorno.aplanado(r / 100)))
     elif tipo == "ARC":
         r = float(e.dxf.radius)
-        barrido = (float(e.dxf.end_angle) - float(e.dxf.start_angle)) % 360.0
+        bruto = float(e.dxf.end_angle) - float(e.dxf.start_angle)
+        barrido = bruto % 360.0
+        if barrido == 0 and bruto != 0:
+            barrido = 360.0  # 0° → 360°: vuelta entera, no un arco nulo
         capa.longitud += r * math.radians(barrido)
         cx, cy = e.dxf.center.x, e.dxf.center.y
         pasos = max(2, math.ceil(barrido / 5))
@@ -268,7 +354,7 @@ def _leer_entidad(plano: PlanoDxf, capa: CapaDxf, e, tipo: str) -> None:
             x, y = e.dxf.insert.x, e.dxf.insert.y
             altura = float(e.dxf.get("char_height", 0) or 0)
         else:
-            x, y = _wcs(e, e.dxf.insert.x, e.dxf.insert.y)
+            x, y = _posicion_texto(e)
             altura = float(e.dxf.get("height", 0) or 0)
         plano.textos.append(TextoDxf(h, capa.nombre, texto, x, y, altura))
     elif tipo == "INSERT":
@@ -281,7 +367,7 @@ def _leer_entidad(plano: PlanoDxf, capa: CapaDxf, e, tipo: str) -> None:
                 e.dxf.name,
                 x,
                 y,
-                float(e.dxf.get("rotation", 0) or 0),
+                _giro_wcs(e, float(e.dxf.get("rotation", 0) or 0)),
                 float(e.dxf.get("xscale", 1) or 1),
                 float(e.dxf.get("yscale", 1) or 1),
                 atributos,
@@ -291,22 +377,78 @@ def _leer_entidad(plano: PlanoDxf, capa: CapaDxf, e, tipo: str) -> None:
         capa.sin_medir += 1
 
 
-def _polilinea(plano, capa, e, tipo, vs: list[Vertice], cerrada: bool, elevacion: float):
+def _posicion_texto(e) -> tuple[float, float]:
+    """Punto de un TEXT según su justificación (DXF Reference, TEXT; ezdxf get_placement):
+    izquierda → código 10; ALIGNED y FIT → punto medio entre los dos puntos; el resto →
+    punto de alineación (código 11). En OCS: se pasa a WCS."""
+    alineacion, p1, p2 = e.get_placement()
+    if alineacion in (TextEntityAlignment.ALIGNED, TextEntityAlignment.FIT) and p2 is not None:
+        p1 = (p1 + p2) / 2
+    return _wcs(e, p1.x, p1.y)
+
+
+def _giro_wcs(e, grados: float) -> float:
+    """Giro de un bloque en WCS: la dirección del eje X del bloque, pasada de OCS a WCS. En
+    espejo (extrusión (0,0,-1)) 30° pasan a 150°."""
+    if e.dxf.get("extrusion", None) is None:
+        return grados
+    d = OCS(e.dxf.extrusion).to_wcs(Vec3.from_deg_angle(grados))
+    return math.degrees(math.atan2(d.y, d.x)) % 360.0
+
+
+def _polilinea(plano, capa, e, tipo, vs: list[Vertice], cerrada: bool, cota: float, cuenta):
     if len(vs) < 2:
         return
     capa.longitud += longitud_polilinea(vs, cerrada)
     plano.trazos.append((capa.nombre, aplanar(vs, cerrada, _flecha(vs))))
     marcada = cerrada
-    if not cerrada and len(vs) >= 4 and (vs[0].x, vs[0].y) == (vs[-1].x, vs[-1].y):
+    vuelve = (vs[0].x, vs[0].y) == (vs[-1].x, vs[-1].y)
+    # Con 3 vértices (A, B, A) solo encierra algo si tiene arcos.
+    if not cerrada and vuelve and (len(vs) >= 4 or any(v.bulge for v in vs[:-2])):
         # Abierta pero con el último punto en el primero: en planos ajenos es habitual. Se
         # propone como contorno (sin el vértice repetido), diciendo que no venía marcada.
         vs, cerrada = vs[:-1], True
     if not cerrada:
         return
-    contorno = Contorno(tuple(vs))
+    try:
+        contorno = Contorno(tuple(vs))
+    except ContornoInvalido:
+        cuenta.sin_superficie += 1
+        return
+    tamano = _flecha(vs) * 1000
+    if _en_linea(vs):
+        # Todos los vértices en línea y sin arcos: no encierra nada (no es que se corte).
+        cuenta.sin_superficie += 1
+        return
+    # Primero si se corta: en una corbata simétrica los lóbulos se anulan y la superficie
+    # sale 0, pero no es un contorno «sin superficie», es uno que hay que revisar.
+    corta = contorno.autointersecante(tamano / 1000)
+    if corta:
+        cuenta.autointersecantes += 1
+    elif contorno.area <= 1e-9 * tamano * tamano:
+        cuenta.sin_superficie += 1
+        return
     plano.contornos.append(
-        ContornoDxf(e.dxf.handle, capa.nombre, tipo, contorno, elevacion, marcada_cerrada=marcada)
+        ContornoDxf(
+            e.dxf.handle,
+            capa.nombre,
+            tipo,
+            contorno,
+            cota,
+            marcada_cerrada=marcada,
+            autointersecante=corta,
+        )
     )
+
+
+def _en_linea(vs: list[Vertice]) -> bool:
+    if any(v.bulge for v in vs):
+        return False
+    a = vs[0]
+    b = next((v for v in vs if (v.x, v.y) != (a.x, a.y)), None)
+    if b is None:
+        return True
+    return all((b.x - a.x) * (v.y - a.y) == (b.y - a.y) * (v.x - a.x) for v in vs)
 
 
 def _flecha(vs: list[Vertice]) -> float:
@@ -314,6 +456,38 @@ def _flecha(vs: list[Vertice]) -> float:
     xs = [v.x for v in vs]
     ys = [v.y for v in vs]
     return max(max(xs) - min(xs), max(ys) - min(ys), 1e-9) / 1000
+
+
+def _avisos_de_papel(doc, plano: PlanoDxf) -> None:
+    """Lo dibujado en el espacio papel (presentaciones) no se lee: se dice dónde hay algo."""
+    con_dibujo = []
+    for nombre in doc.layout_names():
+        if nombre.lower() == "model":
+            continue
+        n = sum(1 for x in doc.layouts.get(nombre) if x.dxftype() != "VIEWPORT")
+        if n:
+            con_dibujo.append(f"«{nombre}» ({n})")
+    if con_dibujo:
+        plano.avisos.append(
+            "Hay entidades dibujadas en el espacio papel, que no se lee: "
+            + ", ".join(con_dibujo)
+            + ". Si el plano está ahí, pásalo al espacio modelo (CAMBIOESPACIO) en AutoCAD."
+        )
+
+
+def _geometria_de_bloque(doc, nombre: str, vistos: set[str]) -> int:
+    """Trazos de un bloque contando los de los bloques que tiene dentro."""
+    definicion = doc.blocks.get(nombre)
+    if definicion is None or nombre in vistos:
+        return 0
+    vistos = vistos | {nombre}
+    total = 0
+    for x in definicion:
+        if x.dxftype() in _MEDIDAS:
+            total += 1
+        elif x.dxftype() == "INSERT":
+            total += _geometria_de_bloque(doc, x.dxf.name, vistos)
+    return total
 
 
 def _avisos_de_bloques(doc, plano: PlanoDxf) -> None:
@@ -331,7 +505,7 @@ def _avisos_de_bloques(doc, plano: PlanoDxf) -> None:
                 "DXF y no se lee. Únela al dibujo (UNIRREF) antes de exportar."
             )
             continue
-        dentro = sum(1 for x in definicion if x.dxftype() in _MEDIDAS)
+        dentro = _geometria_de_bloque(doc, nombre, set())
         if dentro > 50 and dentro > geometria_modelo:
             plano.avisos.append(
                 f"La mayor parte del dibujo parece estar dentro del bloque «{nombre}» ({dentro} "

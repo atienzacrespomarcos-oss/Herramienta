@@ -76,8 +76,19 @@ def test_contiene_con_arco_y_flecha():
     r = 3.0
     c = Contorno((Vertice(-r, 0, 1.0), Vertice(r, 0, 1.0)))
     assert c.contiene(0, 0) and c.contiene(0, 2.99) and not c.contiene(0, 3.01)
-    # Con la flecha de 1 mm, un punto a 2 mm dentro del arco se clasifica bien.
-    assert c.contiene(r - 0.002, 0.001) or c.contiene(0, r - 0.002)
+    # Con la flecha de 1 mm, los puntos a 2 mm del arco, por dentro y por fuera, se
+    # clasifican bien en cualquier dirección (la cuerda nunca se aleja más de 1 mm).
+    for grados in range(1, 180, 7):
+        a = math.radians(grados)
+        assert c.contiene((r - 0.002) * math.cos(a), (r - 0.002) * math.sin(a))
+        assert not c.contiene((r + 0.002) * math.cos(a), (r + 0.002) * math.sin(a))
+    # Con una flecha de 10 cm, algún punto a 2 mm por dentro cae ya fuera (la flecha cuenta).
+    assert not all(
+        c.contiene(
+            (r - 0.002) * math.cos(math.radians(g)), (r - 0.002) * math.sin(math.radians(g)), 0.1
+        )
+        for g in range(1, 180)
+    )
 
 
 def test_escalado_de_mm_a_m():
@@ -146,3 +157,47 @@ def test_bulge_diminuto_da_un_resultado_finito_y_casi_recto(bulge):
     assert c.area == pytest.approx(1 + 4 * bulge / 12, rel=1e-12, abs=1e-15)
     assert c.perimetro == pytest.approx(4, rel=1e-12)
     assert c.aplanado() == [(0, 0), (1, 0), (1, 1), (0, 1)]
+
+
+def test_segmento_con_angulo_pequeno_sin_perder_cifras():
+    # θ − sen θ con θ ~ 1e-5 pierde cifras: se usa la serie (revisión 06-11-2026). Se
+    # compara con la serie de r²/2·(θ − sen θ) calculada con más términos en fracciones.
+    from fractions import Fraction
+
+    from traza.core.geometria import _segmento
+
+    for theta in (2e-6, 1e-5, 3e-4, 9e-3):
+        t = Fraction(theta)
+        # θ − sen θ = Σ (−1)^(k+1) θ^(2k+1)/(2k+1)!, k ≥ 1
+        dif = sum(
+            ((-1) ** (k + 1)) * t ** (2 * k + 1) / math.factorial(2 * k + 1) for k in range(1, 8)
+        )
+        esperado = float(dif) / 8 / math.sin(theta / 2) ** 2
+        assert _segmento(1.0, theta) == pytest.approx(esperado, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    "vertices,corta",
+    [
+        # Corbata: (0,0) (2,2) (2,0) (0,2) se cruza en (1,1).
+        ([(0, 0), (2, 2), (2, 0), (0, 2)], True),
+        # Rectángulo normal, también con un vértice repetido (no se corta).
+        ([(0, 0), (4, 0), (4, 3), (0, 3)], False),
+        ([(0, 0), (4, 0), (4, 0), (4, 3), (0, 3)], False),
+        # Vuelve sobre sí mismo: (0,0) → (4,0) → (2,0) → (2,3).
+        ([(0, 0), (4, 0), (2, 0), (2, 3)], True),
+        # Cerradura de «8» que se toca en un vértice: (0,0) (2,1) (4,0) (4,2) (2,1) (0,2).
+        ([(0, 0), (2, 1), (4, 0), (4, 2), (2, 1), (0, 2)], True),
+        # Forma de «L» (cóncava, no se corta).
+        ([(0, 0), (4, 0), (4, 1), (1, 1), (1, 3), (0, 3)], False),
+    ],
+)
+def test_autointersecante(vertices, corta):
+    c = Contorno(tuple(Vertice(x, y) for x, y in vertices))
+    assert c.autointersecante() is corta
+
+
+def test_arcos_que_se_anulan_no_tienen_superficie_y_se_cortan():
+    c = Contorno((Vertice(0, 0, 1.0), Vertice(2, 0, -1.0)))
+    assert c.area == pytest.approx(0, abs=1e-12)
+    assert c.autointersecante()

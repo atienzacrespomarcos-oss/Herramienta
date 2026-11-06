@@ -17,8 +17,9 @@ cargas, caudales y redes.
 4. **Medidas exactas.** La superficie y el perímetro de los contornos con arcos se calculan
    con fórmula cerrada (bulge). La única aproximación, el aplanado a 1 mm para clasificar
    puntos, está declarada y no se usa para medir.
-5. **Lo que no se lee se dice:** bloques por dentro, xref, SPLINE y ELLIPSE, entidades
-   fuera de planta y espacio papel.
+5. **Lo que no se lee se dice:** bloques por dentro, xref, espacio papel, tipos de entidad
+   que no son trazos ni textos, SPLINE y ELLIPSE, polilíneas ajustadas y entidades
+   fuera de planta. Los contornos que se cortan a sí mismos se proponen marcados.
 
 **Alternativas descartadas:**
 - Reconocer espacios por nombres de capa fijos. No sirve con planos ajenos.

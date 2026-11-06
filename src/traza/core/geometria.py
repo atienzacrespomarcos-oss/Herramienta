@@ -14,15 +14,21 @@ Superficie y perímetro se calculan EXACTOS (sin aproximar los arcos por cuerdas
   sobresale del contorno suma y uno que entra resta, sea cual sea el sentido de recorrido.
 
 «Está dentro» (para saber en qué espacio cae un texto o un bloque) sí aproxima los arcos por
-cuerdas, con una flecha máxima declarada (`FLECHA_MAX`): solo se usa para clasificar puntos,
-nunca para medir.
+cuerdas, con una flecha máxima declarada (`FLECHA_MAX` = 1 mm, **en metros**: el contorno
+tiene que estar ya en metros, con `escalado`). Solo se usa para clasificar puntos, nunca para
+medir. Un punto exactamente sobre el borde puede quedar dentro o fuera.
 
-Puro: sin dependencias de fuera del núcleo. Las magnitudes son metros (y m²): quien convierte
-desde las unidades del dibujo es el lector, con la unidad que confirma el usuario.
+Un contorno que se corta a sí mismo (un «8», una corbata) no tiene una superficie con sentido
+físico: la fórmula da la diferencia de sus lóbulos. `autointersecante` lo detecta para que se
+avise en lugar de proponerlo como espacio.
+
+Puro: sin dependencias de fuera del núcleo. Las unidades son las de las coordenadas que se
+den; quien pasa de las del dibujo a metros es el lector, con la unidad que confirma el usuario.
 """
 
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
 
@@ -53,8 +59,11 @@ def _arco(p: Vertice, q: Vertice) -> tuple[float, float, float]:
 # Con un bulge diminuto el radio es enorme y r²·(θ − sen θ) da inf·0 = NaN (lo encontró
 # hypothesis). Las dos medidas se escriben sin pasar por el radio:
 #   longitud = c · (|θ|/2) / sen(|θ|/2)
-#   segmento = (c²/8) · (θ − sen θ) / sen²(θ/2), y para |θ| < 1e-6 su límite c²·θ/12
-#   (error relativo del orden de θ², despreciable).
+#   segmento = (c²/8) · (θ − sen θ) / sen²(θ/2)
+# Para |θ| pequeño, «θ − sen θ» resta dos números casi iguales y pierde cifras (revisión
+# 06-11-2026: error relativo de 1e-3 con θ = 1e-6). Por eso:
+#   |θ| < 1e-6:  su límite c²·θ/12 (error relativo del orden de θ²);
+#   |θ| < 1e-2:  θ − sen θ por su serie θ³/6 − θ⁵/120 + θ⁷/5040 (error del orden de θ⁹).
 def _longitud_tramo(c: float, theta: float) -> float:
     if not theta:
         return c
@@ -67,7 +76,12 @@ def _segmento(c: float, theta: float) -> float:
         return 0.0
     if abs(theta) < 1e-6:
         return c * c * theta / 12.0
-    return c * c / 8.0 * (theta - math.sin(theta)) / math.sin(theta / 2.0) ** 2
+    if abs(theta) < 1e-2:
+        t3 = theta**3
+        diferencia = t3 / 6.0 - t3 * theta**2 / 120.0 + t3 * theta**4 / 5040.0
+    else:
+        diferencia = theta - math.sin(theta)
+    return c * c / 8.0 * diferencia / math.sin(theta / 2.0) ** 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,10 +132,12 @@ class Contorno:
         """Vértices con los arcos sustituidos por cuerdas de flecha ≤ `flecha`."""
         return aplanar(list(self.vertices), True, flecha)
 
-    def contiene(self, x: float, y: float) -> bool:
-        """Punto estrictamente dentro (regla par-impar sobre el contorno aplanado)."""
+    def contiene(self, x: float, y: float, flecha: float = FLECHA_MAX) -> bool:
+        """Punto dentro (regla par-impar sobre el contorno aplanado con `flecha`, en las
+        unidades de las coordenadas: 1 mm si el contorno está en metros). Un punto sobre el
+        borde puede dar cualquiera de los dos resultados."""
         dentro = False
-        pts = self.aplanado()
+        pts = _aplanado_guardado(self.vertices, flecha)
         j = len(pts) - 1
         for i in range(len(pts)):
             xi, yi = pts[i]
@@ -133,10 +149,76 @@ class Contorno:
             j = i
         return dentro
 
+    def autointersecante(self, flecha: float = FLECHA_MAX) -> bool:
+        """¿Se corta a sí mismo? Se comprueba sobre el aplanado: dos tramos no contiguos que
+        se cruzan o se tocan. Tramos contiguos que se solapan en sentido contrario (ida y
+        vuelta sobre la misma línea) también cuentan."""
+        # Sin puntos repetidos seguidos: un tramo de longitud cero haría que sus vecinos, que
+        # se tocan en ese punto, parecieran cortarse.
+        pts = []
+        for p in _aplanado_guardado(self.vertices, flecha):
+            if not pts or p != pts[-1]:
+                pts.append(p)
+        while len(pts) > 1 and pts[0] == pts[-1]:
+            pts.pop()
+        if len(pts) < 3:
+            return False
+        tramos = [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
+        n = len(tramos)
+        for i in range(n):
+            for j in range(i + 1, n):
+                contiguos = j == i + 1 or (i == 0 and j == n - 1)
+                if _se_cortan(*tramos[i], *tramos[j], contiguos):
+                    return True
+        return False
+
     def escalado(self, factor: float) -> Contorno:
         """Mismo contorno con las coordenadas multiplicadas por `factor` (el bulge, que es
         un ángulo, no cambia)."""
         return Contorno(tuple(Vertice(v.x * factor, v.y * factor, v.bulge) for v in self.vertices))
+
+
+@functools.lru_cache(maxsize=8192)
+def _aplanado_guardado(vertices: tuple[Vertice, ...], flecha: float) -> tuple:
+    """El aplanado se reutiliza: clasificar N textos en M contornos no lo recalcula N·M
+    veces (revisión 06-11-2026)."""
+    return tuple(aplanar(list(vertices), True, flecha))
+
+
+def _orientacion(ax, ay, bx, by, cx, cy) -> float:
+    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+
+
+def _se_cortan(p1, p2, q1, q2, contiguos: bool) -> bool:
+    """¿Se cortan los segmentos p1p2 y q1q2? Dos contiguos comparten un extremo, que no
+    cuenta; solo se cortan si además se solapan (colineales y en sentido contrario)."""
+    d1 = _orientacion(*q1, *q2, *p1)
+    d2 = _orientacion(*q1, *q2, *p2)
+    d3 = _orientacion(*p1, *p2, *q1)
+    d4 = _orientacion(*p1, *p2, *q2)
+    if contiguos:
+        if d1 == d2 == d3 == d4 == 0:
+            # Colineales con un extremo común: se solapan si el otro extremo de alguno cae
+            # dentro del otro tramo (el contorno vuelve sobre sí mismo).
+            comun = p1 if p1 in (q1, q2) else p2
+            otro_p = p2 if comun == p1 else p1
+            otro_q = q2 if comun == q1 else q1
+            return (_en_segmento(p1, p2, otro_q) and otro_q != comun) or (
+                _en_segmento(q1, q2, otro_p) and otro_p != comun
+            )
+        return False
+    if ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)) and 0 not in (d1, d2, d3, d4):
+        return True
+    return (
+        (d1 == 0 and _en_segmento(q1, q2, p1))
+        or (d2 == 0 and _en_segmento(q1, q2, p2))
+        or (d3 == 0 and _en_segmento(p1, p2, q1))
+        or (d4 == 0 and _en_segmento(p1, p2, q2))
+    )
+
+
+def _en_segmento(a, b, p) -> bool:
+    return min(a[0], b[0]) <= p[0] <= max(a[0], b[0]) and min(a[1], b[1]) <= p[1] <= max(a[1], b[1])
 
 
 def aplanar(

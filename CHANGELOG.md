@@ -15,6 +15,18 @@
 - Geometría de contornos con arcos (bulge): superficie y perímetro exactos, estables con
   bulges diminutos y con coordenadas UTM.
 - La autoprueba de TRAZA.exe lee también un DXF.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - aviso de espacio papel (estaba prometido y no existía);
+  - posición real de los textos justificados;
+  - las LINE con extrusión ya no se descartan;
+  - polilíneas ajustadas;
+  - contornos que se cortan (marcados) o sin superficie (no se proponen);
+  - tipos no leídos;
+  - bloques anidados;
+  - giro y cota en espejo;
+  - arco de 0° a 360°;
+  - serie para arcos casi rectos;
+  - «está dentro» en metros y con el contorno aplanado guardado.
 - ADR-0014 y ficha `docs/modules/geometria.md`, con las fuentes de Autodesk citadas.
 
 ### Etapa 2 · modificados (06-11-2026)
