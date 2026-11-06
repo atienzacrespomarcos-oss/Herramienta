@@ -14,7 +14,7 @@ Criterios de evaluación: adecuación, mantenimiento activo, licencia, rendimien
 | Lenguaje | Python 3.12/3.13 | PSF | **Adoptar** | Ecosistema científico y CAD (ezdxf, NumPy, SciPy, CoolProp). La versión concreta la decide la disponibilidad de ruedas de PySide6, CoolProp e IfcOpenShell. |
 | Interfaz | **PySide6 (Qt Widgets)** | LGPLv3 / GPLv3 / comercial [V] | **Adoptar** | Binding oficial de Qt. Widgets (no QML): docks, árboles, tablas densas, `QUndoStack`. Alternativas descartadas: PyQt6 (GPL), web/Electron (doble pila, peor integración con el cálculo en Python). |
 | Persistencia | **SQLite** | Dominio público [C] | **Adoptar** | Un fichero por proyecto, transaccional, sin servidor. **Precaución**: no abrir el proyecto directamente desde carpetas sincronizadas (OneDrive/Dropbox) o de red — riesgo de corrupción documentado por SQLite [C]; se trabaja en local y la copia de seguridad va a la carpeta sincronizada. |
-| Acceso a datos / migraciones | SQLAlchemy 2 + Alembic | MIT [C] | **Adoptar (ADR)** | Alembic tiene «modo batch» para las limitaciones de `ALTER TABLE` de SQLite [C]. Alternativa más simple: `sqlite3` + migraciones propias con `PRAGMA user_version`. |
+| Acceso a datos / migraciones | `sqlite3` + migraciones propias (`PRAGMA user_version`) | PSF | **Adoptado (ADR-0003, 06-11-2026)** | Se descartó SQLAlchemy + Alembic: un ORM no aporta con un modelo de pocas tablas genéricas. |
 | Validación de datos | Pydantic 2 | MIT [C] | **Adoptar** | Esquemas de propiedades por tipo de elemento, con versión. |
 | Unidades | **pint** | BSD [C] | **Adoptar en fronteras** | SI internamente (float), `pint` en entradas/salidas de motores y en la interfaz; tests de análisis dimensional. |
 | Numérico | NumPy, SciPy | BSD [C] | **Adoptar** | Resolución de redes (sistemas no lineales), interpolación de curvas de ventiladores/bombas. |
@@ -46,7 +46,7 @@ Criterios de evaluación: adecuación, mantenimiento activo, licencia, rendimien
 |---|---|
 | 0001 | Python + PySide6 Widgets. |
 | 0002 | Proyecto = carpeta (`proyecto.db` + `documentos/` por hash + `exportaciones/` + `copias/`). |
-| 0003 | SQLite + SQLAlchemy/Alembic (o alternativa mínima). |
+| 0003 | SQLite con migraciones propias (aceptado 06-11-2026). |
 | 0004 | SI interno, pint en fronteras, unidades de visualización configurables. |
 | 0005 | Procedencia por valor (tabla de propiedades con origen) frente a JSON opaco. |
 | 0006 | Motores de cálculo puros, versionados, con registro de cálculo. |

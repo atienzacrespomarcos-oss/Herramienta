@@ -48,10 +48,18 @@ Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 
 ## Comandos
 
-(Se completan en la Etapa 1, cuando exista el código.)
+- Entorno: `uv sync` (Python 3.12, fijado en `.python-version` y `uv.lock`).
+- Pruebas: `uv run python -m pytest` (segundos). Con `QT_QPA_PLATFORM=offscreen` sin pantalla.
+- Estilo: `uv run ruff check .` y `uv run ruff format --check .`
+- Capas: `uv run lint-imports` (también lo ejecuta `tests/unit/test_arquitectura.py`).
+- CI (`.github/workflows/ci.yml`) repite todo en **Windows y Linux**.
 
 ## Trampas conocidas
 
+- Toda escritura en la base de datos pasa por `Proyecto.ejecutar` (órdenes) o por
+  `persistence/`. Un test busca `INSERT/UPDATE/DELETE` fuera de ahí y falla.
+- Las migraciones no usan `executescript` (hace COMMIT implícito y rompe la atomicidad).
+- `bool` es subclase de `int`: `validar_valor` lo excluye a propósito; no lo «simplifiques».
 - En contenedores Linux sin pantalla, PySide6 necesita `libegl1` y `QT_QPA_PLATFORM=offscreen`
   (comprobado 05-11-2026).
 - Los heredocs de bash corrompen barras invertidas: para regex o escapes usa la
