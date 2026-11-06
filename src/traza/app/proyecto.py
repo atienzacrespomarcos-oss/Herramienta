@@ -10,17 +10,22 @@ from pathlib import Path
 from typing import Any
 
 from traza.app.ordenes import (
+    ENCARGOS,
     CambiarEstado,
     CrearPendiente,
     FijarPropiedad,
+    ImportarMedicion,
     Orden,
     OrdenRechazada,
+    PartidaNueva,
     RegistrarDocumento,
     ahora,
     nuevo_id,
 )
 from traza.core.estados import Estado
 from traza.core.procedencia import Origen
+from traza.io import bc3
+from traza.io.excel import exportar_partidas
 from traza.io.pdf import contar_paginas
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
@@ -49,7 +54,7 @@ class Proyecto:
     # --- Ciclo de vida -----------------------------------------------------------------
 
     @classmethod
-    def crear(cls, destino: Path, nombre: str) -> Proyecto:
+    def crear(cls, destino: Path, nombre: str, encargo: str = "diseno") -> Proyecto:
         if not nombre.strip():
             raise OrdenRechazada("El proyecto necesita un nombre.")
         if set('<>:"/\\|?*') & set(nombre) or ".." in nombre:
@@ -62,6 +67,9 @@ class Proyecto:
             con.execute("BEGIN IMMEDIATE")
             con.execute("INSERT INTO meta VALUES ('nombre', ?)", (nombre.strip(),))
             con.execute("INSERT INTO meta VALUES ('creado', ?)", (ahora(),))
+            if encargo not in ENCARGOS:
+                raise OrdenRechazada(f"Tipo de encargo desconocido: «{encargo}».")
+            con.execute("INSERT INTO meta VALUES ('encargo', ?)", (encargo,))
             con.execute("COMMIT")
         except BaseException:
             # Un proyecto a medio crear dejaría ocupado el nombre («ya existe») sin servir
@@ -90,6 +98,13 @@ class Proyecto:
     @property
     def nombre(self) -> str:
         return self._con.execute("SELECT valor FROM meta WHERE clave='nombre'").fetchone()[0]
+
+    @property
+    def encargo(self) -> str:
+        fila = self._con.execute("SELECT valor FROM meta WHERE clave='encargo'").fetchone()
+        # Proyectos creados antes de existir el tipo de encargo: se tratan como diseño
+        # completo, que es el que muestra todos los pasos (no oculta nada).
+        return fila[0] if fila else "diseno"
 
     def copia_de_seguridad(self) -> Path:
         return fs.copia_de_seguridad(self.carpeta, self._con, etiqueta="manual")
@@ -324,3 +339,88 @@ class Proyecto:
             " ORDER BY e.codigo, p.clave",
             (documento_id,),
         )
+
+    # --- Mediciones, ofertas y presupuestos ---------------------------------------------
+
+    #: Formatos que se pueden leer como medición. Se amplía con cada lector (Excel, PDF).
+    FORMATOS_MEDICION = (".bc3",)
+
+    def leer_medicion(
+        self, documento_id: str, clase: str, proveedor: str | None = None
+    ) -> tuple[str, list[str]]:
+        """Lee un documento incorporado como medición/oferta/presupuesto y guarda sus partidas.
+
+        Se lee la copia del almacén (la verificada por su huella), no el original.
+        Devuelve (id de la medición, avisos del lector).
+        """
+        doc = leer(self._con, "documento", {"id": documento_id})
+        if doc is None:
+            raise OrdenRechazada("Documento no incorporado.")
+        if doc["extension"] not in self.FORMATOS_MEDICION:
+            raise OrdenRechazada(
+                f"Todavía no se pueden leer mediciones en formato «{doc['extension']}». "
+                f"Formatos disponibles: {', '.join(self.FORMATOS_MEDICION)}."
+            )
+        ruta = self.ruta_documento(documento_id)
+        try:
+            leido = bc3.leer_bc3(ruta)
+        except bc3.Bc3Error as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        ps, avisos = bc3.partidas(leido)
+        avisos = leido.avisos + avisos
+        orden = ImportarMedicion(
+            documento_id=documento_id,
+            titulo=doc["nombre_original"],
+            clase=clase,
+            proveedor=proveedor,
+            lector=bc3.LECTOR,
+            version_lector=bc3.VERSION_LECTOR,
+            partidas=[
+                PartidaNueva(
+                    capitulo=[list(c) for c in p.capitulos],
+                    codigo=p.codigo,
+                    etiqueta=p.etiqueta,
+                    unidad=p.unidad,
+                    resumen=p.resumen,
+                    texto=p.texto,
+                    cantidad=p.cantidad,
+                    precio=p.precio,
+                    localizador=p.localizador,
+                )
+                for p in ps
+            ],
+            avisos=avisos,
+        )
+        self.ejecutar(orden)
+        return orden.id, avisos
+
+    def mediciones(self) -> list[dict[str, Any]]:
+        filas = self._filas(
+            "SELECT m.*, d.nombre_original AS documento_nombre,"
+            " (SELECT count(*) FROM partida p WHERE p.medicion_id = m.id) AS n_partidas"
+            " FROM medicion m JOIN documento d ON d.id = m.documento_id ORDER BY m.leido"
+        )
+        for f in filas:
+            f["avisos"] = json.loads(f["avisos"])
+        return filas
+
+    def partidas(self, medicion_id: str) -> list[dict[str, Any]]:
+        filas = self._filas(
+            "SELECT * FROM partida WHERE medicion_id = ? ORDER BY orden", (medicion_id,)
+        )
+        for f in filas:
+            f["capitulo"] = json.loads(f["capitulo"])
+            f["importe"] = (
+                f["cantidad"] * f["precio"]
+                if f["cantidad"] is not None and f["precio"] is not None
+                else None
+            )
+        return filas
+
+    def exportar_excel(self, destino: Path, medicion_ids: list[str] | None = None) -> Path:
+        """El «Excel con todo» para hacer los pedidos en el ERP del usuario."""
+        meds = [m for m in self.mediciones() if medicion_ids is None or m["id"] in medicion_ids]
+        if not meds:
+            raise OrdenRechazada("No hay mediciones leídas que exportar.")
+        bloques = [(m, self.partidas(m["id"])) for m in meds]
+        return exportar_partidas(Path(destino), self.nombre, bloques)

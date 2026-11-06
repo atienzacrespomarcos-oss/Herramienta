@@ -384,3 +384,130 @@ class ResolverPendiente(Orden):
                 {**antes, "estado": "resuelto", "resolucion": self.resolucion.strip()},
             )
         ]
+
+
+# --- Tipo de encargo ----------------------------------------------------------------
+
+#: Tipos de encargo del usuario (06-11-2026). Deciden qué pasos del proyecto se muestran.
+ENCARGOS = {
+    "diseno": "Diseño + presupuesto + instalación",
+    "presupuesto": "Presupuesto + instalación",
+    "instalacion": "Solo instalación",
+}
+
+
+@dataclass
+class CambiarEncargo(Orden):
+    encargo: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if self.encargo not in ENCARGOS:
+            raise OrdenRechazada(f"Tipo de encargo desconocido: «{self.encargo}».")
+        antes = leer(con, "meta", {"clave": "encargo"})
+        despues = {"clave": "encargo", "valor": self.encargo}
+        if antes == despues:
+            raise OrdenRechazada("El proyecto ya tiene ese tipo de encargo.")
+        return [Delta("meta", antes, despues)]
+
+
+# --- Mediciones, ofertas y presupuestos ----------------------------------------------
+
+CLASES_MEDICION = {"medicion": "Medición", "oferta": "Oferta", "presupuesto": "Presupuesto"}
+
+
+@dataclass
+class PartidaNueva:
+    capitulo: list[list[str]]
+    codigo: str | None
+    etiqueta: str | None
+    unidad: str | None
+    resumen: str | None
+    texto: str | None
+    cantidad: float | None
+    precio: float | None
+    localizador: str
+
+
+@dataclass
+class ImportarMedicion(Orden):
+    """Da de alta lo leído de un documento: una medición/oferta/presupuesto y sus partidas.
+
+    Todo entra en una sola orden: o se importa entero o no se importa, y se deshace de una vez.
+    """
+
+    documento_id: str
+    # No se llama «nombre»: Orden ya tiene una propiedad con ese nombre y dataclass la
+    # tomaría como valor por defecto del campo.
+    titulo: str
+    clase: str
+    proveedor: str | None
+    lector: str
+    version_lector: str
+    partidas: list[PartidaNueva]
+    avisos: list[str]
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if leer(con, "documento", {"id": self.documento_id}) is None:
+            raise OrdenRechazada("El documento no está incorporado al proyecto.")
+        if self.clase not in CLASES_MEDICION:
+            raise OrdenRechazada(f"Clase desconocida: «{self.clase}».")
+        if not self.partidas:
+            raise OrdenRechazada("El documento no contiene partidas que importar.")
+        deltas = [
+            Delta(
+                "medicion",
+                None,
+                {
+                    "id": self.id,
+                    "documento_id": self.documento_id,
+                    "nombre": self.titulo.strip() or "(sin nombre)",
+                    "clase": self.clase,
+                    "proveedor": (self.proveedor or "").strip() or None,
+                    "lector": self.lector,
+                    "version_lector": self.version_lector,
+                    "leido": ahora(),
+                    "avisos": json.dumps(self.avisos, ensure_ascii=False),
+                },
+            )
+        ]
+        for n, p in enumerate(self.partidas, start=1):
+            deltas.append(
+                Delta(
+                    "partida",
+                    None,
+                    {
+                        "id": nuevo_id(),
+                        "medicion_id": self.id,
+                        "orden": n,
+                        "capitulo": json.dumps(p.capitulo, ensure_ascii=False),
+                        "codigo": p.codigo,
+                        "etiqueta": p.etiqueta,
+                        "unidad": p.unidad,
+                        "resumen": p.resumen,
+                        "texto": p.texto,
+                        "cantidad": p.cantidad,
+                        "precio": p.precio,
+                        "localizador": p.localizador,
+                    },
+                )
+            )
+        return deltas
+
+
+@dataclass
+class QuitarMedicion(Orden):
+    medicion_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        med = leer(con, "medicion", {"id": self.medicion_id})
+        if med is None:
+            raise OrdenRechazada("Esa medición no existe.")
+        filas = [
+            dict(r)
+            for r in con.execute(
+                "SELECT * FROM partida WHERE medicion_id = ? ORDER BY orden", (self.medicion_id,)
+            )
+        ]
+        # Partidas primero y la cabecera después: al deshacer, el orden se invierte solo.
+        return [Delta("partida", f, None) for f in filas] + [Delta("medicion", med, None)]

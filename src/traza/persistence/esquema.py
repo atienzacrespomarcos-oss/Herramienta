@@ -116,5 +116,39 @@ CREATE INDEX propiedad_documento ON propiedad(documento_id);
 CREATE INDEX cambio_entidad ON cambio(entidad, entidad_id);
 """
 
-MIGRACIONES: tuple[str, ...] = (V1,)
+# V2 (06-11-2026): mediciones, ofertas y presupuestos leídos de documentos, y sus partidas.
+# Cada partida guarda DÓNDE está en su documento (localizador): sin eso no se guarda.
+V2 = """
+CREATE TABLE medicion (
+    id TEXT PRIMARY KEY,
+    documento_id TEXT NOT NULL REFERENCES documento(id),
+    nombre TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
+    clase TEXT NOT NULL CHECK (clase IN ('medicion','oferta','presupuesto')),
+    proveedor TEXT,
+    lector TEXT NOT NULL,
+    version_lector TEXT NOT NULL,
+    leido TEXT NOT NULL,
+    avisos TEXT NOT NULL
+);
+
+CREATE TABLE partida (
+    id TEXT PRIMARY KEY,
+    medicion_id TEXT NOT NULL REFERENCES medicion(id),
+    orden INTEGER NOT NULL,
+    capitulo TEXT NOT NULL,
+    codigo TEXT,
+    etiqueta TEXT,
+    unidad TEXT,
+    resumen TEXT,
+    texto TEXT,
+    cantidad REAL,
+    precio REAL,
+    localizador TEXT NOT NULL CHECK (length(trim(localizador)) > 0),
+    UNIQUE (medicion_id, orden)
+);
+
+CREATE INDEX partida_medicion ON partida(medicion_id);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2)
 VERSION_ACTUAL = len(MIGRACIONES)
