@@ -131,7 +131,9 @@ CREATE TABLE medicion (
     avisos TEXT NOT NULL,
     -- Líneas del documento que no se han podido convertir en partida (porcentajes, códigos
     -- sin concepto…). Si > 0, los totales de esta medición son parciales.
-    omitidas INTEGER NOT NULL DEFAULT 0 CHECK (omitidas >= 0)
+    omitidas INTEGER NOT NULL DEFAULT 0 CHECK (omitidas >= 0),
+    -- Total que declara el propio documento (si lo declara), para contrastar la suma.
+    total_documento REAL
 );
 
 CREATE TABLE partida (
@@ -147,6 +149,11 @@ CREATE TABLE partida (
     cantidad REAL,
     precio REAL,
     localizador TEXT NOT NULL CHECK (length(trim(localizador)) > 0),
+    estado TEXT NOT NULL DEFAULT 'exacta'
+        CHECK (estado IN ('exacta','comprobada','a_revisar','confirmada')),
+    motivos TEXT NOT NULL DEFAULT '[]',
+    -- Una partida «a revisar» tiene que decir por qué.
+    CHECK (estado <> 'a_revisar' OR motivos <> '[]'),
     UNIQUE (medicion_id, orden)
 );
 

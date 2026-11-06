@@ -71,8 +71,10 @@ def test_quitar_medicion_y_deshacer(proyecto, bc3):
     assert [p["orden"] for p in proyecto.partidas(med_id)] == [1, 2, 3]
 
 
-def test_formato_no_disponible_se_dice(proyecto, pdf_3_paginas):
-    doc = proyecto.incorporar_documento(pdf_3_paginas)
+def test_formato_no_disponible_se_dice(proyecto, tmp_path):
+    f = tmp_path / "oferta.docx"  # Word aún no se lee como medición
+    f.write_bytes(b"no importa el contenido")
+    doc = proyecto.incorporar_documento(f)
     with pytest.raises(OrdenRechazada, match="Todavía no se pueden leer"):
         proyecto.leer_medicion(doc, "oferta")
 

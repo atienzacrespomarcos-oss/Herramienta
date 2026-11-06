@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from traza.ai import claude_code
+from traza.app import lectura_ia
 from traza.app.ordenes import (
     ENCARGOS,
     CambiarEstado,
@@ -26,7 +29,7 @@ from traza.core.estados import Estado
 from traza.core.procedencia import Origen
 from traza.io import bc3
 from traza.io.excel import exportar_partidas
-from traza.io.pdf import contar_paginas
+from traza.io.pdf import contar_paginas, renderizar_paginas
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
 
@@ -49,6 +52,8 @@ class Proyecto:
         self.carpeta = c
         self._con = con
         self._deshacer: list[_Paso] = []
+        #: Quién lee PDF y Excel. Por defecto Claude Code (ADR-0013); las pruebas lo sustituyen.
+        self.extractor_ia = claude_code.extraer
         self._rehacer: list[_Paso] = []
 
     # --- Ciclo de vida -----------------------------------------------------------------
@@ -343,7 +348,9 @@ class Proyecto:
     # --- Mediciones, ofertas y presupuestos ---------------------------------------------
 
     #: Formatos que se pueden leer como medición. Se amplía con cada lector (Excel, PDF).
-    FORMATOS_MEDICION = (".bc3",)
+    #: BC3 se lee sin IA (exacto). PDF y Excel se leen con IA + comprobaciones (ADR-0013).
+    FORMATOS_MEDICION = (".bc3", ".pdf", ".xlsx", ".xlsm")
+    FORMATOS_CON_IA = (".pdf", ".xlsx", ".xlsm")
 
     def leer_medicion(
         self, documento_id: str, clase: str, proveedor: str | None = None
@@ -362,6 +369,8 @@ class Proyecto:
                 f"Formatos disponibles: {', '.join(self.FORMATOS_MEDICION)}."
             )
         ruta = self.ruta_documento(documento_id)
+        if doc["extension"] in self.FORMATOS_CON_IA:
+            return self._leer_con_ia(doc, ruta, clase, proveedor)
         try:
             leido = bc3.leer_bc3(ruta)
         except bc3.Bc3Error as exc:
@@ -396,6 +405,49 @@ class Proyecto:
         self.ejecutar(orden)
         return orden.id, avisos
 
+    def _leer_con_ia(
+        self, doc: dict[str, Any], ruta: Path, clase: str, proveedor: str | None
+    ) -> tuple[str, list[str]]:
+        avisos: list[str] = []
+        imagenes: list[Path] | None = None
+        if doc["extension"] == ".pdf":
+            fuente: lectura_ia.Fuente = lectura_ia.FuentePdf(ruta)
+            if fuente.escaneado:
+                avisos.append(
+                    "PDF escaneado (sin texto): la IA lee las imágenes, pero no se puede "
+                    "comprobar contra el documento; todas las líneas quedan «a revisar»."
+                )
+                temporal = Path(tempfile.mkdtemp(prefix="traza-pdf-"))
+                imagenes = renderizar_paginas(ruta, temporal)
+        else:
+            fuente = lectura_ia.FuenteExcel(ruta)
+            avisos += fuente.avisos
+        try:
+            extraido = self.extractor_ia(fuente.texto_para_ia(), imagenes)
+        except (claude_code.IaNoDisponible, claude_code.IaError) as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        finally:
+            if imagenes:
+                shutil.rmtree(imagenes[0].parent, ignore_errors=True)
+        r = lectura_ia.comprobar(extraido, fuente)
+        if r.proveedor and not proveedor:
+            # Leído por la IA y no comprobado: se dice, no se guarda como dato.
+            avisos.append(f"La IA identifica el proveedor como «{r.proveedor}» (sin comprobar).")
+        avisos += r.avisos
+        orden = ImportarMedicion(
+            documento_id=doc["id"],
+            titulo=doc["nombre_original"],
+            clase=clase,
+            proveedor=proveedor,
+            lector=claude_code.PROVEEDOR,
+            version_lector=claude_code.VERSION,
+            partidas=r.partidas,
+            avisos=avisos,
+            total_documento=r.total_documento,
+        )
+        self.ejecutar(orden, autor="importacion")
+        return orden.id, avisos
+
     def mediciones(self) -> list[dict[str, Any]]:
         filas = self._filas(
             "SELECT m.*, d.nombre_original AS documento_nombre,"
@@ -412,6 +464,7 @@ class Proyecto:
         )
         for f in filas:
             f["capitulo"] = json.loads(f["capitulo"])
+            f["motivos"] = json.loads(f["motivos"])
             f["importe"] = (
                 f["cantidad"] * f["precio"]
                 if f["cantidad"] is not None and f["precio"] is not None

@@ -426,6 +426,13 @@ class PartidaNueva:
     cantidad: float | None
     precio: float | None
     localizador: str
+    #: «exacta» (BC3, sin interpretar), «comprobada» (IA + comprobaciones superadas) o
+    #: «a_revisar» (IA + alguna comprobación no superada; ver motivos).
+    estado: str = "exacta"
+    motivos: list[str] = field(default_factory=list)
+
+
+ESTADOS_PARTIDA = ("exacta", "comprobada", "a_revisar", "confirmada")
 
 
 @dataclass
@@ -446,6 +453,7 @@ class ImportarMedicion(Orden):
     partidas: list[PartidaNueva]
     avisos: list[str]
     omitidas: int = 0
+    total_documento: float | None = None
     id: str = field(default_factory=nuevo_id)
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
@@ -480,6 +488,7 @@ class ImportarMedicion(Orden):
                     "leido": ahora(),
                     "avisos": json.dumps(self.avisos, ensure_ascii=False),
                     "omitidas": self.omitidas,
+                    "total_documento": self.total_documento,
                 },
             )
         ]
@@ -501,6 +510,8 @@ class ImportarMedicion(Orden):
                         "cantidad": p.cantidad,
                         "precio": p.precio,
                         "localizador": p.localizador,
+                        "estado": p.estado,
+                        "motivos": json.dumps(p.motivos, ensure_ascii=False),
                     },
                 )
             )
@@ -523,3 +534,18 @@ class QuitarMedicion(Orden):
         ]
         # Partidas primero y la cabecera después: al deshacer, el orden se invierte solo.
         return [Delta("partida", f, None) for f in filas] + [Delta("medicion", med, None)]
+
+
+@dataclass
+class ConfirmarPartida(Orden):
+    """El usuario ha revisado contra el documento una partida «a revisar» y la da por buena."""
+
+    partida_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "partida", {"id": self.partida_id})
+        if antes is None:
+            raise OrdenRechazada("Esa partida no existe.")
+        if antes["estado"] != "a_revisar":
+            raise OrdenRechazada("Solo se confirman partidas marcadas «a revisar».")
+        return [Delta("partida", antes, {**antes, "estado": "confirmada"})]
