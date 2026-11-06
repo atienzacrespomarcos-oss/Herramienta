@@ -32,5 +32,5 @@ declarados).
 | — | Mediciones: lector BC3 | 2 | Implementada | Según FIEBDC-3/2024. Validada solo con ficheros de prueba construidos según la norma: falta un BC3 real del usuario. |
 | — | Mediciones: lector PDF y Excel con IA + comprobaciones | 2 | Implementada | ADR-0013. Probado con IA simulada; pendiente de Claude Code real y documentos del usuario. |
 | — | Excel «con todo» para pedidos en el ERP | 2 | Implementada | Pendiente de que el usuario confirme columnas y que su ERP lo importa. |
-| — | Ampliaciones y modificaciones (Excel y BC3) | 2 | Pendiente | |
+| — | Ampliaciones y modificaciones (Excel y BC3) | 2 | Implementada | Paso «Modificados». BC3 verificado por relectura; falta importarlo en Presto/Arquímedes. |
 | — | Interfaz por pasos según tipo de encargo | 2 | Implementada | Pasos: Documentación, Mediciones y ofertas, Equipos. Historial en «Ver». |

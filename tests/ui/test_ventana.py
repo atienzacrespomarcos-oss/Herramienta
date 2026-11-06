@@ -72,6 +72,20 @@ class PreguntasPreparadas:
     def destino_excel(self, sugerido):
         return self._siguiente("destino_excel")
 
+    def nuevo_modificado(self, mediciones):
+        return self._siguiente("nuevo_modificado")
+
+    def variacion(self, partidas):
+        r = self._siguiente("variacion")
+        return r(partidas) if callable(r) else r
+
+    def partida_nueva(self, lineas):
+        r = self._siguiente("partida_nueva")
+        return r(lineas) if callable(r) else r
+
+    def destino_bc3(self, sugerido):
+        return self._siguiente("destino_bc3")
+
 
 @pytest.fixture
 def ventana(qtbot):
@@ -423,7 +437,7 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
     q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
     v.a_nuevo.trigger()
     textos = [v.lista_pasos.item(i).text() for i in range(v.lista_pasos.count())]
-    assert textos == ["1. Documentación", "2. Mediciones y ofertas", "3. Equipos"]
+    assert textos == ["1. Documentación", "2. Mediciones y ofertas", "3. Modificados", "4. Equipos"]
     assert v.paso_actual() == "documentacion"
     v.ir_a_paso("equipos")
     assert v.paginas.currentWidget() is v._pagina["equipos"]
@@ -567,3 +581,115 @@ def test_leer_pdf_con_ia_pide_permiso_y_permite_confirmar_lo_dudoso(ventana, tmp
     q.preparar("confirmar", True)
     v.a_confirmar_partida.trigger()
     assert v.arbol_partidas.topLevelItem(0).text(6) == "Confirmada por ti"
+
+
+def test_modificado_completo_desde_la_interfaz(ventana, tmp_path):
+    from traza.io import bc3 as lector
+    from traza.ui.dialogos import DatosCambio
+
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    v.a_nuevo.trigger()
+    assert not v.a_nuevo_modificado.isEnabled(), "sin mediciones no hay base"
+    base = tmp_path / "Contrato.bc3"
+    base.write_bytes(BC3_PRUEBA.encode("cp1252"))
+    oferta = tmp_path / "Oferta.bc3"
+    oferta.write_bytes(
+        b"~V||FIEBDC-3/2016|||ANSI||2|\n~C|OF##||Oferta|\n~C|EXT01|ud|Extractor|850|\n"
+        b"~D|OF##|EXT01\\1\\1\\|\n"
+    )
+    for f, clase in ((base, "presupuesto"), (oferta, "oferta")):
+        q.preparar("documento", (f, "oferta"))
+        v.a_incorporar.trigger()
+        doc = next(d["id"] for d in v.proyecto.documentos() if d["nombre_original"] == f.name)
+        q.preparar("leer_medicion", (doc, clase, None))
+        v.a_leer_medicion.trigger()
+    base_id = next(m["id"] for m in v.proyecto.mediciones() if m["clase"] == "presupuesto")
+
+    q.preparar("nuevo_modificado", (base_id, "Ampliación zona de carga"))
+    v.a_nuevo_modificado.trigger()
+    assert v.paso_actual() == "modificados" and v.tabla_modificados.rowCount() == 1
+
+    q.preparar(
+        "variacion",
+        lambda ps: DatosCambio(
+            next(p["id"] for p in ps if p["codigo"] == "CND01"), 12, "medicion", "Faltan 2 m2"
+        ),
+    )
+    v.a_variar.trigger()
+    assert v.a_partida_nueva.isEnabled()
+    q.preparar("partida_nueva", lambda ls: DatosCambio(ls[0]["id"], 2, "economica", "Mejor"))
+    v.a_partida_nueva.trigger()
+    filas = [[v.tabla_cambios.item(i, j).text() for j in range(9)] for i in range(2)]
+    assert filas[0][:7] == [
+        "Aumento",
+        "CND01",
+        "Conducto de chapa galvanizada",
+        "m2",
+        "10",
+        "12",
+        "2",
+    ]
+    assert filas[1][0] == "Partida nueva" and filas[1][8] == "1.700,00"
+    assert "Diferencia: <b>1.760,00</b>" in v.total_modificado.text()
+
+    destino = tmp_path / "mod.bc3"
+    q.preparar("destino_bc3", destino)
+    v.a_exportar_mod_bc3.trigger()
+    leidas = {p.codigo: p.cantidad for p in lector.leer_partidas(lector.leer_bc3(destino)).partidas}
+    assert leidas["CND01"] == 12 and leidas["EXT01"] == 2
+    destino_x = tmp_path / "mod.xlsx"
+    q.preparar("destino_excel", destino_x)
+    v.a_exportar_mod_excel.trigger()
+    assert destino_x.is_file()
+
+    v.tabla_cambios.setCurrentCell(0, 0)
+    v.a_quitar_cambio.trigger()
+    assert v.tabla_cambios.rowCount() == 1
+    q.preparar("confirmar", True)
+    v.a_borrar_modificado.trigger()
+    assert v.tabla_modificados.rowCount() == 0
+    v.a_deshacer.trigger()
+    assert v.tabla_modificados.rowCount() == 1
+    assert [a for a in q.avisos if a.startswith("Error")] == []
+
+
+def test_dialogo_de_cambio_exige_justificacion_y_numero_valido(qtbot):
+    from traza.ui.dialogos import DatosCambio, DialogoCambio
+
+    partidas = [
+        {
+            "id": "a",
+            "codigo": "CND01",
+            "resumen": "Conducto",
+            "cantidad": 10,
+            "unidad": "m2",
+            "precio": 30.0,
+        },
+        {
+            "id": "b",
+            "codigo": "REJ01",
+            "resumen": "Rejilla",
+            "cantidad": 4,
+            "unidad": "ud",
+            "precio": None,
+        },
+    ]
+    d = DialogoCambio(None, "Cambiar cantidad", partidas, "Cantidad nueva")
+    qtbot.addWidget(d)
+    d.partida.setCurrentIndex(1)
+    d.cantidad.setText("2.400")
+    d.justificacion.setText("x")
+    d._aceptar()
+    assert d.resultado is None and "ambiguo" in d.error.text()
+    d.cantidad.setText("6")
+    d.justificacion.setText("  ")
+    d._aceptar()
+    assert d.resultado is None and "obligatoria" in d.error.text()
+    d.partida.setEditText("no existe")
+    d.justificacion.setText("Se amplía")
+    d._aceptar()
+    assert d.resultado is None and "Elige una partida" in d.error.text()
+    d.partida.setCurrentIndex(1)
+    d._aceptar()
+    assert d.resultado == DatosCambio("b", 6.0, "medicion", "Se amplía")

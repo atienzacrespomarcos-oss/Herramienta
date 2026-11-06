@@ -2,6 +2,15 @@
 
 ## [Sin publicar]
 
+### Etapa 2 · modificados (06-11-2026)
+- Paso «Modificados»: sobre una medición leída, variaciones de cantidad (aumento,
+  disminución, anulación) y partidas nuevas tomadas de ofertas leídas, con motivo y
+  justificación obligatorios; numeración automática; todo deshacible.
+- Excel del modificado (cambios con totales + presupuesto actualizado).
+- BC3 del presupuesto completo actualizado a partir del original (lo no tocado queda igual),
+  o generado si la base vino de PDF/Excel; siempre verificado por relectura.
+- Esquema de proyecto V3.
+
 ### Etapa 2 · mediciones (06-11-2026, en curso)
 - Lector BC3 según la especificación oficial FIEBDC-3/2024 (páginas citadas).
 - Partidas guardadas en el proyecto con su origen exacto; leer y quitar se deshacen.

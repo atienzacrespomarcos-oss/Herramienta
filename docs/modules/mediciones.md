@@ -12,7 +12,7 @@ Especificación aprobada por decisiones del usuario (06-11-2026).
 | Interfaz por pasos | Implementado (Documentación · Mediciones y ofertas · Equipos) |
 | Tipo de encargo | Se elige al crear el proyecto, se muestra en el título y se puede cambiar. **Hoy no oculta ningún paso**: los tres pasos actuales sirven para los tres encargos. Los pasos de cálculo y planos, cuando existan, solo se verán en «diseño». |
 | Lector PDF y Excel con IA (Claude Code, tu suscripción) | Implementado con comprobaciones deterministas (ADR-0013). Pendiente de probar con Claude Code real en tu equipo y con documentos tuyos. |
-| Ampliaciones y modificaciones (Excel y BC3) | Pendiente |
+| Ampliaciones y modificaciones (Excel y BC3) | Implementado (paso «Modificados»). Pendiente de que Presto/Arquímedes importe el BC3 en el entorno de quien lo reciba. |
 
 ## Lectura con IA de PDF y Excel
 
@@ -172,6 +172,28 @@ Limitaciones iniciales del lector (se declaran al usuario, no se ocultan):
       se comparan con los del modificado antes de darlo por bueno.
 - Validación pendiente: importar el BC3 en Presto o Arquímedes. El usuario no tiene esos
   programas; lo confirmará quien reciba el fichero.
+
+### Cómo se usa (paso 3 «Modificados»)
+
+1. «Nuevo modificado»: eliges la medición o presupuesto de base (el contratado) y un título.
+   Se numeran solos (nº 1, nº 2…) por cada base.
+2. «Cambiar cantidad de una partida»: buscas la partida (escribe parte del código o de la
+   descripción), pones la **cantidad nueva total**, el motivo y la justificación. Con 0 se
+   anula. Solo se ofrecen partidas con cantidad y lectura fiable (no «a revisar»).
+3. «Añadir partida de una oferta»: buscas la línea entre las ofertas leídas (solo las fiables
+   y con precio), pones la cantidad, el motivo y la justificación. El precio y su origen
+   (documento y línea) vienen de la oferta.
+4. La tabla muestra, por cambio, contrato, nuevo, diferencia y diferencia de importe; abajo,
+   los totales de contrato, modificado y diferencia («parcial» si falta algún precio).
+5. «Exportar modificado a Excel»: hoja de cambios con totales y hoja del presupuesto completo
+   actualizado.
+6. «Exportar presupuesto actualizado a BC3»: el original con las cantidades nuevas, una línea
+   de medición con la diferencia y el motivo, los precios de capítulos corregidos y un
+   capítulo `MODn` con las partidas nuevas. Todo lo demás del original queda igual. Antes de
+   guardarlo se vuelve a leer y se compara; si no coincide, no se guarda.
+
+Protecciones: no se puede quitar una medición que usa un modificado; una partida anulada
+(0) se relee como «no consta» (pág. 2 de la norma); todo se puede deshacer.
 
 ## Pasos del proyecto (interfaz)
 
