@@ -290,7 +290,7 @@ def partidas(b: Bc3) -> tuple[list[PartidaLeida], list[str]]:
     salida: list[PartidaLeida] = []
     if b.raiz is None:
         # Pág. 21: mediciones no estructuradas, sin raíz ni ~D.
-        for (padre, hijo), m in b.mediciones.items():
+        for (_padre, hijo), m in b.mediciones.items():
             con = b.conceptos.get(hijo, Concepto(codigo=hijo))
             salida.append(
                 PartidaLeida(
