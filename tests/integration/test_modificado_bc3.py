@@ -6,7 +6,6 @@ toca es lo justo, y el fichero se relee igual que lo esperado.
 
 from __future__ import annotations
 
-
 import pytest
 
 from traza.app.ordenes import (
