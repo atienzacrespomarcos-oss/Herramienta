@@ -6,6 +6,7 @@ import json
 import shutil
 import sqlite3
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,7 +30,7 @@ from traza.core.estados import Estado
 from traza.core.procedencia import Origen
 from traza.io import bc3
 from traza.io.excel import exportar_partidas
-from traza.io.pdf import contar_paginas, renderizar_paginas
+from traza.io.pdf import contar_paginas, renderizar_pagina
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
 
@@ -353,12 +354,19 @@ class Proyecto:
     FORMATOS_CON_IA = (".pdf", ".xlsx", ".xlsm")
 
     def leer_medicion(
-        self, documento_id: str, clase: str, proveedor: str | None = None
+        self,
+        documento_id: str,
+        clase: str,
+        proveedor: str | None = None,
+        esperar: Callable[[Callable[[], Any]], Any] | None = None,
     ) -> tuple[str, list[str]]:
         """Lee un documento incorporado como medición/oferta/presupuesto y guarda sus partidas.
 
         Se lee la copia del almacén (la verificada por su huella), no el original.
         Devuelve (id de la medición, avisos del lector).
+
+        `esperar` ejecuta la parte lenta (la llamada a la IA, que no toca la base de datos)
+        mientras la interfaz sigue respondiendo; por defecto se ejecuta sin más.
         """
         doc = leer(self._con, "documento", {"id": documento_id})
         if doc is None:
@@ -368,9 +376,18 @@ class Proyecto:
                 f"Todavía no se pueden leer mediciones en formato «{doc['extension']}». "
                 f"Formatos disponibles: {', '.join(self.FORMATOS_MEDICION)}."
             )
+        previa = self._con.execute(
+            "SELECT nombre FROM medicion WHERE documento_id = ?", (documento_id,)
+        ).fetchone()
+        if previa:
+            # Antes de leer: así no se envía a la IA (ni se gasta suscripción) en balde.
+            raise OrdenRechazada(
+                f"«{previa['nombre']}» ya está leído. Quita esa medición si quieres volver a "
+                "leerlo."
+            )
         ruta = self.ruta_documento(documento_id)
         if doc["extension"] in self.FORMATOS_CON_IA:
-            return self._leer_con_ia(doc, ruta, clase, proveedor)
+            return self._leer_con_ia(doc, ruta, clase, proveedor, esperar or (lambda f: f()))
         try:
             leido = bc3.leer_bc3(ruta)
         except bc3.Bc3Error as exc:
@@ -406,29 +423,42 @@ class Proyecto:
         return orden.id, avisos
 
     def _leer_con_ia(
-        self, doc: dict[str, Any], ruta: Path, clase: str, proveedor: str | None
+        self,
+        doc: dict[str, Any],
+        ruta: Path,
+        clase: str,
+        proveedor: str | None,
+        esperar: Callable[[Callable[[], Any]], Any],
     ) -> tuple[str, list[str]]:
         avisos: list[str] = []
-        imagenes: list[Path] | None = None
+        imagenes: dict[int, Path] = {}
+        temporal: Path | None = None
         if doc["extension"] == ".pdf":
             fuente: lectura_ia.Fuente = lectura_ia.FuentePdf(ruta)
-            if fuente.escaneado:
+            sin_texto = fuente.paginas_sin_texto
+            if sin_texto:
+                # Páginas escaneadas (todas o algunas): la IA las lee como imagen, pero no hay
+                # texto con que comprobarlas: sus líneas quedan «a revisar».
                 avisos.append(
-                    "PDF escaneado (sin texto): la IA lee las imágenes, pero no se puede "
-                    "comprobar contra el documento; todas las líneas quedan «a revisar»."
+                    f"Páginas sin texto (escaneadas): {', '.join(map(str, sin_texto))}. La IA "
+                    "las lee como imagen; sus líneas no se pueden comprobar y quedan «a revisar»."
                 )
                 temporal = Path(tempfile.mkdtemp(prefix="traza-pdf-"))
-                imagenes = renderizar_paginas(ruta, temporal)
+                imagenes = {
+                    n: renderizar_pagina(ruta, n, temporal / f"pagina_{n:03d}.png")
+                    for n in sin_texto
+                }
         else:
             fuente = lectura_ia.FuenteExcel(ruta)
             avisos += fuente.avisos
+        texto = fuente.texto_para_ia()
         try:
-            extraido = self.extractor_ia(fuente.texto_para_ia(), imagenes)
+            extraido = esperar(lambda: self.extractor_ia(texto, imagenes or None))
         except (claude_code.IaNoDisponible, claude_code.IaError) as exc:
             raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
         finally:
-            if imagenes:
-                shutil.rmtree(imagenes[0].parent, ignore_errors=True)
+            if temporal is not None:
+                shutil.rmtree(temporal, ignore_errors=True)
         r = lectura_ia.comprobar(extraido, fuente)
         if r.proveedor and not proveedor:
             # Leído por la IA y no comprobado: se dice, no se guarda como dato.

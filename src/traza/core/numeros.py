@@ -70,7 +70,14 @@ def interpretaciones_documento(texto: str) -> list[float]:
     - «12,5»     → [12.5]
     Lista vacía si no es un número. Quien llama decide qué hacer con la ambigüedad.
     """
-    t = _SOBRANTE.sub("", texto.strip())
+    t = texto.strip().replace(" ", " ")
+    # Un espacio solo vale como separador de miles en grupos de tres («2 400»); «12 5» son
+    # dos números distintos (p. ej. dos celdas contiguas), no 125 (revisión 06-11-2026).
+    if " " in re.sub(r"\s*(€|EUR|eur|%|\$|uds?\.?)\s*$", "", t).strip():
+        nucleo = re.sub(r"\s*(€|EUR|eur|%|\$|uds?\.?)\s*$", "", t).strip()
+        if not re.fullmatch(r"[+-]?[0-9]{1,3}( [0-9]{3})+([.,][0-9]+)?", nucleo):
+            return []
+    t = _SOBRANTE.sub("", t)
     if not t or not re.fullmatch(r"[+-]?[0-9.,]+", t) or not re.search(r"[0-9]", t):
         return []
     signo = -1.0 if t.startswith("-") else 1.0
@@ -85,7 +92,13 @@ def interpretaciones_documento(texto: str) -> list[float]:
         if sep is None:
             return [signo * float(t)]
         partes = t.split(sep)
-        miles = len(partes) > 1 and all(len(p) == 3 for p in partes[1:]) and len(partes[0]) <= 3
+        # Un primer grupo «0» nunca es un millar: «0,500» es medio, no quinientos.
+        miles = (
+            len(partes) > 1
+            and all(len(p) == 3 for p in partes[1:])
+            and 1 <= len(partes[0]) <= 3
+            and not partes[0].startswith("0")
+        )
         if len(partes) > 2:  # 1.250.000: solo miles
             return [signo * float("".join(partes))] if miles else []
         decimal = signo * float(t.replace(sep, "."))

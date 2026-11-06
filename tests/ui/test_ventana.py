@@ -515,7 +515,9 @@ def test_leer_pdf_con_ia_pide_permiso_y_permite_confirmar_lo_dudoso(ventana, tmp
     v.a_nuevo.trigger()
     ruta = tmp_path / "oferta.pdf"
     doc = pymupdf.open()
-    doc.new_page().insert_text((40, 60), "Rejilla de impulsión   8   45,50   364,00", fontsize=9)
+    doc.new_page().insert_text(
+        (40, 60), "Rejilla de impulsión   ud   8   45,50   364,00", fontsize=9
+    )
     doc.save(ruta)
     doc.close()
     q.preparar("documento", (ruta, "oferta"))
@@ -557,7 +559,7 @@ def test_leer_pdf_con_ia_pide_permiso_y_permite_confirmar_lo_dudoso(ventana, tmp
     assert len(llamadas) == 1
     partida = v.arbol_partidas.topLevelItem(0)
     assert partida.text(6) == "⚠ A revisar"
-    assert "«47,00» no aparece en la p. 1" in partida.toolTip(6)
+    assert "«47,00» no está, como número completo" in partida.toolTip(6)
     assert any("A revisar" in v.lista_avisos.item(i).text() for i in range(v.lista_avisos.count()))
 
     v.arbol_partidas.setCurrentItem(partida)

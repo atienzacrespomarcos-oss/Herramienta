@@ -18,16 +18,30 @@ Especificación aprobada por decisiones del usuario (06-11-2026).
 
 Cuando eliges un PDF o un Excel, TRAZA te pide permiso para enviarlo a Claude. Después:
 
-- Cada línea entra **directa («Comprobada»)** si supera todas las comprobaciones: el texto
-  de cada número está en la página/celda citada; el número es el que pone (se vuelve a leer
-  con reglas propias); cantidad × precio = importe al céntimo.
+- Cada línea entra **directa («Comprobada»)** solo si supera todas las comprobaciones:
+  - la descripción está en la página (PDF) o fila (Excel) citada;
+  - cantidad, precio, importe, unidad y código están **en el mismo renglón** que la
+    descripción (en PDF, ese renglón y los tres siguientes; en Excel, la misma fila), y cada
+    número aparece **completo** (un «2» no vale por estar dentro de «12» o «2.400»);
+  - el número es el que pone el documento (TRAZA lo vuelve a leer con sus reglas);
+  - con cantidad y precio, el documento tiene que dar el importe y cantidad × precio =
+    importe (un céntimo de tolerancia por redondeo). Sin importe, «a revisar»: una
+    cantidad y un precio intercambiados no se podrían detectar. Una línea con solo cantidad
+    (una medición) sí puede entrar directa.
 - Si no, entra **«⚠ A revisar»** en naranja, con el motivo (pasa el ratón por la columna
   Estado o mira la lista de avisos). Tras comprobarla en el documento, «Confirmar partida
   revisada» la marca como «Confirmada por ti» (se puede deshacer).
-- Si la suma de las partidas no da el total que declara el documento, se avisa: puede faltar
-  o sobrar alguna línea.
-- Un **PDF escaneado** se lee igualmente, pero sus líneas quedan todas «a revisar» (no hay
-  texto con que comparar).
+- Si la suma de los importes de las líneas no da el total que declara el documento (un
+  céntimo de tolerancia), se avisa y el pie de la medición muestra el total del documento y
+  la diferencia: puede faltar o sobrar alguna línea.
+- Las **páginas escaneadas** (todo el PDF o algunas) se envían como imagen; sus líneas
+  quedan «a revisar» (no hay texto con que comparar).
+- El total en pantalla indica cuántas partidas «a revisar» incluye; en el Excel esas filas
+  van resaltadas.
+- La lectura se hace en segundo plano con una ventana de progreso (puede tardar minutos).
+- Un documento ya leído no se vuelve a enviar a la IA.
+- **Limitación:** se compara con el texto **extraído** del PDF, no con lo visible. Un PDF
+  con texto oculto (en blanco, fuera de la página) podría colar una cifra.
 - El Excel sale con las columnas «Estado de la lectura» y «Motivo».
 
 ### Instalar Claude Code en tu Windows (una vez)
@@ -82,8 +96,8 @@ instalación, así que este módulo sirve en **todos** los tipos de encargo.
 | Formato | Cómo se lee | Fiabilidad |
 |---|---|---|
 | BC3 (FIEBDC-3) | Según la especificación oficial de la Asociación FIEBDC (ver abajo). Exacto. | Determinista |
-| Excel | El usuario indica una vez qué columna es qué (código, unidad, descripción, cantidad, precio); se recuerda por proveedor/formato. | Determinista tras la asignación |
-| PDF | Detección de tablas; si el usuario lo autoriza documento a documento, ayuda de la IA externa. Todo lo leído así entra como **propuesta** a confirmar. | Interpretado |
+| Excel | IA (Claude Code, con permiso por envío) + comprobaciones deterministas contra las celdas (ADR-0013). | Entra directo solo lo que se comprueba; el resto «a revisar» |
+| PDF | IA (Claude Code, con permiso por envío) + comprobaciones deterministas contra el texto de cada renglón (ADR-0013). Páginas escaneadas: «a revisar». | Ídem |
 
 ### BC3: fuente y reglas aplicadas
 
@@ -176,6 +190,7 @@ al paso **Equipos** existente.
 3. El Excel «con todo» incluye capítulo, código, unidad, descripción, cantidad, precio,
    importe y origen, y se abre en Excel sin avisos.
 4. Un modificado exportado a BC3 se importa en Presto/Arquímedes.
-5. Ningún dato leído de PDF entra sin confirmación.
+5. Ningún dato leído por la IA entra directo sin superar las comprobaciones deterministas
+   (ADR-0013); lo que no las supera queda «a revisar» con su motivo.
 
 Los puntos 1 y 4 necesitan ficheros y programas del usuario: se validan con él.

@@ -17,7 +17,7 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 COLUMNAS = [
@@ -43,6 +43,7 @@ ESTADOS = {
     "confirmada": "Confirmada por el usuario",
 }
 FORMATO_NUMERO = "#,##0.00"
+RELLENO_REVISAR = PatternFill("solid", fgColor="FFE0B2")
 CLASES = {"medicion": "Medición", "oferta": "Oferta", "presupuesto": "Presupuesto"}
 
 
@@ -106,6 +107,10 @@ def exportar_partidas(
                 ]
             )
             _sin_formulas(ws)
+            if p["estado"] == "a_revisar":
+                # Que una partida dudosa no pase desapercibida al sumar en Excel.
+                for celda in ws[ws.max_row]:
+                    celda.fill = RELLENO_REVISAR
             for col in (9, 10, 11):
                 ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
         avisos_filas += [(med["documento_nombre"], a) for a in med["avisos"]]
@@ -125,6 +130,7 @@ def exportar_partidas(
 
     wi = wb.create_sheet("Información")
     wi.append(["Proyecto", _texto(proyecto)])
+    _sin_formulas(wi)
     wi.append(["Generado por", "TRAZA"])
     wi.append(["Nota", "Celdas vacías = no consta en el documento (no es cero)."])
 

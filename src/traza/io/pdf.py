@@ -39,3 +39,18 @@ def renderizar_paginas(ruta: Path, carpeta: Path, ppp: int = 150) -> list[Path]:
             p.get_pixmap(dpi=ppp).save(destino)
             rutas.append(destino)
     return rutas
+
+
+def palabras_paginas(ruta: Path) -> list[list[tuple[float, float, float, float, str]]]:
+    """Palabras de cada página con su caja (x0, y0, x1, y1, texto), para saber en qué
+    renglón está cada dato. Lista vacía en páginas sin texto (escaneadas)."""
+    with pymupdf.open(ruta) as doc:
+        return [[(w[0], w[1], w[2], w[3], w[4]) for w in p.get_text("words")] for p in doc]
+
+
+def renderizar_pagina(ruta: Path, pagina: int, destino: Path, ppp: int = 150) -> Path:
+    """Imagen PNG de una página (1 = primera)."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    with pymupdf.open(ruta) as doc:
+        doc[pagina - 1].get_pixmap(dpi=ppp).save(destino)
+    return destino

@@ -35,12 +35,33 @@ Documentación oficial consultada el 06-11-2026:
      número de la IA. Así se caza «2.400» leído como 2,4.
    - Ese texto literal debe **aparecer en la página citada** del PDF (o en la celda citada del
      Excel). Si no aparece, la línea no se da por buena.
-   - Si el documento da importe, cantidad × precio debe coincidir al céntimo.
-   - Si el documento da total, la suma de importes debe coincidir al céntimo.
+   - Cada número, la unidad y el código tienen que estar en el **mismo renglón** que la
+     descripción (PDF) o en la misma fila (Excel), y el número tiene que aparecer completo.
+   - Con cantidad y precio, el documento tiene que dar el importe y cantidad × precio =
+     importe (un céntimo de tolerancia, por el redondeo del importe). Sin importe, la línea
+     queda «a revisar».
+   - Si el documento da total, la suma de los importes de sus líneas tiene que coincidir con
+     él (un céntimo). Si no, aviso visible con la diferencia.
    - Un PDF escaneado (sin texto) no permite la segunda comprobación: sus líneas entran
      «a revisar».
 5. Cada partida guarda el lector (`ia-claude-code`), la página/celda y el resultado de las
    comprobaciones. El envío de un documento a la IA lo inicia siempre el usuario.
+
+## Aislamiento de la llamada (revisión 06-11-2026)
+
+Además de lo anterior: `--restricted` (sin ajustes de usuario ni de proyecto, sin
+herramientas que ejecutan código, lectura limitada a la carpeta de trabajo, que es la
+carpeta temporal de las imágenes), `--strict-mcp-config` (sin servidores MCP),
+`--no-session-persistence` (el documento no queda en el historial de Claude Code). Del
+entorno del proceso se quitan también `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` y las
+variables de Bedrock, Vertex y Foundry. Comprobado en `claude --help` (v2.1.318). Pendiente
+de confirmar en el equipo del usuario que `--restricted` no impide usar la sesión de la
+suscripción.
+
+## Limitación aceptada
+
+Las comprobaciones usan el texto **extraído** del PDF, no lo que se ve. Un PDF con texto
+oculto (blanco o fuera de la página) podría colar una cifra que no se ve impresa.
 
 ## Consecuencias
 

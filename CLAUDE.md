@@ -51,7 +51,8 @@ sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha 
    equipo sin confirmación explícita por envío. Excepción decidida por el usuario para la
    **lectura de documentos** (ADR-0013): lo leído por la IA entra directo **solo si pasa las
    comprobaciones deterministas** (texto literal presente en la página/celda citada, número
-   reinterpretado con la regla española, importes y totales al céntimo); si no, «a revisar».
+   reinterpretado con la regla española, números en el mismo renglón que su descripción,
+   importes y totales con un céntimo de tolerancia); si no, «a revisar».
    La IA se usa vía Claude Code con la suscripción del usuario (sin `--bare`, sin
    `ANTHROPIC_API_KEY` en el entorno del proceso).
 8. **Toda modificación del modelo pasa por una orden** (deshacer + registro de cambios).

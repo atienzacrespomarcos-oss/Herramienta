@@ -26,12 +26,12 @@ def _num(texto, valor, donde):
 NULO = {"texto": None, "valor": None, "donde": None}
 
 
-def _linea(desc, cant, prec, imp, donde="p. 1", codigo=None):
+def _linea(desc, cant, prec, imp, donde="p. 1", codigo=None, unidad="ud"):
     return {
         "capitulo": "Climatización",
         "codigo": codigo,
         "descripcion": desc,
-        "unidad": "ud",
+        "unidad": unidad,
         "donde": donde,
         "cantidad": cant,
         "precio": prec,
@@ -47,9 +47,9 @@ def pdf_oferta(tmp_path: Path) -> Path:
     pagina = doc.new_page()
     lineas = [
         "OFERTA Nº 123 - Proveedor de prueba",
-        "Unidad de tratamiento de aire 2400 m3/h   1   12.500,00   12.500,00",
-        "Conducto de chapa galvanizada   2.400   10,00   24.000,00",
-        "Rejilla de impulsión doble deflexión   8   45,50   364,00",
+        "Unidad de tratamiento de aire 2400 m3/h   ud   1   12.500,00   12.500,00",
+        "Conducto de chapa galvanizada   m2   2.400   10,00   24.000,00",
+        "Rejilla de impulsión doble deflexión   ud   8   45,50   364,00",
         "TOTAL   36.864,00",
     ]
     for i, texto in enumerate(lineas):
@@ -76,6 +76,7 @@ def _respuesta_correcta():
                 _num("2.400", 2.4, "p. 1"),
                 _num("10,00", 10.0, "p. 1"),
                 _num("24.000,00", 24000.0, "p. 1"),
+                unidad="m2",
             ),
             _linea(
                 "Rejilla de impulsión doble deflexión",
@@ -127,7 +128,7 @@ def test_numero_inventado_queda_a_revisar(proyecto, pdf_oferta):
     med_id, _, _ = _leer(proyecto, pdf_oferta, r)
     rejilla = proyecto.partidas(med_id)[2]
     assert rejilla["estado"] == "a_revisar"
-    assert any("«47,00» no aparece en la p. 1" in m for m in rejilla["motivos"])
+    assert any("«47,00» no está, como número completo" in m for m in rejilla["motivos"])
 
 
 def test_lectura_numerica_distinta_del_texto(proyecto, pdf_oferta):
@@ -147,7 +148,9 @@ def test_descripcion_que_no_esta_en_la_pagina(proyecto, pdf_oferta):
 def test_importe_que_no_cuadra(proyecto, tmp_path):
     ruta = tmp_path / "o.pdf"
     doc = pymupdf.open()
-    doc.new_page().insert_text((40, 60), "Rejilla de impulsión   8   45,50   400,00", fontsize=9)
+    doc.new_page().insert_text(
+        (40, 60), "Rejilla de impulsión   ud   8   45,50   400,00", fontsize=9
+    )
     doc.save(ruta)
     doc.close()
     r = {
@@ -179,13 +182,13 @@ def test_total_que_no_cuadra_se_avisa(proyecto, pdf_oferta):
 def test_ambiguo_sin_importe_queda_a_revisar(proyecto, tmp_path):
     ruta = tmp_path / "o.pdf"
     doc = pymupdf.open()
-    doc.new_page().insert_text((40, 60), "Tubo de cobre 2.400 m", fontsize=9)
+    doc.new_page().insert_text((40, 60), "Tubo de cobre   m   2.400", fontsize=9)
     doc.save(ruta)
     doc.close()
     r = {
         "proveedor": None,
         "total": NULO,
-        "partidas": [_linea("Tubo de cobre", _num("2.400", 2400, "p. 1"), NULO, NULO)],
+        "partidas": [_linea("Tubo de cobre", _num("2.400", 2400, "p. 1"), NULO, NULO, unidad="m")],
     }
     med_id, _, _ = _leer(proyecto, ruta, r)
     p = proyecto.partidas(med_id)[0]
@@ -217,10 +220,11 @@ def test_pdf_escaneado_envia_imagenes_y_todo_queda_a_revisar(proyecto, tmp_path)
         "partidas": [_linea("Rejilla", _num("8", 8, "p. 1"), _num("45,50", 45.5, "p. 1"), NULO)],
     }
     med_id, avisos, llamadas = _leer(proyecto, ruta, r)
-    assert llamadas[0][1] and llamadas[0][1][0].suffix == ".png"
+    imagenes = llamadas[0][1]
+    assert list(imagenes) == [1] and imagenes[1].suffix == ".png"
     assert proyecto.partidas(med_id)[0]["estado"] == "a_revisar"
-    assert any("escaneado" in a for a in avisos)
-    assert not llamadas[0][1][0].exists(), "las imágenes temporales se borran"
+    assert any("Páginas sin texto (escaneadas): 1" in a for a in avisos)
+    assert not imagenes[1].exists(), "las imágenes temporales se borran"
 
 
 @pytest.fixture
@@ -265,7 +269,8 @@ def test_excel_valores_exactos_de_celda(proyecto, xlsx_oferta):
     ps = proyecto.partidas(med_id)
     assert ps[0]["estado"] == "comprobada"
     assert ps[1]["estado"] == "a_revisar"
-    assert any("la IA lee 210.5" in m for m in ps[1]["motivos"])
+    # Cita una celda de otra fila: se detecta antes incluso de comparar el valor.
+    assert any("no es de la fila de la línea" in m for m in ps[1]["motivos"])
 
 
 def test_ia_no_disponible_se_explica(proyecto, pdf_oferta):
@@ -290,6 +295,10 @@ entrada = sys.stdin.buffer.read().decode("utf-8")
 registro = {
     "args": args,
     "api_key_presente": "ANTHROPIC_API_KEY" in os.environ,
+    "entorno_limpio": not any(v in os.environ for v in (
+        "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK")),
+    "cwd": os.path.realpath(os.getcwd()),
+    "entrada_completa": entrada,
     "entrada": entrada[:200],
 }
 with open(os.environ["TRAZA_SIMULADOR_REGISTRO"], "w", encoding="utf-8") as f:
@@ -334,3 +343,201 @@ def test_instalacion_npm_en_windows_se_rechaza(monkeypatch):
     monkeypatch.setattr(claude_code, "disponible", lambda: Path("C:/npm/claude.cmd"))
     with pytest.raises(claude_code.IaNoDisponible, match="versión nativa"):
         claude_code.extraer("x")
+
+
+# --- Revisión del 06-11-2026: cada fallo grave, con su prueba ------------------------------
+
+
+def _pdf(tmp_path: Path, lineas: list[str], nombre="o.pdf", paginas_vacias=0) -> Path:
+    ruta = tmp_path / nombre
+    doc = pymupdf.open()
+    pagina = doc.new_page()
+    for i, texto in enumerate(lineas):
+        pagina.insert_text((40, 60 + 20 * i), texto, fontsize=9)
+    for _ in range(paginas_vacias):
+        doc.new_page()
+    doc.save(ruta)
+    doc.close()
+    return ruta
+
+
+def test_un_digito_suelto_no_vale_por_estar_dentro_de_otro_numero(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["Codo de 90 grados   ud   12   5,00   60,00"])
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            _linea(
+                "Codo de 90 grados",
+                _num("2", 2, "p. 1"),
+                _num("5,00", 5.0, "p. 1"),
+                _num("60,00", 60.0, "p. 1"),
+            )
+        ],
+    }
+    med_id, _, _ = _leer(proyecto, ruta, r)
+    p = proyecto.partidas(med_id)[0]
+    assert p["estado"] == "a_revisar"
+    assert any("«2» no está, como número completo" in m for m in p["motivos"])
+
+
+def test_numero_de_otra_linea_no_vale(proyecto, tmp_path):
+    ruta = _pdf(
+        tmp_path,
+        [
+            "Rejilla de retorno   ud   4   30,00   120,00",
+            "Rejilla de impulsión   ud   8   45,50   364,00",
+        ],
+    )
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            # Precio y importe tomados del renglón de la rejilla de retorno.
+            _linea(
+                "Rejilla de impulsión",
+                _num("4", 4, "p. 1"),
+                _num("30,00", 30.0, "p. 1"),
+                _num("120,00", 120.0, "p. 1"),
+            )
+        ],
+    }
+    med_id, _, _ = _leer(proyecto, ruta, r)
+    p = proyecto.partidas(med_id)[0]
+    assert p["estado"] == "a_revisar"
+    assert any("cantidad: «4» no está" in m for m in p["motivos"])
+
+
+def test_cantidad_y_precio_sin_importe_quedan_a_revisar(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["Rejilla de impulsión   ud   8   45,50"])
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            _linea("Rejilla de impulsión", _num("45,50", 45.5, "p. 1"), _num("8", 8, "p. 1"), NULO)
+        ],
+    }
+    med_id, _, _ = _leer(proyecto, ruta, r)
+    p = proyecto.partidas(med_id)[0]
+    assert p["estado"] == "a_revisar"
+    assert any("podrían estar intercambiados" in m for m in p["motivos"])
+
+
+def test_solo_cantidad_en_una_medicion_entra_directa(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["Tubo de cobre 1/2   m   125,40"])
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            _linea("Tubo de cobre 1/2", _num("125,40", 125.4, "p. 1"), NULO, NULO, unidad="m")
+        ],
+    }
+    med_id, _, _ = _leer(proyecto, ruta, r)
+    assert proyecto.partidas(med_id)[0]["estado"] == "comprobada"
+
+
+def test_unidad_y_codigo_se_comprueban(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["CL-01   Conducto de chapa   m2   10   20,00   200,00"])
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            _linea(
+                "Conducto de chapa",
+                _num("10", 10, "p. 1"),
+                _num("20,00", 20.0, "p. 1"),
+                _num("200,00", 200.0, "p. 1"),
+                codigo="CL-02",
+                unidad="m",
+            )
+        ],
+    }
+    med_id, _, _ = _leer(proyecto, ruta, r)
+    motivos = proyecto.partidas(med_id)[0]["motivos"]
+    assert "unidad «m» no está en el renglón de la línea" in motivos
+    assert "codigo «CL-02» no está en el renglón de la línea" in motivos
+
+
+def test_total_se_compara_al_centimo(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["Rejilla de impulsión   ud   8   45,50   364,00", "TOTAL   364,02"])
+    r = {
+        "proveedor": None,
+        "total": _num("364,02", 364.02, "p. 1"),
+        "partidas": [
+            _linea(
+                "Rejilla de impulsión",
+                _num("8", 8, "p. 1"),
+                _num("45,50", 45.5, "p. 1"),
+                _num("364,00", 364.0, "p. 1"),
+            )
+        ],
+    }
+    _, avisos, _ = _leer(proyecto, ruta, r)
+    assert any("NO coincide con el total del documento" in a for a in avisos)
+
+
+def test_pdf_con_algunas_paginas_escaneadas(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["Rejilla de impulsión   ud   8   45,50   364,00"], paginas_vacias=1)
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            _linea(
+                "Rejilla de impulsión",
+                _num("8", 8, "p. 1"),
+                _num("45,50", 45.5, "p. 1"),
+                _num("364,00", 364.0, "p. 1"),
+            ),
+            _linea("Algo escaneado", _num("3", 3, "p. 2"), NULO, NULO, donde="p. 2"),
+        ],
+    }
+    med_id, avisos, llamadas = _leer(proyecto, ruta, r)
+    assert list(llamadas[0][1]) == [2], "solo la página sin texto va como imagen"
+    assert [p["estado"] for p in proyecto.partidas(med_id)] == ["comprobada", "a_revisar"]
+    assert any("Páginas sin texto (escaneadas): 2" in a for a in avisos)
+
+
+def test_documento_ya_leido_no_se_envia_a_la_ia(proyecto, pdf_oferta):
+    _leer(proyecto, pdf_oferta, _respuesta_correcta())
+    llamadas = []
+    proyecto.extractor_ia = lambda texto, imagenes: llamadas.append(1)
+    doc = proyecto.documentos()[0]["id"]
+    with pytest.raises(OrdenRechazada, match="ya está leído"):
+        proyecto.leer_medicion(doc, "oferta")
+    assert llamadas == []
+
+
+def test_valor_no_numerico_de_la_ia_no_aborta(proyecto, tmp_path):
+    ruta = _pdf(tmp_path, ["Rejilla de impulsión   ud   8"])
+    r = {
+        "proveedor": None,
+        "total": NULO,
+        "partidas": [
+            _linea(
+                "Rejilla de impulsión", {"texto": "8", "valor": "ocho", "donde": "p. 1"}, NULO, NULO
+            )
+        ],
+    }
+    med_id, _, _ = _leer(proyecto, ruta, r)
+    assert any("valor no numérico" in m for m in proyecto.partidas(med_id)[0]["motivos"])
+
+
+def test_aislamiento_de_la_llamada_y_paginas_escaneadas_por_entrada(tmp_path, monkeypatch):
+    simulador = tmp_path / "simulador.py"
+    simulador.write_text(SIMULADOR, encoding="utf-8")
+    registro = tmp_path / "registro.json"
+    monkeypatch.setenv("TRAZA_SIMULADOR_REGISTRO", str(registro))
+    for v in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK"):
+        monkeypatch.setenv(v, "no-debe-llegar")
+    imagenes = tmp_path / "imgs"
+    imagenes.mkdir()
+    img = imagenes / "pagina_002.png"
+    img.write_bytes(b"png")
+    claude_code.extraer("texto", {2: img}, [sys.executable, str(simulador)])
+    r = json.loads(registro.read_text(encoding="utf-8"))
+    for bandera in ("--restricted", "--strict-mcp-config", "--no-session-persistence"):
+        assert bandera in r["args"]
+    assert r["args"][r["args"].index("--tools") + 1] == "Read"
+    assert r["entorno_limpio"]
+    assert f"p. 2: {img.resolve()}" in r["entrada_completa"]
+    assert r["cwd"] == str(imagenes.resolve())

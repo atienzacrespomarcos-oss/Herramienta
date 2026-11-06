@@ -4,8 +4,9 @@ Reglas, comprobadas en la documentación y en `claude --help` (v2.1.318, 06-11-2
 - Sin `--bare` y sin `ANTHROPIC_API_KEY` en el entorno del proceso: con cualquiera de las
   dos, Claude Code no usa la sesión de la suscripción.
 - `--tools ""` desactiva todas las herramientas: el documento llega como texto por la
-  entrada estándar y la IA no puede tocar nada del equipo. Solo para PDF escaneados se
-  permite `Read`, limitado a las imágenes de las páginas.
+  entrada estándar y la IA no puede tocar nada del equipo. Solo para páginas escaneadas se
+  permite `Read`, y `--restricted` lo limita a la carpeta de trabajo, que es la carpeta
+  temporal con las imágenes de esas páginas.
 - `--permission-mode dontAsk`: deniega cualquier cosa que pidiera permiso.
 - `--output-format json` + `--json-schema`: la respuesta se valida contra el esquema y
   llega en `structured_output`; si falta, la extracción ha fallado y se dice.
@@ -20,6 +21,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -107,15 +109,29 @@ def disponible() -> Path | None:
     return Path(ruta) if ruta else None
 
 
+#: Variables que harían que Claude Code no usara la suscripción o enviara el documento a
+#: otro destino: clave o token de API, servidor alternativo, o proveedores en la nube.
+_VARIABLES_FUERA = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+)
+
+
 def _entorno() -> dict[str, str]:
     env = dict(os.environ)
-    # Con ANTHROPIC_API_KEY definida, `claude -p` la usa siempre y factura por API.
-    env.pop("ANTHROPIC_API_KEY", None)
+    for v in _VARIABLES_FUERA:
+        env.pop(v, None)
     return env
 
 
 def extraer(
-    contenido: str, imagenes: list[Path] | None = None, comando: list[str] | None = None
+    contenido: str,
+    imagenes: dict[int, Path] | None = None,
+    comando: list[str] | None = None,
 ) -> dict[str, Any]:
     """Envía el documento a Claude Code y devuelve la extracción (sin comprobar).
 
@@ -138,20 +154,20 @@ def extraer(
     return _ejecutar([str(claude)], contenido, imagenes)
 
 
-def _ejecutar(base: list[str], contenido: str, imagenes: list[Path] | None) -> dict[str, Any]:
-    orden = INSTRUCCIONES
+def _ejecutar(base: list[str], contenido: str, imagenes: dict[int, Path] | None) -> dict[str, Any]:
     herramientas = ""
+    carpeta = None
     if imagenes:
-        lista = "\n".join(f"- p. {i}: {p.resolve()}" for i, p in enumerate(imagenes, start=1))
-        orden += (
-            "\n\nEl documento es un PDF escaneado. Lee estas imágenes, una por página, "
-            f"con la herramienta Read:\n{lista}"
-        )
+        carpeta = next(iter(imagenes.values())).resolve().parent
+        # La lista de imágenes va con el documento por la entrada estándar (no en la línea
+        # de órdenes, que en Windows tiene un límite de longitud).
+        contenido += "\n\n=== Páginas sin texto: léelas como imagen con la herramienta Read ===\n"
+        contenido += "\n".join(f"p. {n}: {r.resolve()}" for n, r in sorted(imagenes.items()))
         herramientas = "Read"
     args = [
         *base,
         "-p",
-        orden,
+        INSTRUCCIONES,
         "--output-format",
         "json",
         "--json-schema",
@@ -160,6 +176,12 @@ def _ejecutar(base: list[str], contenido: str, imagenes: list[Path] | None) -> d
         herramientas,
         "--permission-mode",
         "dontAsk",
+        # Aislamiento (comprobado en `claude --help`, v2.1.318): sin ajustes de usuario ni de
+        # proyecto, sin herramientas que ejecutan código, lectura limitada a la carpeta de
+        # trabajo (la de las imágenes), sin servidores MCP y sin guardar la sesión en disco.
+        "--restricted",
+        "--strict-mcp-config",
+        "--no-session-persistence",
     ]
     if herramientas:
         args += ["--allowedTools", herramientas]
@@ -170,7 +192,9 @@ def _ejecutar(base: list[str], contenido: str, imagenes: list[Path] | None) -> d
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             env=_entorno(),
+            cwd=carpeta or tempfile.gettempdir(),
             timeout=TIEMPO_MAXIMO_S,
             check=False,
         )

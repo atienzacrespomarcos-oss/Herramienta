@@ -13,10 +13,11 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QEventLoop, Qt, QUrl
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QProgressDialog,
     QSplitter,
     QStackedWidget,
     QTableWidget,
@@ -537,7 +539,14 @@ class VentanaPrincipal(QMainWindow):
         if self.proyecto is None:
             return []
         formatos = self.proyecto.FORMATOS_MEDICION
-        return [d for d in self.proyecto.documentos() if d["extension"] in formatos]
+        leidos = {m["documento_id"] for m in self.proyecto.mediciones()}
+        # Un documento ya leído no se ofrece: leerlo otra vez duplicaría partidas (y con IA
+        # gastaría suscripción en balde).
+        return [
+            d
+            for d in self.proyecto.documentos()
+            if d["extension"] in formatos and d["id"] not in leidos
+        ]
 
     def _medicion_elegida(self) -> str | None:
         fila = self.tabla_mediciones.currentRow()
@@ -574,6 +583,39 @@ class VentanaPrincipal(QMainWindow):
             self.tabla_mediciones.blockSignals(False)
         self._refrescar_partidas()
 
+    def _en_segundo_plano(self, funcion):
+        """Ejecuta la llamada a la IA en otro hilo con una ventana de progreso.
+
+        Solo la llamada a la IA (que no toca la base de datos: SQLite no admite usar la
+        conexión desde otro hilo); la importación vuelve a hacerse en el hilo principal.
+        """
+        resultado: dict = {}
+
+        def trabajo() -> None:
+            try:
+                resultado["valor"] = funcion()
+            except BaseException as exc:  # noqa: BLE001 — se relanza en el hilo principal
+                resultado["error"] = exc
+
+        hilo = threading.Thread(target=trabajo, daemon=True)
+        hilo.start()
+        dialogo = QProgressDialog(
+            "Leyendo el documento con IA… puede tardar unos minutos.", None, 0, 0, self
+        )
+        dialogo.setWindowTitle("Leer con IA")
+        dialogo.setWindowModality(Qt.WindowModal)
+        dialogo.setMinimumDuration(0)
+        dialogo.show()
+        try:
+            while hilo.is_alive():
+                QApplication.processEvents(QEventLoop.AllEvents, 100)
+                hilo.join(0.05)
+        finally:
+            dialogo.close()
+        if "error" in resultado:
+            raise resultado["error"]
+        return resultado["valor"]
+
     def _texto_total(self, med: dict) -> tuple[str, str]:
         """(texto corto para la tabla, explicación para el pie).
 
@@ -591,7 +633,16 @@ class VentanaPrincipal(QMainWindow):
             motivos.append(f"{sin_importe} partida(s) sin precio o sin cantidad no sumadas")
         if med["omitidas"]:
             motivos.append(f"{med['omitidas']} línea(s) del documento omitidas (ver avisos)")
-        corto = _dinero(sum(importes)) + (" (parcial)" if motivos else "")
+        revisar = sum(1 for p in ps if p["estado"] == "a_revisar" and p["importe"] is not None)
+        suma = sum(importes)
+        corto = _dinero(suma) + (" (parcial)" if motivos else "")
+        if revisar:
+            corto += f" ⚠ {revisar} a revisar"
+            motivos.append(f"incluye {revisar} partida(s) «a revisar»")
+        if med["total_documento"] is not None:
+            diferencia = suma - med["total_documento"]
+            estado = "coincide" if abs(diferencia) <= 0.01 else f"diferencia {_dinero(diferencia)}"
+            motivos.append(f"total del documento {_dinero(med['total_documento'])} ({estado})")
         return corto, " — ".join(motivos)
 
     def _refrescar_partidas(self) -> None:
@@ -697,14 +748,9 @@ class VentanaPrincipal(QMainWindow):
             "¿Continuar?",
         ):
             return
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        self.statusBar().showMessage(f"Leyendo «{doc['nombre_original']}»…")
-        QApplication.processEvents()
-        try:
-            _, avisos = self.proyecto.leer_medicion(doc_id, clase, proveedor)
-        finally:
-            QApplication.restoreOverrideCursor()
-            self.statusBar().clearMessage()
+        _, avisos = self.proyecto.leer_medicion(
+            doc_id, clase, proveedor, esperar=self._en_segundo_plano
+        )
         self.refrescar()
         if "mediciones" in [p[0] for p in PASOS if self.proyecto.encargo in p[2]]:
             self.ir_a_paso("mediciones")

@@ -11,6 +11,7 @@ celdas aparecen vacías y se avisa.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,49 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import coordinate_from_string
 
 EXTENSIONES = (".xlsx", ".xlsm")
+
+
+@dataclass
+class Libro:
+    """Contenido de un Excel leído de una sola vez."""
+
+    texto: str  # volcado «Hoja!Celda: valor» para la IA
+    celdas: dict[str, Any]  # {"Hoja!B12": valor guardado}
+    avisos: list[str] = field(default_factory=list)
+
+
+def leer_libro(ruta: Path) -> Libro:
+    """Abre el libro una vez para valores y otra para fórmulas (para avisar de fórmulas
+    sin resultado guardado). Los avisos de fórmulas se agrupan en uno."""
+    wb_val = load_workbook(ruta, data_only=True)
+    wb_form = load_workbook(ruta, data_only=False)
+    lineas: list[str] = []
+    celdas_: dict[str, Any] = {}
+    sin_resultado: list[str] = []
+    try:
+        for ws in wb_val.worksheets:
+            formulas = wb_form[ws.title]
+            lineas.append(f"=== Hoja «{ws.title}» ===")
+            for fila_v, fila_f in zip(ws.iter_rows(), formulas.iter_rows(), strict=False):
+                for cv, cf in zip(fila_v, fila_f, strict=False):
+                    ref = f"{ws.title}!{cv.coordinate}"
+                    if cv.value is None:
+                        if isinstance(cf.value, str) and cf.value.startswith("="):
+                            sin_resultado.append(ref)
+                        continue
+                    celdas_[ref] = cv.value
+                    lineas.append(f"{ref}: {cv.value}")
+    finally:
+        wb_val.close()
+        wb_form.close()
+    avisos = []
+    if sin_resultado:
+        avisos.append(
+            f"{len(sin_resultado)} celda(s) con fórmula sin resultado guardado (p. ej. "
+            f"{', '.join(sin_resultado[:5])}): constan vacías. Abre y guarda el fichero en "
+            "Excel para que consten."
+        )
+    return Libro("\n".join(lineas), celdas_, avisos)
 
 
 def volcar(ruta: Path) -> tuple[str, list[str]]:
