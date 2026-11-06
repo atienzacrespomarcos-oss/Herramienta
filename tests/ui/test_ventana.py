@@ -202,7 +202,7 @@ def test_escenario_aceptacion_etapa_1_desde_la_interfaz(ventana, tmp_path, pdf_3
     # Crear proyecto
     q.preparar("nuevo_proyecto", (tmp_path / "Nave A", "Nave A", "instalacion"))
     v.a_nuevo.trigger()
-    assert v.windowTitle() == "TRAZA — Nave A"
+    assert v.windowTitle() == "TRAZA — Nave A · Solo instalación"
 
     # Incorporar PDF
     q.preparar("documento", (pdf_3_paginas, "oferta"))
@@ -480,6 +480,7 @@ def test_cambiar_tipo_de_encargo(ventana, tmp_path):
     q.preparar("encargo", "diseno")
     v.a_encargo.trigger()
     assert v.proyecto.encargo == "diseno"
+    assert v.windowTitle().endswith("Diseño + presupuesto + instalación")
 
 
 def test_historial_se_abre_desde_ver(ventana, tmp_path):
@@ -490,3 +491,17 @@ def test_historial_se_abre_desde_ver(ventana, tmp_path):
     assert not v.dock_historial.isVisible()
     v.a_historial.trigger()
     assert v.dock_historial.isVisible()
+
+
+def test_total_no_consta_si_no_hay_importes(ventana, tmp_path):
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    v.a_nuevo.trigger()
+    f = tmp_path / "sin_precios.bc3"
+    f.write_bytes(b"~V||FIEBDC-3/2016|||ANSI|\n~C|R##||O|\n~C|P1|m|Tubo|\n~D|R##|P1\\1\\8\\|\n")
+    v.proyecto.incorporar_documento(f)
+    v.refrescar()
+    q.preparar("leer_medicion", (v.proyecto.documentos()[0]["id"], "medicion", None))
+    v.a_leer_medicion.trigger()
+    assert v.tabla_mediciones.item(0, 4).text() == NO_CONSTA
+    assert "total no consta" in v.total_medicion.text()

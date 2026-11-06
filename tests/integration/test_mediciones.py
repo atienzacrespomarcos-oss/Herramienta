@@ -131,3 +131,62 @@ def test_tipo_de_encargo(tmp_path):
     with pytest.raises(OrdenRechazada, match="desconocido"):
         Proyecto.crear(tmp_path / "M", "M", encargo="otro")
     assert not (tmp_path / "M.traza").exists()
+
+
+# --- Revisión del 06-11-2026 ---------------------------------------------------------------
+
+
+def test_no_se_lee_dos_veces_el_mismo_documento(proyecto, bc3):
+    doc = proyecto.incorporar_documento(bc3)
+    proyecto.leer_medicion(doc, "oferta")
+    with pytest.raises(OrdenRechazada, match="ya está leído"):
+        proyecto.leer_medicion(doc, "medicion")
+    assert len(proyecto.mediciones()) == 1
+
+
+def test_sin_partidas_se_explica_el_motivo(proyecto, tmp_path):
+    f = tmp_path / "vacio.bc3"
+    f.write_bytes(b"~V||FIEBDC-3/2016|||ANSI|\n~C|R##||O|\n~D|R##|NOEXISTE\\1\\1\\|\n")
+    doc = proyecto.incorporar_documento(f)
+    with pytest.raises(OrdenRechazada, match="NOEXISTE"):
+        proyecto.leer_medicion(doc, "oferta")
+
+
+def test_importacion_que_falla_en_la_ultima_partida_no_deja_nada(proyecto, bc3):
+    """Atomicidad real: la base de datos rechaza la última partida y no queda ninguna."""
+    from traza.app.ordenes import ImportarMedicion, PartidaNueva
+
+    doc = proyecto.incorporar_documento(bc3)
+    buena = PartidaNueva([], "A", None, "ud", "a", None, 1.0, 2.0, "~C A")
+    mala = PartidaNueva([], "B", None, "ud", "b", None, 1.0, 2.0, "   ")  # sin localizador
+    with pytest.raises(OrdenRechazada):
+        proyecto.ejecutar(
+            ImportarMedicion(doc, "x", "oferta", None, "bc3", "1", [buena, buena, mala], [])
+        )
+    assert proyecto.mediciones() == []
+    assert proyecto._con.execute("SELECT count(*) FROM partida").fetchone()[0] == 0
+
+
+def test_omitidas_se_guardan(proyecto, tmp_path):
+    f = tmp_path / "pct.bc3"
+    f.write_bytes(
+        b"~V||FIEBDC-3/2016|||ANSI|\n~C|R##||O|\n~C|P1|ud|P|10|\n~C|%A|%|Aux|\n"
+        b"~D|R##|P1\\1\\2\\%A\\\\0.03\\|\n"
+    )
+    doc = proyecto.incorporar_documento(f)
+    proyecto.leer_medicion(doc, "oferta")
+    assert proyecto.mediciones()[0]["omitidas"] == 1
+
+
+def test_excel_conserva_puntos_del_nombre_y_no_crea_formulas(proyecto, tmp_path):
+    f = tmp_path / "f.bc3"
+    f.write_bytes(
+        b"~V||FIEBDC-3/2016|||ANSI|\n~C|R##||O|\n~C|P1|ud|=1+1 no es formula|10|\n"
+        b"~D|R##|P1\\1\\2\\|\n"
+    )
+    doc = proyecto.incorporar_documento(f)
+    proyecto.leer_medicion(doc, "oferta")
+    ruta = proyecto.exportar_excel(tmp_path / "Nave 2.1")
+    assert ruta.name == "Nave 2.1.xlsx"
+    ws = load_workbook(ruta)["Partidas"]
+    assert ws["H2"].value == "=1+1 no es formula" and ws["H2"].data_type == "s"

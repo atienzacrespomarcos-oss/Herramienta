@@ -483,7 +483,7 @@ class VentanaPrincipal(QMainWindow):
         self.a_reabrir.setEnabled(aprobado)
         titulo = "TRAZA"
         if hay:
-            titulo += f" — {self.proyecto.nombre}"
+            titulo += f" — {self.proyecto.nombre} · {ENCARGOS[self.proyecto.encargo]}"
         self.setWindowTitle(titulo)
 
     def refrescar(self) -> None:
@@ -520,14 +520,13 @@ class VentanaPrincipal(QMainWindow):
                 meds = self.proyecto.mediciones()
                 filas = []
                 for m in meds:
-                    total, sin_precio = self._total(m["id"])
                     filas.append(
                         [
                             m["documento_nombre"],
                             CLASES_MEDICION[m["clase"]],
                             m["proveedor"] or "",
                             str(m["n_partidas"]),
-                            _dinero(total) + (" (parcial)" if sin_precio else ""),
+                            self._texto_total(m)[0],
                             str(len(m["avisos"])) if m["avisos"] else "",
                         ]
                     )
@@ -541,13 +540,25 @@ class VentanaPrincipal(QMainWindow):
             self.tabla_mediciones.blockSignals(False)
         self._refrescar_partidas()
 
-    def _total(self, medicion_id: str) -> tuple[float, int]:
-        """Suma de importes y número de partidas sin precio o sin cantidad (no se suman)."""
-        ps = self.proyecto.partidas(medicion_id)
-        return (
-            sum(p["importe"] for p in ps if p["importe"] is not None),
-            sum(1 for p in ps if p["importe"] is None),
-        )
+    def _texto_total(self, med: dict) -> tuple[str, str]:
+        """(texto corto para la tabla, explicación para el pie).
+
+        Nunca se muestra un 0 que no consta: si ninguna partida tiene importe, el total es
+        «no consta». Es «parcial» si hay partidas sin importe o líneas que el lector omitió
+        (revisión 06-11-2026: antes salía «0,00» y las omitidas no marcaban parcial).
+        """
+        ps = self.proyecto.partidas(med["id"])
+        importes = [p["importe"] for p in ps if p["importe"] is not None]
+        sin_importe = len(ps) - len(importes)
+        if not importes:
+            return NO_CONSTA, "Ninguna partida tiene a la vez cantidad y precio: total no consta."
+        motivos = []
+        if sin_importe:
+            motivos.append(f"{sin_importe} partida(s) sin precio o sin cantidad no sumadas")
+        if med["omitidas"]:
+            motivos.append(f"{med['omitidas']} línea(s) del documento omitidas (ver avisos)")
+        corto = _dinero(sum(importes)) + (" (parcial)" if motivos else "")
+        return corto, " — ".join(motivos)
 
     def _refrescar_partidas(self) -> None:
         self.arbol_partidas.clear()
@@ -588,10 +599,10 @@ class VentanaPrincipal(QMainWindow):
         med = next(m for m in self.proyecto.mediciones() if m["id"] == med_id)
         for a in med["avisos"]:
             self.lista_avisos.addItem(f"⚠ {a}")
-        total, sin_precio = self._total(med_id)
-        texto = f"<b>Total: {_dinero(total)}</b>"
-        if sin_precio:
-            texto += f" — {sin_precio} partida(s) sin precio o sin cantidad no sumadas"
+        corto, explicacion = self._texto_total(med)
+        texto = f"<b>Total: {corto}</b>"
+        if explicacion:
+            texto += f" — {explicacion}"
         self.total_medicion.setText(texto)
 
     def _al_elegir_medicion(self) -> None:

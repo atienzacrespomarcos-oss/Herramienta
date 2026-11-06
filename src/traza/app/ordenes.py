@@ -445,6 +445,7 @@ class ImportarMedicion(Orden):
     version_lector: str
     partidas: list[PartidaNueva]
     avisos: list[str]
+    omitidas: int = 0
     id: str = field(default_factory=nuevo_id)
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
@@ -452,8 +453,18 @@ class ImportarMedicion(Orden):
             raise OrdenRechazada("El documento no está incorporado al proyecto.")
         if self.clase not in CLASES_MEDICION:
             raise OrdenRechazada(f"Clase desconocida: «{self.clase}».")
+        previa = con.execute(
+            "SELECT nombre FROM medicion WHERE documento_id = ?", (self.documento_id,)
+        ).fetchone()
+        if previa:
+            # Leerlo dos veces duplicaría todas las partidas en totales y en el Excel.
+            raise OrdenRechazada(
+                f"«{previa['nombre']}» ya está leído. Quita esa medición si quieres volver a "
+                "leerlo."
+            )
         if not self.partidas:
-            raise OrdenRechazada("El documento no contiene partidas que importar.")
+            motivo = "; ".join(self.avisos[:5]) if self.avisos else "sin más detalle"
+            raise OrdenRechazada(f"El documento no contiene partidas que importar ({motivo}).")
         deltas = [
             Delta(
                 "medicion",
@@ -468,6 +479,7 @@ class ImportarMedicion(Orden):
                     "version_lector": self.version_lector,
                     "leido": ahora(),
                     "avisos": json.dumps(self.avisos, ensure_ascii=False),
+                    "omitidas": self.omitidas,
                 },
             )
         ]

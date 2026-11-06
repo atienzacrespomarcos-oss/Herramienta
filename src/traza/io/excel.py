@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -41,11 +42,28 @@ def _capitulo(cap: list[list[str]]) -> str:
     return " / ".join(f"{c} {r}".strip() for c, r in cap)
 
 
+def _texto(v: Any) -> Any:
+    """Quita caracteres de control (openpyxl los rechaza al guardar)."""
+    return ILLEGAL_CHARACTERS_RE.sub("", v) if isinstance(v, str) else v
+
+
+def _sin_formulas(ws) -> None:
+    """Un texto que empieza por «=» se guarda como texto, no como fórmula.
+
+    openpyxl convierte en fórmula cualquier cadena que empiece por «=»; una descripción de
+    un documento ajeno nunca debe ejecutarse como fórmula en el Excel del usuario.
+    """
+    for celda in ws[ws.max_row]:
+        if isinstance(celda.value, str) and celda.value.startswith("="):
+            celda.data_type = "s"
+
+
 def exportar_partidas(
     destino: Path, proyecto: str, bloques: list[tuple[dict[str, Any], list[dict[str, Any]]]]
 ) -> Path:
     if destino.suffix.lower() != ".xlsx":
-        destino = destino.with_suffix(".xlsx")
+        # with_suffix cambiaría «Nave 2.1» por «Nave 2.xlsx»: se añade, no se sustituye.
+        destino = destino.with_name(destino.name + ".xlsx")
     wb = Workbook()
     ws = wb.active
     ws.title = "Partidas"
@@ -60,20 +78,24 @@ def exportar_partidas(
         for p in partidas:
             ws.append(
                 [
-                    med["documento_nombre"],
-                    CLASES.get(med["clase"], med["clase"]),
-                    med["proveedor"],
-                    _capitulo(p["capitulo"]),
-                    p["codigo"],
-                    p["etiqueta"],
-                    p["unidad"],
-                    p["resumen"],
-                    p["cantidad"],
-                    p["precio"],
-                    p["importe"],
-                    p["localizador"],
+                    _texto(x)
+                    for x in [
+                        med["documento_nombre"],
+                        CLASES.get(med["clase"], med["clase"]),
+                        med["proveedor"],
+                        _capitulo(p["capitulo"]),
+                        p["codigo"],
+                        p["etiqueta"],
+                        p["unidad"],
+                        p["resumen"],
+                        p["cantidad"],
+                        p["precio"],
+                        p["importe"],
+                        p["localizador"],
+                    ]
                 ]
             )
+            _sin_formulas(ws)
             for col in (9, 10, 11):
                 ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
         avisos_filas += [(med["documento_nombre"], a) for a in med["avisos"]]
@@ -88,10 +110,11 @@ def exportar_partidas(
     wa.column_dimensions["A"].width = 30
     wa.column_dimensions["B"].width = 120
     for fila in avisos_filas or [("—", "Sin avisos.")]:
-        wa.append(list(fila))
+        wa.append([_texto(x) for x in fila])
+        _sin_formulas(wa)
 
     wi = wb.create_sheet("Información")
-    wi.append(["Proyecto", proyecto])
+    wi.append(["Proyecto", _texto(proyecto)])
     wi.append(["Generado por", "TRAZA"])
     wi.append(["Nota", "Celdas vacías = no consta en el documento (no es cero)."])
 

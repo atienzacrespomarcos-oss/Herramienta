@@ -366,8 +366,9 @@ class Proyecto:
             leido = bc3.leer_bc3(ruta)
         except bc3.Bc3Error as exc:
             raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
-        ps, avisos = bc3.partidas(leido)
-        avisos = leido.avisos + avisos
+        resultado = bc3.leer_partidas(leido)
+        ps = resultado.partidas
+        avisos = leido.avisos + resultado.avisos
         orden = ImportarMedicion(
             documento_id=documento_id,
             titulo=doc["nombre_original"],
@@ -390,6 +391,7 @@ class Proyecto:
                 for p in ps
             ],
             avisos=avisos,
+            omitidas=resultado.omitidas,
         )
         self.ejecutar(orden)
         return orden.id, avisos

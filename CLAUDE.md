@@ -48,7 +48,12 @@ sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha 
 6. **Motores puros.** `engines/` y `rules/` no importan Qt, base de datos ni IA
    (lo vigila import-linter). Toda magnitud que cruza un motor lleva unidad.
 7. **La IA solo propone órdenes**; no escribe en el modelo. Ningún documento sale del
-   equipo sin confirmación explícita por envío.
+   equipo sin confirmación explícita por envío. Excepción decidida por el usuario para la
+   **lectura de documentos** (ADR-0013): lo leído por la IA entra directo **solo si pasa las
+   comprobaciones deterministas** (texto literal presente en la página/celda citada, número
+   reinterpretado con la regla española, importes y totales al céntimo); si no, «a revisar».
+   La IA se usa vía Claude Code con la suscripción del usuario (sin `--bare`, sin
+   `ANTHROPIC_API_KEY` en el entorno del proceso).
 8. **Toda modificación del modelo pasa por una orden** (deshacer + registro de cambios).
 9. **Toda aproximación se declara** en el registro de cálculo.
 

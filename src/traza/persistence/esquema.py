@@ -128,7 +128,10 @@ CREATE TABLE medicion (
     lector TEXT NOT NULL,
     version_lector TEXT NOT NULL,
     leido TEXT NOT NULL,
-    avisos TEXT NOT NULL
+    avisos TEXT NOT NULL,
+    -- Líneas del documento que no se han podido convertir en partida (porcentajes, códigos
+    -- sin concepto…). Si > 0, los totales de esta medición son parciales.
+    omitidas INTEGER NOT NULL DEFAULT 0 CHECK (omitidas >= 0)
 );
 
 CREATE TABLE partida (

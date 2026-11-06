@@ -9,7 +9,8 @@ Especificación aprobada por decisiones del usuario (06-11-2026).
 | Lector BC3 | Implementado. Pendiente de validar con un BC3 real del usuario. |
 | Partidas en el proyecto con su origen; leer/quitar con deshacer | Implementado |
 | Excel con todo | Implementado |
-| Interfaz por pasos según tipo de encargo | Implementado (Documentación · Mediciones y ofertas · Equipos) |
+| Interfaz por pasos | Implementado (Documentación · Mediciones y ofertas · Equipos) |
+| Tipo de encargo | Se elige al crear el proyecto, se muestra en el título y se puede cambiar. **Hoy no oculta ningún paso**: los tres pasos actuales sirven para los tres encargos. Los pasos de cálculo y planos, cuando existan, solo se verán en «diseño». |
 | Lector Excel | Pendiente |
 | Lector PDF | Pendiente |
 | Ampliaciones y modificaciones (Excel y BC3) | Pendiente |
@@ -73,8 +74,16 @@ Reglas tomadas del documento (págs. 2-23; páginas comprobadas sobre el PDF):
   adicionales de residuo, 5 clasificación de residuo (págs. 8-9).
 - `~D | PADRE | <HIJO\FACTOR\RENDIMIENTO\> |`, con un tercer campo más completo que se lee
   con preferencia; FACTOR y RENDIMIENTO valen 1.0 por defecto; los hijos con `%` o `&` son
-  porcentajes (págs. 9-10). Si un precio sale a la vez de `~C` y de `~D`, **prima `~D`**
-  (pág. 10).
+  porcentajes sobre las líneas anteriores, **no partidas** (págs. 9-10). Si un precio sale a
+  la vez de `~C` y de `~D`, **prima `~D`** (págs. 8 y 10): TRAZA usa el de la descomposición
+  cuando se puede calcular y avisa de la diferencia.
+- Cantidad de una partida = **rendimiento** de su línea en el `~D` del capítulo (pág. 22:
+  MEDICION_TOTAL debe coincidir con él). Un factor distinto de 1 en esa línea se avisa y no se
+  aplica. Sin rendimiento explícito ni `~M`, la cantidad **no consta** (el 1.0 por defecto no
+  es una medición).
+- Los códigos sinónimos (`~C|A\B|`) se resuelven en `~D`, `~M` y `~T` (pág. 7).
+- Una partida repetida en un capítulo se distingue por la POSICION de su `~M` (pág. 22).
+- Un 0 explícito anula el campo (pág. 2): precio o cantidad 0 = no consta, con aviso.
 - `~T | CODIGO | TEXTO |` (pág. 15).
 - `~M | [PADRE\]HIJO | {POSICION\} | MEDICION_TOTAL | {líneas} | [ETIQUETA] |`;
   MEDICION_TOTAL debe coincidir con el rendimiento del `~D` correspondiente (págs. 21-23).
@@ -85,8 +94,11 @@ Se registra la versión que declare cada fichero.
 Limitaciones iniciales del lector (se declaran al usuario, no se ocultan):
 - No se evalúan las **expresiones** de las líneas de medición (anexo 2): se usa
   MEDICION_TOTAL y se avisa si no coincide con el rendimiento del `~D`.
-- Los precios de partidas con descomposición se comprueban contra `~C` y se avisa de la
-  discrepancia; no se recalculan porcentajes `%`/`&` en esta primera versión.
+- No se aplican los **porcentajes** `%`/`&`: ni sobre capítulos (sus líneas no se suman y la
+  medición se marca con líneas omitidas, total «parcial») ni dentro de descomposiciones (se
+  usa el precio del `~C`, con aviso).
+- Con varios precios (rótulos del `~V`) se usa el primero, con aviso.
+- No se aplican los decimales del `~K`.
 - Registros no usados todavía (`~K` salvo lectura, `~P`, `~L`, `~G`, `~E`, `~O`, `~X`…) se
   conservan sin interpretar.
 
