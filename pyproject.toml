@@ -79,3 +79,4 @@ forbidden_modules = ["traza.persistence", "sqlite3", "traza.ui"]
 [tool.ruff.lint.per-file-ignores]
 # Los registros BC3 de prueba se escriben en una línea, como en un fichero real.
 "tests/unit/test_bc3.py" = ["E501"]
+"tests/unit/test_bc3_escritura.py" = ["E501"]
