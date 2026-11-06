@@ -6,7 +6,6 @@ toca es lo justo, y el fichero se relee igual que lo esperado.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
@@ -105,7 +104,7 @@ def test_bc3_actualizado_conserva_lo_que_no_toca_y_relee_igual(mod, tmp_path):
     assert b.conceptos["01.1"].precios[0] == pytest.approx(24364 + 2000 - 364)
     assert b.conceptos["OBRA"].precios[0] == pytest.approx(37244 + 2000 - 364 + 1700 + 10)
     # El sinónimo sigue resolviendo y los descompuestos siguen valiendo para el precio.
-    uta = next(x for x in r.partidas if x.codigo == "UTA01" and not x.capitulos[0][0] == "MOD1")
+    uta = next(x for x in r.partidas if x.codigo == "UTA01" and x.capitulos[0][0] != "MOD1")
     assert uta.precio == 12880
 
 
