@@ -76,6 +76,8 @@ class Resumen:
     total_modificado: float = 0.0
     sin_importe_contrato: int = 0
     sin_importe_modificado: int = 0
+    omitidas_base: int = 0  # líneas del documento de base que el lector no convirtió
+    a_revisar_base: int = 0  # partidas de la base «a revisar» que entran en los totales
 
     @property
     def cambios(self) -> list[LineaModificado]:
@@ -87,7 +89,31 @@ class Resumen:
 
     @property
     def parcial(self) -> bool:
-        return bool(self.sin_importe_contrato or self.sin_importe_modificado)
+        """Los totales no son los del presupuesto entero: falta algo que no se puede sumar.
+        (Revisión 06-11-2026: las líneas omitidas de la base no lo marcaban.)"""
+        return bool(self.sin_importe_contrato or self.sin_importe_modificado or self.omitidas_base)
+
+    def notas(self) -> list[str]:
+        """Lo que hay que saber de los totales. Lo usan la pantalla y el Excel, para que
+        digan lo mismo."""
+        notas = []
+        if self.sin_importe_contrato or self.sin_importe_modificado:
+            notas.append(
+                f"{self.sin_importe_contrato} partida(s) sin importe de contrato y "
+                f"{self.sin_importe_modificado} sin importe modificado no se suman (no consta "
+                "cantidad o precio)."
+            )
+        if self.omitidas_base:
+            notas.append(
+                f"La base tiene {self.omitidas_base} línea(s) que el lector no pudo convertir "
+                "en partida (porcentajes, conceptos sin definir…): no están en los totales."
+            )
+        if self.a_revisar_base:
+            notas.append(
+                f"{self.a_revisar_base} partida(s) de la base están «a revisar»: entran en los "
+                "totales con lo leído, sin comprobar."
+            )
+        return notas
 
 
 def calcular(
@@ -95,12 +121,15 @@ def calcular(
     cambios: list[dict[str, Any]],
     nuevas: dict[str, dict[str, Any]],
     nombres_documentos: dict[str, str],
+    omitidas_base: int = 0,
 ) -> Resumen:
     """base: partidas de la medición de base; cambios: filas de cambio_modificado;
     nuevas: partidas de oferta citadas por los cambios «nueva», por id;
-    nombres_documentos: medicion_id → nombre del documento (para citar el origen)."""
+    nombres_documentos: medicion_id → nombre del documento (para citar el origen);
+    omitidas_base: líneas del documento de base que el lector no convirtió en partida."""
     variaciones = {c["partida_id"]: c for c in cambios if c["tipo"] == "variacion"}
-    r = Resumen()
+    r = Resumen(omitidas_base=omitidas_base)
+    r.a_revisar_base = sum(1 for p in base if p.get("estado") == "a_revisar")
     for p in base:
         c = variaciones.get(p["id"])
         linea = LineaModificado(

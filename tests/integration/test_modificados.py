@@ -183,14 +183,89 @@ def test_excel_del_modificado(escenario, tmp_path):
     )
     assert filas[1][12:14] == ("Error de medición", "Faltaba el tramo B")
     assert filas[2][0] == "Partida nueva" and filas[2][14].startswith("Oferta.bc3")
+    # Cada total bajo su columna (J contrato, K modificado, L diferencia). Revisión
+    # 06-11-2026: los tres iban en la L.
+    assert ws.cell(row=1, column=10).value == "Importe contrato"
+    assert ws.cell(row=1, column=11).value == "Importe modificado"
+    assert ws.cell(row=1, column=12).value == "Dif. importe"
     totales = {
-        f[0]: f[11]
-        for f in filas
-        if f and f[0] in ("Total contrato", "Total modificado", "Diferencia")
+        f[0]: f[9:12] for f in filas if f and f[0] and str(f[0]).startswith(("Suma", "Pres"))
     }
     assert totales == {
-        "Total contrato": 36864,
-        "Total modificado": 36864 + 2000 + 1700,
-        "Diferencia": 3700,
+        "Suma de estas líneas": (24000, 26000 + 1700, 3700),
+        "Presupuesto completo": (36864, 36864 + 2000 + 1700, 3700),
     }
-    assert wb["Presupuesto actualizado"].max_row >= 4 + 1
+    actualizado = list(wb["Presupuesto actualizado"].iter_rows(values_only=True))
+    assert [f[0] for f in actualizado if f and str(f[0] or "").startswith("Suma")] == []
+    assert any(f and f[0] == "Presupuesto completo" for f in actualizado)
+
+
+def test_totales_parciales_si_la_base_tiene_omitidas_o_a_revisar(proyecto, tmp_path):
+    # Una línea de porcentaje no es partida (se omite): el total del presupuesto no es el
+    # completo y tiene que decirse, en pantalla y en el Excel (revisión 06-11-2026).
+    base = _leer(
+        proyecto,
+        tmp_path,
+        "B.bc3",
+        BASE.replace("REJ01\\1\\8\\", "REJ01\\1\\8\\%MA\\1\\0.02\\"),
+        "presupuesto",
+    )
+    o = CrearModificado(base, "M")
+    proyecto.ejecutar(o)
+    r = proyecto.resumen_modificado(o.id)
+    assert r.omitidas_base == 1 and r.parcial
+    assert any("no pudo convertir" in n for n in r.notas())
+    pid = proyecto.partidas(base)[0]["id"]
+    proyecto.ejecutar(VariarPartida(o.id, pid, 2, "medicion", "x"))
+    ruta = proyecto.exportar_modificado_excel(o.id, tmp_path / "m.xlsx")
+    filas = list(load_workbook(ruta)["Modificado nº 1"].iter_rows(values_only=True))
+    assert any(f[0] == "Presupuesto completo (parcial)" for f in filas)
+    assert any(f[0] and "no pudo convertir" in f[0] for f in filas)
+
+
+def test_partidas_a_revisar_de_la_base_se_dicen_en_los_totales():
+    from traza.app.modificados import calcular
+
+    base = [
+        {"id": "a", "capitulo": [], "codigo": "A", "resumen": "a", "unidad": "ud",
+         "cantidad": 2.0, "precio": 10.0, "estado": "a_revisar"},
+    ]  # fmt: skip
+    r = calcular(base, [], {}, {})
+    assert r.a_revisar_base == 1 and r.total_contrato == 20
+    assert any("«a revisar»" in n for n in r.notas())
+
+
+def test_numero_de_un_modificado_borrado_no_se_reutiliza(escenario):
+    # Revisión 06-11-2026: borrar el último y crear otro le daba el mismo número, y un
+    # «nº 2» ya exportado podía acabar siendo otro distinto.
+    p, _, _, _, base = escenario
+    o2 = CrearModificado(base, "Segundo")
+    p.ejecutar(o2)
+    p.ejecutar(BorrarModificado(o2.id))
+    o3 = CrearModificado(base, "Tercero")
+    p.ejecutar(o3)
+    assert p.modificado(o3.id)["numero"] == 3
+    # Deshacer y rehacer conservan su número.
+    p.deshacer()
+    p.rehacer()
+    assert p.modificado(o3.id)["numero"] == 3
+
+
+def test_cantidad_con_mas_de_seis_decimales_se_rechaza(escenario):
+    # El BC3 se escribe con 6 decimales (y un valor diminuto saldría 0 = «anulada»).
+    p, mod, partidas, ofertas, _ = escenario
+    with pytest.raises(OrdenRechazada, match="6 decimales"):
+        p.ejecutar(VariarPartida(mod, partidas["CND01"], 2600.1234567, "medicion", "x"))
+    with pytest.raises(OrdenRechazada, match="6 decimales"):
+        p.ejecutar(AnadirPartidaNueva(mod, ofertas["EXT01"], 1e-7, "medicion", "x"))
+    p.ejecutar(VariarPartida(mod, partidas["CND01"], 2600.123456, "medicion", "x"))
+
+
+def test_base_oferta_no_se_anade_a_si_misma(proyecto, tmp_path):
+    oferta = _leer(proyecto, tmp_path, "Oferta.bc3", OFERTA, "oferta")
+    o = CrearModificado(oferta, "Sobre la oferta")
+    proyecto.ejecutar(o)
+    linea = next(x for x in proyecto.partidas(oferta) if x["codigo"] == "EXT01")
+    with pytest.raises(OrdenRechazada, match="propia base"):
+        proyecto.ejecutar(AnadirPartidaNueva(o.id, linea["id"], 1, "otro", "x"))
+    proyecto.ejecutar(VariarPartida(o.id, linea["id"], 3, "otro", "x"))

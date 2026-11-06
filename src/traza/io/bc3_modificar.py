@@ -17,9 +17,16 @@ Qué se cambia (reglas de «Formato FIEBDC-3/2024», Asociación FIEBDC):
   con sus `~C`, `~T`, `~D` y `~M`.
 - El fichero se escribe en su mismo juego de caracteres.
 
-Antes de guardarlo, el resultado se vuelve a leer con el lector de TRAZA y se compara con lo
-esperado (todas las partidas originales, con las cantidades nuevas, más las nuevas). Si no
-coincide, no se guarda.
+Lo que NO se hace a ciegas (revisión 06-11-2026): se rechaza, explicando por qué, cuando la
+medición tiene líneas de expresión (tipo 3, que TRAZA no evalúa), cuando sus líneas no suman
+el total antiguo (el programa de origen recalcula el total con las líneas al leer, pág. 22),
+cuando hay registros `~N` (añaden líneas a esa medición, pág. 23) y cuando la partida se
+repite en el capítulo y no se puede saber qué `~M` es la suya (POSICION, pág. 22).
+
+Antes de guardarlo, el resultado se vuelve a leer con el lector de TRAZA y se comprueba:
+todas las partidas (código, cantidad y precio) son las esperadas, el lector no da ningún
+aviso nuevo (p. ej. una `~M` que no cuadre con su `~D`) y los precios de los capítulos
+corregidos son los calculados. Si algo no coincide, no se guarda.
 """
 
 from __future__ import annotations
@@ -30,11 +37,17 @@ from datetime import date
 from pathlib import Path
 
 from traza.io import bc3
-from traza.io.bc3_escritura import PartidaBc3, _num
+from traza.io.bc3_escritura import PartidaBc3, _num, codigo_valido
 
+# Pág. 2: «|», «\» y «~» son separadores. En el COMENTARIO de una línea de medición «#»
+# separa los ID_BIM (pág. 21), así que también se sustituye.
 _RESERVADOS = re.compile(r"[|\\~]")
-_LOCALIZADOR = re.compile(r"^~D (?P<padre>[^,]+), línea (?P<n>\d+); ~C (?P<cod>.+)$")
+_RESERVADOS_COMENTARIO = re.compile(r"[|\\~#]")
+_LOCALIZADOR = re.compile(r"^~D (?P<padre>.+), línea (?P<n>\d+); ~C (?P<cod>.+)$")
 _CODIFICACION = {"850": "cp850", "437": "cp437", "ANSI": "cp1252", "": "cp850"}
+#: Tolerancia con que las líneas de una medición deben sumar su total: una centésima, la
+#: misma que en las comprobaciones de lectura (los programas redondean el total).
+TOL_MEDICION = 0.01
 
 
 class Bc3ModificarError(RuntimeError):
@@ -52,8 +65,8 @@ class Variacion:
     comentario: str
 
 
-def _limpio(t: str) -> str:
-    return _RESERVADOS.sub("/", t.replace("\r", " ").replace("\n", " ")).strip()
+def _limpio(t: str, reservados: re.Pattern = _RESERVADOS) -> str:
+    return reservados.sub("/", t.replace("\r", " ").replace("\n", " ")).strip()
 
 
 class _Registro:
@@ -95,6 +108,18 @@ def actualizar(
     variaciones: list[Variacion],
     nuevas: list[PartidaBc3],
 ) -> tuple[Path, list[str]]:
+    try:
+        return _actualizar(original, destino, numero, variaciones, nuevas)
+    except bc3.Bc3Error as exc:
+        raise Bc3ModificarError(f"El BC3 no se puede leer: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise Bc3ModificarError(
+            "El BC3 original tiene caracteres que no corresponden a su juego de caracteres "
+            "declarado: no se modifica."
+        ) from exc
+
+
+def _actualizar(original, destino, numero, variaciones, nuevas) -> tuple[Path, list[str]]:
     avisos: list[str] = []
     crudo = original.read_bytes()
     juego = bc3._juego_caracteres(crudo)
@@ -105,7 +130,7 @@ def actualizar(
     modelo = bc3.leer_bc3_texto(texto, juego)
     if modelo.raiz is None:
         raise Bc3ModificarError("El BC3 original no tiene concepto raíz: no es un presupuesto.")
-    esperado_original = bc3.leer_partidas(modelo).partidas
+    leido_original = bc3.leer_partidas(modelo)
 
     trozos = texto.split("~")
     preambulo, registros = trozos[0], [_Registro(t) for t in trozos[1:]]
@@ -128,7 +153,7 @@ def actualizar(
             )
         padre, n = resolver(m["padre"].strip()), int(m["n"])
         _variar_d(ultimo("D", padre), padre, n, v, resolver)
-        _variar_m(registros, padre, n, v, numero, resolver, avisos)
+        _variar_m(registros, modelo, padre, n, v, numero, resolver, avisos)
         if v.precio is None:
             avisos.append(
                 f"«{v.codigo}» no tiene precio: no se corrigen los precios de sus capítulos."
@@ -146,8 +171,11 @@ def actualizar(
         )
         deltas_capitulo[modelo.raiz] = deltas_capitulo.get(modelo.raiz, 0.0) + total
 
+    precios_esperados: dict[str, float] = {}
     for cap, delta in deltas_capitulo.items():
-        _ajustar_precio(registros, cap, delta, resolver, avisos)
+        nuevo = _ajustar_precio(registros, modelo, cap, delta, resolver, avisos)
+        if nuevo is not None:
+            precios_esperados[cap] = nuevo
 
     salida = preambulo + "".join("~" + r.texto() for r in registros)
     if nuevos_registros:
@@ -167,10 +195,12 @@ def actualizar(
     temporal = destino.with_name(destino.name + ".parcial")
     temporal.write_bytes(datos)
     try:
-        _verificar(temporal, esperado_original, variaciones, nuevas)
-    except Bc3ModificarError:
+        _verificar(temporal, leido_original, variaciones, nuevas, precios_esperados)
+    except (Bc3ModificarError, bc3.Bc3Error, UnicodeDecodeError) as exc:
         temporal.unlink(missing_ok=True)
-        raise
+        if isinstance(exc, Bc3ModificarError):
+            raise
+        raise Bc3ModificarError(f"El BC3 actualizado no se puede releer: {exc}") from exc
     temporal.replace(destino)
     return destino, avisos
 
@@ -197,37 +227,105 @@ def _variar_d(reg: _Registro | None, padre: str, n: int, v: Variacion, resolver)
         raise Bc3ModificarError(f"La descomposición de «{padre}» está vacía.")
 
 
-def _variar_m(registros, padre, n, v, numero, resolver, avisos) -> None:
-    candidatos = []
-    for r in registros:
-        if r.tipo != "M":
-            continue
+def _posicion(r: _Registro) -> int | None:
+    """Último valor de POSICION de una ~M (su posición dentro del padre), como número."""
+    valores = [x for x in r.campo(2).split("\\") if x.strip()]
+    if not valores:
+        return None
+    try:
+        return int(float(valores[-1]))
+    except ValueError:
+        return None
+
+
+def _variar_m(registros, modelo, padre, n, v, numero, resolver, avisos) -> None:
+    def es_de(r: _Registro) -> bool:
         cods = [resolver(x) for x in r.campo(1).split("\\") if x.strip()]
-        if len(cods) == 2 and cods == [padre, v.codigo]:
-            candidatos.append(r)
-    if len(candidatos) > 1:
-        candidatos = [
-            r
-            for r in candidatos
-            if [x for x in r.campo(2).split("\\") if x.strip()][-1:] == [str(n)]
-        ]
+        return cods == [padre, v.codigo]
+
+    if any(r.tipo == "N" and es_de(r) for r in registros):
+        raise Bc3ModificarError(
+            f"«{v.codigo}» tiene líneas de medición añadidas con ~N en «{padre}» (pág. 23): "
+            "TRAZA no las actualiza. Cambia esa medición en el programa de origen."
+        )
+    candidatos = [r for r in registros if r.tipo == "M" and es_de(r)]
+    repetida = sum(1 for x in modelo.descomposiciones.get(padre, []) if x.hijo == v.codigo) > 1
+    if repetida or len(candidatos) > 1:
+        # Pág. 22: con el hijo repetido, la ~M se identifica por su POSICION. El mismo
+        # criterio que el lector (io/bc3.py, _medicion_de).
+        exactas = [r for r in candidatos if _posicion(r) == n]
+        if len(exactas) > 1 or (not exactas and any(_posicion(r) is None for r in candidatos)):
+            raise Bc3ModificarError(
+                f"«{v.codigo}» aparece varias veces en «{padre}» y no se puede saber qué "
+                f"medición (~M) es la de la línea {n} (falta POSICION, pág. 22): no se "
+                "modifica a ciegas."
+            )
+        candidatos = exactas
     if not candidatos:
         avisos.append(f"«{v.codigo}» no tiene medición (~M) en el original: se cambia solo el ~D.")
         return
     r = candidatos[-1]
-    r.poner(3, _num(v.cantidad_nueva))
     lineas = r.campo(4)
     if lineas.strip():
+        suma = _suma_lineas(lineas, v.codigo)
+        try:
+            total_antiguo = float(r.campo(3).strip())
+        except ValueError:
+            total_antiguo = None
+        if total_antiguo is None or abs(suma - total_antiguo) > TOL_MEDICION:
+            raise Bc3ModificarError(
+                f"Las líneas de medición de «{v.codigo}» suman {_num(round(suma, 6))} y su "
+                f"total es {r.campo(3).strip() or 'vacío'}: el programa de origen recalcula el "
+                "total con las líneas (pág. 22), así que añadir la diferencia no daría la "
+                "cantidad nueva. Revisa esa medición en el programa de origen."
+            )
         base = lineas.rstrip(" \t\r\n")
         if not base.endswith("\\"):
             base += "\\"
         diferencia = v.cantidad_nueva - v.cantidad_contrato
-        comentario = _limpio(f"Modificado nº {numero}: {v.comentario}")
+        comentario = _limpio(f"Modificado nº {numero}: {v.comentario}", _RESERVADOS_COMENTARIO)
         # Línea: TIPO \ COMENTARIO \ UNIDADES \ LONGITUD \ LATITUD \ ALTURA \ (pág. 21)
         r.poner(4, base + "\\".join(["", comentario, _num(diferencia), "", "", ""]) + "\\")
+    r.poner(3, _num(v.cantidad_nueva))
 
 
-def _ajustar_precio(registros, codigo, delta, resolver, avisos) -> None:
+def _suma_lineas(campo: str, codigo: str) -> float:
+    """Suma de las líneas de una ~M según la pág. 22.
+
+    Cada línea: TIPO\\COMENTARIO\\UNIDADES\\LONGITUD\\LATITUD\\ALTURA\\. Vale el producto de
+    las magnitudes que existen (un campo vacío es una magnitud que no existe, pág. 23); una
+    línea sin ninguna es un comentario. Las de subtotal (tipo 1 y 2) no suman. Las de
+    expresión (tipo 3) no se evalúan: se rechaza.
+    """
+    subs = campo.rstrip(" \t\r\n").split("\\")
+    if subs and subs[-1].strip() == "":
+        subs.pop()
+    if len(subs) % 6:
+        raise Bc3ModificarError(
+            f"Las líneas de medición de «{codigo}» están incompletas (cada línea tiene seis "
+            "subcampos, pág. 21): no se modifican."
+        )
+    suma = 0.0
+    for i in range(0, len(subs), 6):
+        tipo = subs[i].strip()
+        if tipo in ("1", "2"):
+            continue
+        if tipo:
+            raise Bc3ModificarError(
+                f"La medición de «{codigo}» tiene líneas de tipo «{tipo}» (expresiones, pág. "
+                "22), que TRAZA no evalúa: no se modifica. Cámbiala en el programa de origen."
+            )
+        magnitudes = [bc3._numero(x, f"medición de «{codigo}»") for x in subs[i + 2 : i + 6]]
+        presentes = [x for x in magnitudes if x is not None]
+        if presentes:
+            producto = 1.0
+            for x in presentes:
+                producto *= x
+            suma += producto
+    return suma
+
+
+def _ajustar_precio(registros, modelo, codigo, delta, resolver, avisos) -> float | None:
     candidatos = [
         r
         for r in registros
@@ -235,16 +333,26 @@ def _ajustar_precio(registros, codigo, delta, resolver, avisos) -> None:
     ]
     if not candidatos:
         avisos.append(f"El capítulo «{codigo}» no declara precio: no se corrige.")
-        return
+        return None
+    if any(x.es_porcentaje for x in modelo.descomposiciones.get(codigo, [])):
+        # Pág. 9-10: el porcentaje se aplica sobre las líneas anteriores. TRAZA no lo
+        # recalcula (como al leer): se declara, no se disimula.
+        avisos.append(
+            f"El capítulo «{codigo}» aplica porcentajes («%»/«&»): su precio se corrige solo "
+            "con la diferencia de importe, sin el porcentaje. Recalcúlalo en el programa de "
+            "origen."
+        )
     r = candidatos[-1]
     precios = r.campo(4).split("\\")
     try:
         actual = float(precios[0].strip())
     except ValueError:
         avisos.append(f"El precio del capítulo «{codigo}» no es un número: no se corrige.")
-        return
-    precios[0] = _num(round(actual + delta, 6))
+        return None
+    nuevo = round(actual + delta, 6)
+    precios[0] = _num(nuevo)
     r.poner(4, "\\".join(precios))
+    return nuevo
 
 
 def _anadir_nuevas(registros, modelo, numero, nuevas, ultimo, avisos) -> list[str]:
@@ -269,12 +377,16 @@ def _anadir_nuevas(registros, modelo, numero, nuevas, ultimo, avisos) -> list[st
     hoy = date.today().strftime("%d%m%Y")
     codigos, lineas = [], []
     for k, p in enumerate(nuevas, start=1):
-        cod = _limpio(p.codigo or "").rstrip("#")
-        if not cod or cod in existentes or len(cod) > 20:
-            nuevo = f"{cap}.{k}"
+        cod = (p.codigo or "").strip()
+        if not codigo_valido(cod) or cod in existentes:
+            nuevo, s = f"{cap}.{k}", 0
+            while nuevo in existentes:
+                s += 1
+                nuevo = f"{cap}.{k}.{s}"
             if cod:
                 avisos.append(
-                    f"La partida nueva «{cod}» se renombra «{nuevo}» (código ya usado o no válido)."
+                    f"La partida nueva «{cod}» se renombra «{nuevo}» (código ya usado en el "
+                    "presupuesto o no válido en BC3)."
                 )
             cod = nuevo
         existentes.add(cod)
@@ -300,18 +412,44 @@ def _anadir_nuevas(registros, modelo, numero, nuevas, ultimo, avisos) -> list[st
     return cabecera + lineas
 
 
-def _verificar(ruta: Path, originales, variaciones, nuevas) -> None:
-    leido = bc3.leer_partidas(bc3.leer_bc3(ruta)).partidas
-    # Una partida anulada se escribe con cantidad 0, y el lector de TRAZA lee un 0 explícito
-    # como campo anulado («no consta», pág. 2): eso es lo esperado al releer.
-    cambios = {v.localizador: (v.cantidad_nueva or None) for v in variaciones}
+def _cifra(v: float | None) -> float | None:
+    """Como se relee una cifra escrita: 6 decimales, y un 0 explícito es campo anulado
+    (pág. 2), que el lector de TRAZA lee como «no consta»."""
+    if v is None:
+        return None
+    v = round(v, 6)
+    return None if v == 0 else v
+
+
+def _verificar(ruta: Path, original, variaciones, nuevas, precios_capitulo) -> None:
+    modelo = bc3.leer_bc3(ruta)
+    leido = bc3.leer_partidas(modelo)
+    cambios = {v.localizador: v.cantidad_nueva for v in variaciones}
     esperado = [
-        (p.codigo, cambios.get(p.localizador, p.cantidad), p.precio) for p in originales
-    ] + [(p.codigo, p.cantidad, p.precio) for p in nuevas]
-    obtenido = [(p.codigo, p.cantidad, p.precio) for p in leido]
+        (p.codigo, _cifra(cambios.get(p.localizador, p.cantidad)), _cifra(p.precio))
+        for p in original.partidas
+    ] + [(p.codigo, _cifra(p.cantidad), _cifra(p.precio)) for p in nuevas]
+    obtenido = [(p.codigo, _cifra(p.cantidad), _cifra(p.precio)) for p in leido.partidas]
     if obtenido != esperado:
         distintos = [(e, o) for e, o in zip(esperado, obtenido, strict=False) if e != o][:3]
         raise Bc3ModificarError(
             "El BC3 actualizado no se relee igual que lo esperado; no se guarda. "
             f"Diferencias (esperado, leído): {distintos or (len(esperado), len(obtenido))}"
         )
+    # Un aviso nuevo del lector delata algo mal actualizado aunque las cifras cuadren (p. ej.
+    # una ~M que ya no coincide con su ~D). Los de «campo anulado» son los de las
+    # anulaciones, esperados.
+    nuevos = [a for a in leido.avisos if a not in original.avisos and "campo anulado" not in a]
+    if nuevos:
+        raise Bc3ModificarError(
+            "El BC3 actualizado se relee con avisos que el original no tenía; no se guarda: "
+            + " ".join(nuevos[:3])
+        )
+    for cap, precio in precios_capitulo.items():
+        con = modelo.conceptos.get(cap)
+        leido_precio = con.precios[0] if con and con.precios else None
+        if leido_precio is None or abs(leido_precio - precio) > 1e-6:
+            raise Bc3ModificarError(
+                f"El precio del capítulo «{cap}» se relee {leido_precio} y debía ser {precio}; "
+                "no se guarda."
+            )

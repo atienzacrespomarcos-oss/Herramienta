@@ -203,25 +203,37 @@ def _hoja_modificado(ws, lineas, titulo_total: bool, resumen) -> None:
             ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
     if titulo_total:
         ws.append([])
-        for etiqueta, valor in (
-            ("Total contrato", resumen.total_contrato),
-            ("Total modificado", resumen.total_modificado),
-            ("Diferencia", resumen.diferencia),
-        ):
-            ws.append([etiqueta] + [None] * 10 + [valor])
-            ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
-            ws.cell(row=ws.max_row, column=12).number_format = FORMATO_NUMERO
-            ws.cell(row=ws.max_row, column=12).font = Font(bold=True)
-        if resumen.parcial:
-            ws.append(
-                [
-                    "Totales parciales: "
-                    f"{resumen.sin_importe_contrato} partida(s) sin importe de contrato y "
-                    f"{resumen.sin_importe_modificado} sin importe modificado no se suman "
-                    "(no consta cantidad o precio)."
-                ]
+        # Cada total bajo su columna: Importe contrato (J), Importe modificado (K) y
+        # Dif. importe (L). Revisión 06-11-2026: los tres iban en la L.
+        filas = []
+        if len(lineas) != len(resumen.lineas):
+            filas.append(("Suma de estas líneas", *_sumas(lineas)))
+        filas.append(
+            (
+                "Presupuesto completo" + (" (parcial)" if resumen.parcial else ""),
+                resumen.total_contrato,
+                resumen.total_modificado,
+                resumen.diferencia,
             )
+        )
+        for etiqueta, contrato, modificado, diferencia in filas:
+            ws.append([etiqueta] + [None] * 8 + [contrato, modificado, diferencia])
+            ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
+            for col in (10, 11, 12):
+                ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
+                ws.cell(row=ws.max_row, column=col).font = Font(bold=True)
+        for nota in resumen.notas():
+            ws.append([_texto(nota)])
     ws.freeze_panes = "A2"
+
+
+def _sumas(lineas) -> tuple[float, float, float]:
+    """Sumas de los importes que constan (lo que no consta no se suma como 0: se dice en
+    las notas)."""
+    contrato = sum(x.importe_contrato for x in lineas if x.importe_contrato is not None)
+    modificado = sum(x.importe_modificado for x in lineas if x.importe_modificado is not None)
+    diferencia = sum(x.diferencia_importe for x in lineas if x.diferencia_importe is not None)
+    return contrato, modificado, diferencia
 
 
 def exportar_modificado(destino: Path, proyecto: str, modificado: dict, resumen) -> Path:

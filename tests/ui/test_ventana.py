@@ -693,3 +693,35 @@ def test_dialogo_de_cambio_exige_justificacion_y_numero_valido(qtbot):
     d.partida.setCurrentIndex(1)
     d._aceptar()
     assert d.resultado == DatosCambio("b", 6.0, "medicion", "Se amplía")
+
+
+def test_dialogo_de_cambio_distingue_partidas_iguales(qtbot):
+    # Revisión 06-11-2026: la misma partida en dos capítulos daba el mismo texto y
+    # findText devolvía siempre la primera, aunque el usuario eligiera la segunda.
+    from traza.ui.dialogos import DialogoCambio
+
+    comun = {
+        "codigo": "PL01",
+        "resumen": "Punto de luz",
+        "cantidad": 10,
+        "unidad": "ud",
+        "precio": 25.0,
+    }
+    partidas = [
+        {**comun, "id": "a", "orden": 1, "capitulo": [["01", "Planta baja"]]},
+        {**comun, "id": "b", "orden": 2, "capitulo": [["02", "Planta primera"]]},
+        {**comun, "id": "c", "orden": 3, "capitulo": [["02", "Planta primera"]]},
+        {**comun, "id": "d", "cantidad": 1234567},
+        {**comun, "id": "e", "cantidad": 1234567},
+    ]
+    d = DialogoCambio(None, "Cambiar cantidad", partidas, "Cantidad nueva")
+    qtbot.addWidget(d)
+    textos = [d.partida.itemText(i) for i in range(d.partida.count())]
+    assert len(set(textos)) == len(textos)
+    assert "Planta primera, línea 2" in textos[1] and "e+" not in textos[3]
+    for i, esperado in enumerate("abcde"):
+        d.partida.setCurrentIndex(i)
+        d.cantidad.setText("12")
+        d.justificacion.setText("x")
+        d._aceptar()
+        assert d.resultado.partida_id == esperado

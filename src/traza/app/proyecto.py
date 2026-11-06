@@ -30,7 +30,7 @@ from traza.app.ordenes import (
 from traza.core.estados import Estado
 from traza.core.procedencia import Origen
 from traza.io import bc3, bc3_modificar
-from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3
+from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
 from traza.io.excel import exportar_modificado, exportar_partidas
 from traza.io.pdf import contar_paginas, renderizar_pagina
@@ -557,8 +557,12 @@ class Proyecto:
             if c["tipo"] == "nueva":
                 p = leer(self._con, "partida", {"id": c["partida_id"]})
                 nuevas[c["partida_id"]] = p
-        nombres = {m["id"]: m["documento_nombre"] for m in self.mediciones()}
-        return calculo_mod.calcular(self.partidas(mod["medicion_id"]), cambios, nuevas, nombres)
+        meds = self.mediciones()
+        nombres = {m["id"]: m["documento_nombre"] for m in meds}
+        base = next(m for m in meds if m["id"] == mod["medicion_id"])
+        return calculo_mod.calcular(
+            self.partidas(mod["medicion_id"]), cambios, nuevas, nombres, base["omitidas"]
+        )
 
     def exportar_modificado_excel(self, modificado_id: str, destino: Path) -> Path:
         mod = self.modificado(modificado_id)
@@ -615,44 +619,88 @@ class Proyecto:
                     nuevas,
                 )
             return self._bc3_generado(mod, r, destino, nuevas)
-        except (bc3_modificar.Bc3ModificarError, Bc3EscrituraError) as exc:
+        except (bc3_modificar.Bc3ModificarError, Bc3EscrituraError, bc3.Bc3Error) as exc:
             raise OrdenRechazada(str(exc)) from exc
 
     def _bc3_generado(self, mod, r, destino: Path, nuevas) -> tuple[Path, list[str]]:
         """Base que no es BC3 (leída de PDF o Excel): presupuesto generado con lo leído."""
-        raiz = CapituloBc3("OBRA", f"{self.nombre} - modificado nº {mod['numero']}")
-        capitulos: dict[str, CapituloBc3] = {}
+        numero = mod["numero"]
+        base = [
+            PartidaBc3(x.codigo or "", x.unidad, x.resumen, None, x.cantidad_modificada, x.precio)
+            for x in r.lineas
+            if x.tipo != "nueva"
+        ]
+        # Códigos: primero se reservan los que ya son válidos y únicos; después se dan códigos
+        # nuevos a los demás (sin código, repetidos, de más de 20 caracteres o con caracteres
+        # reservados), y por último a capítulos y raíz, sin chocar con ninguno. Cada cambio de
+        # un código que sí existía se avisa (revisión 06-11-2026: antes era en silencio y un
+        # código «C01» de la base chocaba con el del capítulo).
         usados: set[str] = set()
-        for n, x in enumerate((x for x in r.lineas if x.tipo != "nueva"), start=1):
+        pendientes: list[tuple[PartidaBc3, str]] = []
+        for i, p in enumerate(base, start=1):
+            pendientes.append((p, f"P{i:04d}"))
+        for k, p in enumerate(nuevas, start=1):
+            pendientes.append((p, f"MOD{numero}.{k}"))
+        sin_codigo = 0
+        cambiados: list[str] = []
+        validos: set[int] = set()
+        for i, (p, _) in enumerate(pendientes):
+            if codigo_valido(p.codigo) and p.codigo not in usados:
+                usados.add(p.codigo)
+                validos.add(i)
+        for i, (p, alternativa) in enumerate(pendientes):
+            if i in validos:
+                continue
+            nuevo = _codigo_libre(alternativa, usados)
+            if p.codigo.strip():
+                cambiados.append(f"«{p.codigo}» → «{nuevo}»")
+            else:
+                sin_codigo += 1
+            p.codigo = nuevo
+        avisos_codigos = []
+        if cambiados:
+            avisos_codigos.append(
+                "Códigos repetidos o no válidos en BC3 que se escriben con otro código: "
+                + ", ".join(cambiados)
+                + "."
+            )
+        if sin_codigo:
+            avisos_codigos.append(f"{sin_codigo} partida(s) sin código reciben P0001, P0002…")
+
+        raiz = CapituloBc3(_codigo_libre("OBRA", usados), f"{self.nombre} - modificado nº {numero}")
+        capitulos: dict[str, CapituloBc3] = {}
+        lineas_base = [x for x in r.lineas if x.tipo != "nueva"]
+        for x, p in zip(lineas_base, base, strict=True):
             nombre = " / ".join(c[0] for c in x.capitulo) or "Sin capítulo"
             if nombre not in capitulos:
-                capitulos[nombre] = CapituloBc3(f"C{len(capitulos) + 1:02d}", nombre)
+                codigo = _codigo_libre(f"C{len(capitulos) + 1:02d}", usados)
+                capitulos[nombre] = CapituloBc3(codigo, nombre)
                 raiz.capitulos.append(capitulos[nombre])
-            codigo = (
-                x.codigo
-                if x.codigo and x.codigo not in usados and len(x.codigo) <= 20
-                else f"P{n:04d}"
-            )
-            usados.add(codigo)
-            capitulos[nombre].partidas.append(
-                PartidaBc3(codigo, x.unidad, x.resumen, None, x.cantidad_modificada, x.precio)
-            )
+            capitulos[nombre].partidas.append(p)
         if nuevas:
             cap = CapituloBc3(
-                f"MOD{mod['numero']}", f"Modificado nº {mod['numero']} - partidas nuevas"
+                _codigo_libre(f"MOD{numero}", usados),
+                f"Modificado nº {numero} - partidas nuevas",
             )
-            for k, p in enumerate(nuevas, start=1):
-                if not p.codigo or p.codigo in usados or len(p.codigo) > 20:
-                    p.codigo = f"MOD{mod['numero']}.{k}"
-                usados.add(p.codigo)
-                cap.partidas.append(p)
+            cap.partidas.extend(nuevas)
             raiz.capitulos.append(cap)
         ruta, avisos = escribir_bc3(
-            destino, raiz, propiedad=self.nombre, comentario=f"Modificado nº {mod['numero']}"
+            destino, raiz, propiedad=self.nombre, comentario=f"Modificado nº {numero}"
         )
-        avisos.insert(
-            0,
+        avisos[:0] = [
             "La base se leyó de PDF o Excel: el BC3 se ha generado con lo leído (capítulos con "
             "códigos C01, C02…; sin descompuestos ni textos originales).",
-        )
+            *avisos_codigos,
+        ]
         return ruta, avisos
+
+
+def _codigo_libre(propuesto: str, usados: set[str]) -> str:
+    """Código BC3 libre a partir de `propuesto` (que ya es válido): si está usado, se le
+    añade «.1», «.2»… Lo reserva en `usados`."""
+    codigo, n = propuesto, 0
+    while codigo in usados:
+        n += 1
+        codigo = f"{propuesto}.{n}"
+    usados.add(codigo)
+    return codigo

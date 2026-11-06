@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from traza.app.ordenes import CLASES_MEDICION, ENCARGOS, MOTIVOS
-from traza.core.numeros import leer_numero
+from traza.core.numeros import escribir_numero, leer_numero
 from traza.core.procedencia import Origen, Procedencia, ProcedenciaInvalida
 from traza.core.tipos import Clase, TipoElemento
 
@@ -222,11 +222,23 @@ class DatosCambio:
     justificacion: str
 
 
+def _cifra(v: float) -> str:
+    """Cifra legible en español, sin notación científica (con «:g», 1234567 salía
+    «1.23457e+06»)."""
+    return escribir_numero(round(v, 6))
+
+
 def _texto_partida(p: dict) -> str:
-    cantidad = "" if p.get("cantidad") is None else f" · {p['cantidad']:g} {p.get('unidad') or ''}"
-    precio = "" if p.get("precio") is None else f" · {p['precio']:.2f} €"
+    cantidad = (
+        "" if p.get("cantidad") is None else f" · {_cifra(p['cantidad'])} {p.get('unidad') or ''}"
+    )
+    precio = "" if p.get("precio") is None else f" · {_cifra(p['precio'])} €"
     origen = f"{p['documento_nombre']} · " if p.get("documento_nombre") else ""
-    return f"{origen}{p.get('codigo') or '—'} — {p.get('resumen') or ''}{cantidad}{precio}"
+    # Capítulo y nº de línea: una misma partida repetida en dos capítulos (habitual en un
+    # BC3) tenía el mismo texto y no se distinguía.
+    capitulo = " / ".join(c[1] or c[0] for c in p.get("capitulo") or [])
+    donde = f" [{capitulo + ', ' if capitulo else ''}línea {p['orden']}]" if "orden" in p else ""
+    return f"{origen}{p.get('codigo') or '—'} — {p.get('resumen') or ''}{cantidad}{precio}{donde}"
 
 
 class DialogoCambio(QDialog):
@@ -243,8 +255,14 @@ class DialogoCambio(QDialog):
         self.partida = QComboBox()
         self.partida.setEditable(True)
         self.partida.setInsertPolicy(QComboBox.NoInsert)
+        vistos: dict[str, int] = {}
         for p in partidas:
-            self.partida.addItem(_texto_partida(p), p["id"])
+            texto = _texto_partida(p)
+            # Textos únicos: el elegido se identifica por su texto si el usuario lo escribe.
+            vistos[texto] = vistos.get(texto, 0) + 1
+            if vistos[texto] > 1:
+                texto = f"{texto} ({vistos[texto]})"
+            self.partida.addItem(texto, p["id"])
         buscador = self.partida.completer()
         buscador.setFilterMode(Qt.MatchContains)
         buscador.setCompletionMode(QCompleter.PopupCompletion)
@@ -269,7 +287,12 @@ class DialogoCambio(QDialog):
         f.addRow(botones)
 
     def _aceptar(self) -> None:
-        indice = self.partida.findText(self.partida.currentText())
+        # El índice elegido manda; el texto solo si el usuario lo ha escrito a mano. Antes
+        # findText devolvía la PRIMERA con ese texto, aunque se eligiera otra igual
+        # (revisión 06-11-2026).
+        indice = self.partida.currentIndex()
+        if indice < 0 or self.partida.itemText(indice) != self.partida.currentText():
+            indice = self.partida.findText(self.partida.currentText(), Qt.MatchExactly)
         if indice < 0:
             self.error.setText("Elige una partida de la lista.")
             return

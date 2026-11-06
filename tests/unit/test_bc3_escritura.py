@@ -77,6 +77,15 @@ def test_caracteres_reservados_se_sustituyen_y_se_avisa(tmp_path: Path):
     assert any("caracteres reservados" in a for a in avisos)
 
 
+def test_partida_anulada_con_cero_se_relee_como_anulada(tmp_path: Path):
+    # Revisión 06-11-2026: el 0 escrito se relee como campo anulado (pág. 2) y la
+    # verificación lo daba por distinto, así que anular una partida no se podía exportar.
+    obra = CapituloBc3("R", "O", partidas=[PartidaBc3("P1", "ud", "a", None, 0.0, 12.5)])
+    ruta, _ = escribir(tmp_path / "x.bc3", obra, propiedad="", comentario="")
+    leida = bc3.leer_partidas(bc3.leer_bc3(ruta)).partidas[0]
+    assert leida.cantidad is None and leida.precio == 12.5
+
+
 def test_caracter_fuera_de_ansi_se_sustituye_y_se_avisa(tmp_path: Path):
     obra = CapituloBc3(
         "R", "Obra", partidas=[PartidaBc3("P1", "ud", "Caudal ≥ 2400 m³/h", None, 1.0, 2.0)]
@@ -106,6 +115,23 @@ def test_caracter_fuera_de_ansi_se_sustituye_y_se_avisa(tmp_path: Path):
             "20 caracteres",
         ),
         (CapituloBc3("R", "O", partidas=[PartidaBc3("  ", "ud", "a", None, 1, 1)]), "código vacío"),
+        # «%» y «&» harían de la línea del ~D un porcentaje (pág. 9); «#», un capítulo (pág. 8).
+        (
+            CapituloBc3("R", "O", partidas=[PartidaBc3("P%1", "ud", "a", None, 1, 1)]),
+            "no es válido",
+        ),
+        (
+            CapituloBc3("R", "O", partidas=[PartidaBc3("A&B", "ud", "a", None, 1, 1)]),
+            "no es válido",
+        ),
+        (
+            CapituloBc3("R", "O", partidas=[PartidaBc3("A#B", "ud", "a", None, 1, 1)]),
+            "no es válido",
+        ),
+        (
+            CapituloBc3("R", "O", partidas=[PartidaBc3("A|B", "ud", "a", None, 1, 1)]),
+            "no es válido",
+        ),
     ],
 )
 def test_codigos_no_validos(tmp_path: Path, obra, mensaje):

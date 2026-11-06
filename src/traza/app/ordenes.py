@@ -597,6 +597,10 @@ def _cantidad(cantidad: float) -> float:
         raise OrdenRechazada("La cantidad tiene que ser un número.")
     if cantidad != cantidad or cantidad in (float("inf"), float("-inf")) or cantidad < 0:
         raise OrdenRechazada("La cantidad tiene que ser un número finito y no negativo.")
+    if abs(round(cantidad, 6) - cantidad) > 1e-12:
+        # El BC3 se escribe con 6 decimales: con más, el fichero diría otra cantidad (y una
+        # cantidad diminuta se escribiría 0, que en BC3 es «anulada», pág. 2).
+        raise OrdenRechazada("La cantidad admite como máximo 6 decimales.")
     return float(cantidad)
 
 
@@ -619,9 +623,19 @@ class CrearModificado(Orden):
             raise OrdenRechazada("La medición de base no existe.")
         if not self.titulo.strip():
             raise OrdenRechazada("El modificado necesita un título.")
+        # El número no se reutiliza nunca: se cuenta también lo que hubo y se borró (el
+        # registro de cambios lo guarda). Un «nº 2» ya exportado y borrado no puede volver a
+        # ser otro «nº 2» distinto (revisión 06-11-2026).
         numero = con.execute(
-            "SELECT coalesce(max(numero), 0) + 1 FROM modificado WHERE medicion_id = ?",
-            (self.medicion_id,),
+            "SELECT coalesce(max(n), 0) + 1 FROM ("
+            " SELECT numero AS n FROM modificado WHERE medicion_id = :m"
+            " UNION ALL"
+            " SELECT json_extract(antes, '$.numero') FROM cambio"
+            "  WHERE entidad = 'modificado' AND json_extract(antes, '$.medicion_id') = :m"
+            " UNION ALL"
+            " SELECT json_extract(despues, '$.numero') FROM cambio"
+            "  WHERE entidad = 'modificado' AND json_extract(despues, '$.medicion_id') = :m)",
+            {"m": self.medicion_id},
         ).fetchone()[0]
         return [
             Delta(
@@ -689,7 +703,7 @@ class AnadirPartidaNueva(Orden):
     id: str = field(default_factory=nuevo_id)
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
-        _modificado(con, self.modificado_id)
+        mod = _modificado(con, self.modificado_id)
         justificacion = _motivo(self.motivo, self.justificacion)
         cantidad = _cantidad(self.cantidad)
         if cantidad == 0:
@@ -701,6 +715,13 @@ class AnadirPartidaNueva(Orden):
         ).fetchone()
         if p is None or p["clase"] != "oferta":
             raise OrdenRechazada("Las partidas nuevas se toman de una oferta leída.")
+        if p["medicion_id"] == mod["medicion_id"]:
+            # Si la base es una oferta, sus propias líneas ya están en el presupuesto: se
+            # varían, no se añaden como nuevas.
+            raise OrdenRechazada(
+                "Esa línea es de la propia base del modificado: cambia su cantidad en lugar "
+                "de añadirla como nueva."
+            )
         if p["estado"] not in ESTADOS_FIABLES:
             raise OrdenRechazada(
                 "Esa línea de la oferta está «a revisar»: compruébala y confírmala antes de "

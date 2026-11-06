@@ -168,25 +168,50 @@ Limitaciones iniciales del lector (se declaran al usuario, no se ocultan):
       TRAZA no interpreta (descompuestos, textos, pliegos…).
     - Si la base vino de PDF o Excel, el BC3 se genera solo con lo leído (sin
       descompuestos) y se avisa.
-    - El BC3 generado se **vuelve a leer con el lector de TRAZA** y sus cantidades y precios
-      se comparan con los del modificado antes de darlo por bueno.
+    - El BC3 generado se **vuelve a leer con el lector de TRAZA** antes de darlo por bueno.
+      Se comprueba:
+      - que el código, la cantidad y el precio de cada partida son los del modificado;
+      - que el lector no da ningún aviso nuevo, como una `~M` que no cuadre con su `~D`;
+      - que los precios de los capítulos son los calculados.
+
+      Con 6 decimales. Un 0 se relee como «anulado», como dice la pág. 2.
+    - **No se modifica a ciegas** (revisión del 06-11-2026). Se rechaza, diciendo por qué,
+      cuando la medición:
+      - tiene líneas de expresión (tipo 3, pág. 22), que TRAZA no evalúa;
+      - tiene líneas que no suman su total, con una tolerancia de una centésima, porque el
+        programa de origen recalcula el total con las líneas;
+      - tiene registros `~N`, que añaden líneas a la medición (pág. 23);
+      - es de una partida repetida en el capítulo cuya `~M` no se puede identificar por
+        POSICION (pág. 22).
+    - Si un capítulo aplica porcentajes («%»/«&»), su precio se corrige solo con la
+      diferencia de importe y se avisa.
+    - Base leída de PDF o Excel: los códigos que faltan, se repiten, superan los 20
+      caracteres o llevan caracteres reservados (`| \ ~ # % &`) se escriben con otro código, y
+      se avisa de cada uno. Los capítulos no chocan con ningún código de partida.
 - Validación pendiente: importar el BC3 en Presto o Arquímedes. El usuario no tiene esos
   programas; lo confirmará quien reciba el fichero.
 
 ### Cómo se usa (paso 3 «Modificados»)
 
 1. «Nuevo modificado»: eliges la medición o presupuesto de base (el contratado) y un título.
-   Se numeran solos (nº 1, nº 2…) por cada base.
+   Se numeran solos (nº 1, nº 2…) por cada base. Un número **no se reutiliza nunca**, aunque
+   se borre ese modificado, para que un «nº 2» ya entregado no pase a ser otro distinto.
 2. «Cambiar cantidad de una partida»: buscas la partida (escribe parte del código o de la
    descripción), pones la **cantidad nueva total**, el motivo y la justificación. Con 0 se
-   anula. Solo se ofrecen partidas con cantidad y lectura fiable (no «a revisar»).
+   anula. Solo se ofrecen partidas con cantidad y lectura fiable (no «a revisar») que aún no
+   están en el modificado. Cada partida se muestra con su capítulo y su nº de línea, para
+   distinguir una misma partida repetida en dos capítulos. Admite como máximo 6 decimales,
+   los que lleva el BC3.
 3. «Añadir partida de una oferta»: buscas la línea entre las ofertas leídas (solo las fiables
-   y con precio), pones la cantidad, el motivo y la justificación. El precio y su origen
-   (documento y línea) vienen de la oferta.
-4. La tabla muestra, por cambio, contrato, nuevo, diferencia y diferencia de importe; abajo,
-   los totales de contrato, modificado y diferencia («parcial» si falta algún precio).
-5. «Exportar modificado a Excel»: hoja de cambios con totales y hoja del presupuesto completo
-   actualizado.
+   y con precio, no las ya añadidas ni las de la propia base), pones la cantidad, el motivo y
+   la justificación. El precio y su origen (documento y línea) vienen de la oferta.
+4. La tabla muestra, por cambio, contrato, nuevo, diferencia y diferencia de importe. Abajo
+   salen los totales de contrato, modificado y diferencia. Son «parcial» si falta algún
+   importe o si la base tiene líneas que el lector omitió. Además se avisa de las partidas
+   de la base que siguen «a revisar».
+5. «Exportar modificado a Excel»: hoja de cambios y hoja del presupuesto completo
+   actualizado. Cada total va en su columna de importe. La hoja de cambios suma sus líneas y
+   da el presupuesto completo, con los mismos avisos que la pantalla.
 6. «Exportar presupuesto actualizado a BC3»: el original con las cantidades nuevas, una línea
    de medición con la diferencia y el motivo, los precios de capítulos corregidos y un
    capítulo `MODn` con las partidas nuevas. Todo lo demás del original queda igual. Antes de

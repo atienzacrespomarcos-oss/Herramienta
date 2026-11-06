@@ -11,6 +11,7 @@ un test) y toda cifra muestra de dónde sale en la misma fila.
 from __future__ import annotations
 
 import contextlib
+import html
 import json
 import re
 import threading
@@ -581,16 +582,13 @@ class VentanaPrincipal(QMainWindow):
         )
         self.a_nuevo_modificado.setEnabled(hay_mediciones)
         mod = self._modificado_elegido() if hay else None
-        for a in (
-            self.a_variar,
-            self.a_exportar_mod_excel,
-            self.a_exportar_mod_bc3,
-            self.a_borrar_modificado,
-        ):
+        for a in (self.a_variar, self.a_borrar_modificado):
             a.setEnabled(mod is not None)
-        self.a_partida_nueva.setEnabled(
-            mod is not None and bool(self.proyecto.ofertas_utilizables())
-        )
+        # Exportar sin cambios lo rechaza la orden; mejor que el botón ni se ofrezca.
+        hay_cambios = mod is not None and self.tabla_cambios.rowCount() > 0
+        self.a_exportar_mod_excel.setEnabled(hay_cambios)
+        self.a_exportar_mod_bc3.setEnabled(hay_cambios)
+        self.a_partida_nueva.setEnabled(mod is not None and bool(self._lineas_de_oferta(mod)))
         self.a_quitar_cambio.setEnabled(mod is not None and self._cambio_elegido() is not None)
         self.a_restaurar.setEnabled(hay)
         self.a_abrir_doc.setEnabled(hay and self.tabla_documentos.currentRow() >= 0)
@@ -939,10 +937,11 @@ class VentanaPrincipal(QMainWindow):
             f"<b>{_dinero(r.total_modificado)}</b> · Diferencia: <b>{_dinero(r.diferencia)}</b>"
         )
         if r.parcial:
-            texto += (
-                f" — parcial: {r.sin_importe_contrato} partida(s) sin importe de contrato y "
-                f"{r.sin_importe_modificado} sin importe modificado no se suman"
-            )
+            texto += " (parcial)"
+        notas = r.notas()
+        if notas:
+            # Las mismas notas que el Excel (Resumen.notas): las dos salidas dicen lo mismo.
+            texto += "<br>" + "<br>".join(f"⚠ {html.escape(n)}" for n in notas)
         self.total_modificado.setText(texto)
 
     def _al_elegir_modificado(self) -> None:
@@ -961,15 +960,17 @@ class VentanaPrincipal(QMainWindow):
 
     def accion_variar(self) -> None:
         mod = self.proyecto.modificado(self._modificado_elegido())
+        ya = {x.partida_id for x in self.proyecto.resumen_modificado(mod["id"]).cambios}
         partidas = [
             p
             for p in self.proyecto.partidas(mod["medicion_id"])
-            if p["estado"] in ESTADOS_FIABLES and p["cantidad"] is not None
+            if p["estado"] in ESTADOS_FIABLES and p["cantidad"] is not None and p["id"] not in ya
         ]
         if not partidas:
             self.preguntas.aviso(
                 "Cambiar cantidad",
-                "La base no tiene partidas con cantidad fiable (revisa las «a revisar»).",
+                "No quedan partidas de la base que se puedan variar: las que tienen cantidad "
+                "fiable ya están en este modificado (o están «a revisar»).",
             )
             return
         d = self.preguntas.variacion(partidas)
@@ -978,9 +979,26 @@ class VentanaPrincipal(QMainWindow):
                 VariarPartida(mod["id"], d.partida_id, d.cantidad, d.motivo, d.justificacion)
             )
 
+    def _lineas_de_oferta(self, modificado_id: str) -> list[dict]:
+        """Líneas de oferta que aún se pueden añadir a este modificado: ni ya añadidas ni de
+        la propia medición de base."""
+        mod = self.proyecto.modificado(modificado_id)
+        if mod is None:
+            return []
+        ya = {
+            x.partida_id
+            for x in self.proyecto.resumen_modificado(modificado_id).cambios
+            if x.tipo == "nueva"
+        }
+        return [
+            p
+            for p in self.proyecto.ofertas_utilizables()
+            if p["id"] not in ya and p["medicion_id"] != mod["medicion_id"]
+        ]
+
     def accion_partida_nueva(self) -> None:
         mod = self._modificado_elegido()
-        d = self.preguntas.partida_nueva(self.proyecto.ofertas_utilizables())
+        d = self.preguntas.partida_nueva(self._lineas_de_oferta(mod))
         if d is not None:
             self._ejecutar(
                 AnadirPartidaNueva(mod, d.partida_id, d.cantidad, d.motivo, d.justificacion)
@@ -1021,7 +1039,8 @@ class VentanaPrincipal(QMainWindow):
         self.statusBar().showMessage(f"BC3 guardado: {ruta}", 10000)
         self.preguntas.informacion(
             "BC3 guardado",
-            f"{ruta}\n\nSe ha vuelto a leer y coincide con el modificado."
+            f"{ruta}\n\nSe ha vuelto a leer: códigos, cantidades y precios de todas las "
+            "partidas son los del modificado, y el lector no encuentra descuadres nuevos."
             + ("\n\nAvisos:\n- " + "\n- ".join(avisos) if avisos else ""),
         )
 

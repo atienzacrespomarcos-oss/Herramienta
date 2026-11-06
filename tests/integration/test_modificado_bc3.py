@@ -167,3 +167,215 @@ def test_original_alterado_no_se_parchea_a_ciegas(mod, tmp_path):
     with pytest.raises(OrdenRechazada):
         p.exportar_modificado_bc3(m, tmp_path / "x.bc3")
     assert not (tmp_path / "x.bc3").exists()
+
+
+# --- Revisión 06-11-2026: casos que antes salían mal o con un error engañoso -----------------
+
+CABECERA = "~V|A|FIEBDC-3/2016|P||ANSI||2|\r\n~C|O##||Obra|0||0|\r\n~C|C1#||Cap|0||0|\r\n"
+
+
+def _base(proyecto, tmp_path, cuerpo: str, nombre="b.bc3"):
+    f = tmp_path / nombre
+    f.write_bytes((CABECERA + cuerpo).encode("cp1252"))
+    base = proyecto.leer_medicion(proyecto.incorporar_documento(f), "presupuesto")[0]
+    o = CrearModificado(base, "M")
+    proyecto.ejecutar(o)
+    return o.id, proyecto.partidas(base)
+
+
+def test_medicion_con_expresiones_no_se_modifica_a_ciegas(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|6|3\\a*b\\2\\3\\\\\\|\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 8, "medicion", "x"))
+    with pytest.raises(OrdenRechazada, match="tipo «3»"):
+        proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert not list(tmp_path.glob("x.bc3*"))
+
+
+def test_lineas_que_no_suman_el_total_se_rechazan(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|6|\\Tramo\\1\\5\\\\\\|\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 8, "medicion", "x"))
+    with pytest.raises(OrdenRechazada, match="suman 5 y su total es 6"):
+        proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+
+
+def test_lineas_con_subtotales_suman_bien(proyecto, tmp_path):
+    # Subtotales (tipo 1 y 2, pág. 22) no suman; la línea añadida va con TIPO vacío.
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|6|\\A\\2\\3\\\\\\1\\Subtotal\\\\\\\\\\|\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 8, "medicion", "Uno # dos"))
+    ruta, _ = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    texto = ruta.read_bytes().decode("cp1252")
+    # «#» separa los ID_BIM en el comentario (pág. 21): se sustituye.
+    assert "\\Modificado nº 1: Error de medición. Uno / dos\\2\\\\\\\\|" in texto
+
+
+def test_registro_n_se_rechaza(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|4|\\A\\4\\\\\\\\|\r\n~N|C1#\\P1|1\\1\\|2|\\B\\2\\\\\\\\|\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 8, "medicion", "x"))
+    with pytest.raises(OrdenRechazada, match="~N"):
+        proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+
+
+def test_partida_repetida_usa_la_medicion_de_su_posicion(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\P1\\1\\4\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|6||\r\n~M|C1#\\P1|1\\2\\|4||\r\n",
+    )
+    segunda = ps[1]
+    assert segunda["cantidad"] == 4
+    proyecto.ejecutar(VariarPartida(m, segunda["id"], 5, "medicion", "x"))
+    ruta, _ = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    texto = ruta.read_bytes().decode("cp1252")
+    assert "~M|C1#\\P1|1\\1\\|6||" in texto and "~M|C1#\\P1|1\\2\\|5||" in texto
+
+
+def test_partida_repetida_sin_posicion_no_se_modifica_a_ciegas(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\P1\\1\\4\\|\r\n"
+        "~M|C1#\\P1||6||\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[1]["id"], 5, "medicion", "x"))
+    with pytest.raises(OrdenRechazada, match="POSICION"):
+        proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+
+
+def test_anular_partida_con_lineas(mod, tmp_path):
+    p, m, ids, _, _ = mod
+    p.ejecutar(VariarPartida(m, ids["CND01"], 0, "diseno", "Se quita"))
+    ruta, _ = p.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    r = bc3.leer_partidas(bc3.leer_bc3(ruta))
+    assert next(x for x in r.partidas if x.codigo == "CND01").cantidad is None
+    assert "\\Modificado nº 1: Fallo de diseño. Se quita\\-2400\\" in ruta.read_bytes().decode(
+        "cp850"
+    )
+
+
+def test_capitulo_con_porcentaje_se_avisa(proyecto, tmp_path):
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~C|%MA|%|Medios auxiliares|0||0|\r\n"
+        "~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\%MA\\1\\0.02\\|\r\n~M|C1#\\P1|1\\1\\|6||\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[0]["id"], 8, "medicion", "x"))
+    _, avisos = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert any("«C1» aplica porcentajes" in a for a in avisos)
+
+
+def test_original_ilegible_da_error_claro(mod, tmp_path):
+    p, m, ids, _, _ = mod
+    p.ejecutar(VariarPartida(m, ids["CND01"], 2600, "medicion", "x"))
+    guardado = p.ruta_documento(p.mediciones()[0]["documento_id"])
+    guardado.chmod(0o644)
+    guardado.write_bytes(ORIGINAL.replace("|2400|", "|dos mil|").encode("cp850"))
+    with pytest.raises(OrdenRechazada, match="no se puede leer"):
+        p.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert not list(tmp_path.glob("x.bc3*"))
+
+
+def test_base_de_pdf_anulada_y_codigos_que_chocan(proyecto, tmp_path):
+    import pymupdf
+
+    ruta = tmp_path / "base.pdf"
+    doc = pymupdf.open()
+    pagina = doc.new_page()
+    pagina.insert_text((40, 60), "C01 Rejilla de impulsión   ud   8   45,50   364,00", fontsize=9)
+    pagina.insert_text((40, 80), "C01 Rejilla de retorno   ud   4   30,00   120,00", fontsize=9)
+    doc.save(ruta)
+    doc.close()
+
+    def linea(desc, cant, precio, importe):
+        return {
+            "capitulo": "Difusión",
+            "codigo": "C01",
+            "descripcion": desc,
+            "unidad": "ud",
+            "donde": "p. 1",
+            "cantidad": {"texto": cant, "valor": float(cant), "donde": "p. 1"},
+            "precio": {"texto": precio, "valor": float(precio.replace(",", ".")), "donde": "p. 1"},
+            "importe": {
+                "texto": importe,
+                "valor": float(importe.replace(",", ".")),
+                "donde": "p. 1",
+            },
+        }
+
+    def ia(texto, imagenes):
+        n = {"texto": None, "valor": None, "donde": None}
+        return {
+            "proveedor": None,
+            "total": n,
+            "partidas": [
+                linea("Rejilla de impulsión", "8", "45,50", "364,00"),
+                linea("Rejilla de retorno", "4", "30,00", "120,00"),
+            ],
+        }
+
+    proyecto.extractor_ia = ia
+    base = proyecto.leer_medicion(proyecto.incorporar_documento(ruta), "presupuesto")[0]
+    o = CrearModificado(base, "M")
+    proyecto.ejecutar(o)
+    ps = proyecto.partidas(base)
+    proyecto.ejecutar(VariarPartida(o.id, ps[0]["id"], 0, "economica", "Se anula"))
+    salida, avisos = proyecto.exportar_modificado_bc3(o.id, tmp_path / "m.bc3")
+    r = bc3.leer_partidas(bc3.leer_bc3(salida))
+    # El código «C01» de la base ya no choca con el del capítulo, y el repetido se avisa.
+    assert [(x.codigo, x.cantidad, x.precio) for x in r.partidas] == [
+        ("C01", None, 45.5),
+        ("P0002", 4.0, 30.0),
+    ]
+    assert r.partidas[0].capitulos == [("C01.1", "Difusión")]
+    assert any("«C01» → «P0002»" in a for a in avisos)
+
+
+def test_partida_repetida_con_una_sola_medicion_no_toca_la_de_otra_linea(proyecto, tmp_path):
+    # La única ~M es de la línea 1 (POSICION 1): variar la línea 2 no debe ponerle el total.
+    m, ps = _base(
+        proyecto,
+        tmp_path,
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\P1\\1\\4\\|\r\n"
+        "~M|C1#\\P1|1\\1\\|6||\r\n",
+    )
+    proyecto.ejecutar(VariarPartida(m, ps[1]["id"], 5, "medicion", "x"))
+    ruta, avisos = proyecto.exportar_modificado_bc3(m, tmp_path / "x.bc3")
+    assert "~M|C1#\\P1|1\\1\\|6||" in ruta.read_bytes().decode("cp1252")
+    assert any("no tiene medición" in a for a in avisos)
+
+
+def test_verificacion_caza_una_medicion_que_no_cuadra(tmp_path):
+    from traza.io import bc3_modificar
+
+    original = CABECERA + (
+        "~C|P1|m|Tubo|10||0|\r\n~D|O##|C1#\\1\\1\\|\r\n~D|C1#|P1\\1\\6\\|\r\n~M|C1#\\P1|1\\1\\|6||\r\n"
+    )
+    leido = bc3.leer_partidas(bc3.leer_bc3_texto(original, "ANSI"))
+    # Fichero «mal actualizado»: el ~D dice 8 pero la ~M sigue en 6. Las cifras de las
+    # partidas cuadran (el lector prima el ~D), pero el lector avisa del descuadre.
+    malo = tmp_path / "malo.bc3"
+    malo.write_bytes(original.replace("P1\\1\\6\\", "P1\\1\\8\\").encode("cp1252"))
+    v = bc3_modificar.Variacion(leido.partidas[0].localizador, "P1", 6, 8, 10, ["C1"], "x")
+    with pytest.raises(bc3_modificar.Bc3ModificarError, match="avisos"):
+        bc3_modificar._verificar(malo, leido, [v], [], {})

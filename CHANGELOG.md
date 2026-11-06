@@ -10,6 +10,21 @@
 - BC3 del presupuesto completo actualizado a partir del original (lo no tocado queda igual),
   o generado si la base vino de PDF/Excel; siempre verificado por relectura.
 - Esquema de proyecto V3.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - El buscador de partidas podía aplicar el cambio a otra partida con el mismo texto.
+  - Anular una partida de una base leída de PDF o Excel impedía exportar el BC3.
+  - El BC3 ya no se toca a ciegas cuando la medición tiene expresiones, líneas que no suman
+    el total, registros `~N` o una partida repetida sin POSICION.
+  - La relectura comprueba también los avisos del lector y los precios de los capítulos.
+  - El lector identifica la `~M` por POSICION siempre que la partida se repite.
+  - Los totales avisan de las líneas omitidas y de las partidas «a revisar» de la base.
+  - En el Excel, cada total va en su columna.
+  - Los códigos que se cambian en el BC3 generado se avisan, y ya no chocan con los
+    capítulos.
+  - Los números de modificado no se reutilizan.
+  - Las cantidades admiten como máximo 6 decimales.
+  - Una oferta no se añade a sí misma como partida nueva.
+  - Errores de lectura con mensaje claro.
 
 ### Etapa 2 · mediciones (06-11-2026, en curso)
 - Lector BC3 según la especificación oficial FIEBDC-3/2024 (páginas citadas).
