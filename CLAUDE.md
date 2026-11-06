@@ -6,6 +6,13 @@ programa: explica en términos de ingeniería, no de código.
 
 Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 
+## Forma de trabajo con el usuario (pedida el 06-11-2026)
+
+**Pregunta → respuesta con acciones.** Ante cada decisión: presentar opciones concretas
+(con la recomendada marcada y su consecuencia), el usuario decide, Claude ejecuta. No
+decidir por él lo que es suyo (alcance, prioridades, aspecto, fusionar PR); sí resolver
+sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha del módulo.
+
 ## Antes de tocar nada
 
 1. Lee `docs/FEATURE_REGISTER.md` (estado real de cada funcionalidad) y la ficha del
@@ -53,9 +60,20 @@ Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 - Estilo: `uv run ruff check .` y `uv run ruff format --check .`
 - Capas: `uv run lint-imports` (también lo ejecuta `tests/unit/test_arquitectura.py`).
 - CI (`.github/workflows/ci.yml`) repite todo en **Windows y Linux**.
+- Ejecutable: `.github/workflows/ejecutable.yml` genera TRAZA.exe (PyInstaller) y lo publica
+  como artefacto solo si pasa `TRAZA.exe --autoprueba`. En local:
+  `uv run pyinstaller --noconfirm --windowed --name TRAZA --collect-data pint scripts/traza_exe.py`.
+- Lanzar la app: `uv run python -m traza [carpeta.traza]`.
 
 ## Trampas conocidas
 
+- La interfaz no abre diálogos directamente: todo pasa por `ui/dialogos.Preguntas`, que los
+  tests sustituyen. Una acción nueva que llame a QMessageBox/QFileDialog directamente no se
+  puede probar: añádela a `Preguntas`.
+- `--collect-data pint` es imprescindible en PyInstaller: sin él el .exe arranca y falla al
+  primer valor con unidad.
+- Una conexión SQLite abierta bloquea el fichero en Windows (no en Linux): cierra siempre
+  ante error. El CI de Windows lo cazó el 06-11-2026.
 - Toda escritura en la base de datos pasa por `Proyecto.ejecutar` (órdenes) o por
   `persistence/`. Un test busca `INSERT/UPDATE/DELETE` fuera de ahí y falla.
 - Las migraciones no usan `executescript` (hace COMMIT implícito y rompe la atomicidad).

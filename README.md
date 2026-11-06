@@ -4,7 +4,16 @@ Entorno personal de ingeniería de instalaciones para naves industriales: de la
 documentación inicial (ofertas, mediciones, planos DXF) al diseño, cálculo, comprobación
 normativa, coordinación y documentación para AutoCAD.
 
-**Estado:** Etapa 0 cerrada (especificación). Sin código de producto todavía.
+**Estado:** Etapa 1 (núcleo + interfaz) en revisión.
+
+## Usarlo en Windows
+
+1. En GitHub: pestaña **Actions** → última ejecución verde de «Ejecutable Windows».
+2. Descargar el artefacto **TRAZA-windows** y descomprimirlo.
+3. Abrir `TRAZA.exe`. Si Windows SmartScreen avisa: «Más información» → «Ejecutar de todas
+   formas» (el ejecutable no está firmado).
+
+Para desarrollo: `uv sync` y `uv run python -m traza`.
 
 ## Documentación
 

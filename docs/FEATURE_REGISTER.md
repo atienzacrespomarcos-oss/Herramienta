@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 06-11-2026 (Etapa 1, bloque 1).
+Última actualización: 06-11-2026 (Etapa 1, bloque 2).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -12,7 +12,8 @@ declarados).
 | — | Prueba de viabilidad (ezdxf R2013 + XDATA, PySide6 sin pantalla, pint) | 0 | Implementada | Prueba desechable, fuera del producto. |
 | RF-001, 002, 003*, 006, 007, 008, 010, 011, 012 | Núcleo de proyecto sin interfaz | 1 | Implementada | `docs/modules/nucleo.md`. *RF-003 parcial: sin geometría ni conexiones (Etapas 2–3). Pasa a Validada cuando lo uses desde la interfaz (bloque 2). |
 | RF-009 | Revisiones de proyecto con nombre y comparación | 1–2 | Pendiente | |
-| — | Interfaz: ventana principal, árbol, propiedades, documentos, historial, alertas | 1 | Pendiente | Bloque 2 de la Etapa 1. |
+| — | Interfaz: ventana principal, árbol, propiedades, documentos, historial, pendientes | 1 | Implementada | `docs/modules/interfaz.md`. Pasa a Validada cuando el usuario complete el escenario de aceptación con TRAZA.exe en su Windows. |
+| — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |
 | RF-020, 021 | Gestión documental y vínculo dato ↔ documento | 1 | Implementada | PDF con comprobación de página citada; XLSX/DXF se incorporan pero su cita (hoja/celda) aún no se comprueba. |
 | RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 2 | Pendiente | |
 | RF-101, 102 | Cargas térmicas y caudales de ventilación | 3.1 | Pendiente | |

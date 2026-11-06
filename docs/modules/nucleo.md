@@ -51,7 +51,7 @@ datos se negaría a guardar un valor sin procedencia.
 
 ## Limitaciones conocidas
 
-- Sin interfaz todavía (bloque siguiente).
+- La interfaz está en `docs/modules/interfaz.md`.
 - El historial de deshacer vive mientras el proyecto está abierto; el registro de cambios,
   para siempre.
 - Restaurar una copia exige tener el proyecto cerrado.
