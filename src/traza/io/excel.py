@@ -139,3 +139,113 @@ def exportar_partidas(
     wb.save(temporal)
     temporal.replace(destino)
     return destino
+
+
+# --- Modificados --------------------------------------------------------------------------
+
+COLUMNAS_MODIFICADO = [
+    ("Tipo", 14),
+    ("Capítulo", 26),
+    ("Código", 12),
+    ("Descripción", 46),
+    ("Ud", 6),
+    ("Cant. contrato", 13),
+    ("Cant. modificada", 14),
+    ("Dif. cantidad", 12),
+    ("Precio", 12),
+    ("Importe contrato", 15),
+    ("Importe modificado", 16),
+    ("Dif. importe", 14),
+    ("Motivo", 18),
+    ("Justificación", 50),
+    ("Origen del precio", 40),
+]
+TIPOS_MODIFICADO = {
+    "sin_cambio": "Sin cambio",
+    "aumento": "Aumento",
+    "disminucion": "Disminución",
+    "anulacion": "Anulación",
+    "nueva": "Partida nueva",
+}
+
+
+def _hoja_modificado(ws, lineas, titulo_total: bool, resumen) -> None:
+    ws.append([c for c, _ in COLUMNAS_MODIFICADO])
+    for celda in ws[1]:
+        celda.font = Font(bold=True)
+    for i, (_, ancho) in enumerate(COLUMNAS_MODIFICADO, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+    for x in lineas:
+        ws.append(
+            [
+                _texto(v)
+                for v in [
+                    TIPOS_MODIFICADO[x.tipo],
+                    _capitulo(x.capitulo),
+                    x.codigo,
+                    x.resumen,
+                    x.unidad,
+                    x.cantidad_contrato,
+                    x.cantidad_modificada,
+                    x.diferencia_cantidad,
+                    x.precio,
+                    x.importe_contrato,
+                    x.importe_modificado,
+                    x.diferencia_importe,
+                    x.motivo,
+                    x.justificacion,
+                    x.origen_precio,
+                ]
+            ]
+        )
+        _sin_formulas(ws)
+        for col in range(6, 13):
+            ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
+    if titulo_total:
+        ws.append([])
+        for etiqueta, valor in (
+            ("Total contrato", resumen.total_contrato),
+            ("Total modificado", resumen.total_modificado),
+            ("Diferencia", resumen.diferencia),
+        ):
+            ws.append([etiqueta] + [None] * 10 + [valor])
+            ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
+            ws.cell(row=ws.max_row, column=12).number_format = FORMATO_NUMERO
+            ws.cell(row=ws.max_row, column=12).font = Font(bold=True)
+        if resumen.parcial:
+            ws.append(
+                [
+                    "Totales parciales: "
+                    f"{resumen.sin_importe_contrato} partida(s) sin importe de contrato y "
+                    f"{resumen.sin_importe_modificado} sin importe modificado no se suman "
+                    "(no consta cantidad o precio)."
+                ]
+            )
+    ws.freeze_panes = "A2"
+
+
+def exportar_modificado(destino: Path, proyecto: str, modificado: dict, resumen) -> Path:
+    """Excel del modificado: hoja de cambios (con totales) y presupuesto completo actualizado."""
+    if destino.suffix.lower() != ".xlsx":
+        destino = destino.with_name(destino.name + ".xlsx")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Modificado nº {modificado['numero']}"
+    _hoja_modificado(ws, resumen.cambios, True, resumen)
+    wc = wb.create_sheet("Presupuesto actualizado")
+    _hoja_modificado(wc, resumen.lineas, True, resumen)
+    wi = wb.create_sheet("Información")
+    for fila in (
+        ["Proyecto", proyecto],
+        ["Modificado", f"nº {modificado['numero']} — {modificado['titulo']}"],
+        ["Base", modificado["base_nombre"]],
+        ["Generado por", "TRAZA"],
+        ["Nota", "Celdas vacías = no consta (no es cero). Los importes son cantidad × precio."],
+    ):
+        wi.append([_texto(v) for v in fila])
+        _sin_formulas(wi)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporal = destino.with_suffix(".xlsx.parcial")
+    wb.save(temporal)
+    temporal.replace(destino)
+    return destino

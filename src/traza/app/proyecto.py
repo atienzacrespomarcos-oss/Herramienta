@@ -13,6 +13,7 @@ from typing import Any
 
 from traza.ai import claude_code
 from traza.app import lectura_ia
+from traza.app import modificados as calculo_mod
 from traza.app.ordenes import (
     ENCARGOS,
     CambiarEstado,
@@ -29,7 +30,7 @@ from traza.app.ordenes import (
 from traza.core.estados import Estado
 from traza.core.procedencia import Origen
 from traza.io import bc3
-from traza.io.excel import exportar_partidas
+from traza.io.excel import exportar_modificado, exportar_partidas
 from traza.io.pdf import contar_paginas, renderizar_pagina
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
@@ -509,3 +510,59 @@ class Proyecto:
             raise OrdenRechazada("No hay mediciones leídas que exportar.")
         bloques = [(m, self.partidas(m["id"])) for m in meds]
         return exportar_partidas(Path(destino), self.nombre, bloques)
+
+    # --- Ampliaciones y modificaciones ---------------------------------------------------
+
+    def modificados(self, medicion_id: str | None = None) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT o.*, d.nombre_original AS base_nombre,"
+            " (SELECT count(*) FROM cambio_modificado c WHERE c.modificado_id = o.id)"
+            " AS n_cambios"
+            " FROM modificado o JOIN medicion m ON m.id = o.medicion_id"
+            " JOIN documento d ON d.id = m.documento_id"
+        )
+        if medicion_id is None:
+            return self._filas(sql + " ORDER BY o.creado, o.numero")
+        return self._filas(sql + " WHERE o.medicion_id = ? ORDER BY o.numero", (medicion_id,))
+
+    def modificado(self, modificado_id: str) -> dict[str, Any] | None:
+        return next((m for m in self.modificados() if m["id"] == modificado_id), None)
+
+    def ofertas_utilizables(self) -> list[dict[str, Any]]:
+        """Líneas de ofertas leídas que pueden ser partida nueva: fiables y con precio."""
+        filas = self._filas(
+            "SELECT p.*, d.nombre_original AS documento_nombre, m.proveedor"
+            " FROM partida p JOIN medicion m ON m.id = p.medicion_id"
+            " JOIN documento d ON d.id = m.documento_id"
+            " WHERE m.clase = 'oferta' AND p.precio IS NOT NULL"
+            " AND p.estado IN ('exacta','comprobada','confirmada')"
+            " ORDER BY d.nombre_original, p.orden"
+        )
+        for f in filas:
+            f["capitulo"] = json.loads(f["capitulo"])
+        return filas
+
+    def resumen_modificado(self, modificado_id: str) -> calculo_mod.Resumen:
+        mod = leer(self._con, "modificado", {"id": modificado_id})
+        if mod is None:
+            raise OrdenRechazada("Ese modificado no existe.")
+        cambios = self._filas(
+            "SELECT * FROM cambio_modificado WHERE modificado_id = ? ORDER BY orden",
+            (modificado_id,),
+        )
+        nuevas = {}
+        for c in cambios:
+            if c["tipo"] == "nueva":
+                p = leer(self._con, "partida", {"id": c["partida_id"]})
+                nuevas[c["partida_id"]] = p
+        nombres = {m["id"]: m["documento_nombre"] for m in self.mediciones()}
+        return calculo_mod.calcular(self.partidas(mod["medicion_id"]), cambios, nuevas, nombres)
+
+    def exportar_modificado_excel(self, modificado_id: str, destino: Path) -> Path:
+        mod = self.modificado(modificado_id)
+        if mod is None:
+            raise OrdenRechazada("Ese modificado no existe.")
+        r = self.resumen_modificado(modificado_id)
+        if not r.cambios:
+            raise OrdenRechazada("El modificado no tiene cambios que exportar.")
+        return exportar_modificado(Path(destino), self.nombre, mod, r)

@@ -25,6 +25,8 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "medicion": ("id",),
     "meta": ("clave",),
     "partida": ("id",),
+    "modificado": ("id",),
+    "cambio_modificado": ("id",),
 }
 
 

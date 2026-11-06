@@ -532,6 +532,19 @@ class QuitarMedicion(Orden):
                 "SELECT * FROM partida WHERE medicion_id = ? ORDER BY orden", (self.medicion_id,)
             )
         ]
+        usada = con.execute(
+            "SELECT m.titulo FROM modificado m WHERE m.medicion_id = ?"
+            " UNION SELECT m.titulo FROM cambio_modificado c"
+            " JOIN modificado m ON m.id = c.modificado_id"
+            " JOIN partida p ON p.id = c.partida_id WHERE p.medicion_id = ?",
+            (self.medicion_id, self.medicion_id),
+        ).fetchone()
+        if usada:
+            # Quitarla dejaría un modificado sin base o sin el precio de sus partidas nuevas.
+            raise OrdenRechazada(
+                f"No se puede quitar: la usa el modificado «{usada['titulo']}». Quita antes "
+                "ese modificado o sus cambios."
+            )
         # Partidas primero y la cabecera después: al deshacer, el orden se invierte solo.
         return [Delta("partida", f, None) for f in filas] + [Delta("medicion", med, None)]
 
@@ -549,3 +562,205 @@ class ConfirmarPartida(Orden):
         if antes["estado"] != "a_revisar":
             raise OrdenRechazada("Solo se confirman partidas marcadas «a revisar».")
         return [Delta("partida", antes, {**antes, "estado": "confirmada"})]
+
+
+# --- Ampliaciones y modificaciones --------------------------------------------------------
+
+#: Motivos de un cambio (decisión del usuario, 06-11-2026): siempre con justificación escrita.
+MOTIVOS = {
+    "medicion": "Error de medición",
+    "diseno": "Fallo de diseño",
+    "economica": "Mejora económica",
+    "otro": "Otro",
+}
+#: Una partida leída solo puede alimentar un modificado si su lectura es fiable.
+ESTADOS_FIABLES = ("exacta", "comprobada", "confirmada")
+
+
+def _modificado(con: sqlite3.Connection, modificado_id: str) -> Fila:
+    m = leer(con, "modificado", {"id": modificado_id})
+    if m is None:
+        raise OrdenRechazada("Ese modificado no existe.")
+    return m
+
+
+def _motivo(motivo: str, justificacion: str) -> str:
+    if motivo not in MOTIVOS:
+        raise OrdenRechazada(f"Motivo desconocido: «{motivo}».")
+    if not justificacion.strip():
+        raise OrdenRechazada("Cada cambio necesita su justificación escrita.")
+    return justificacion.strip()
+
+
+def _cantidad(cantidad: float) -> float:
+    if isinstance(cantidad, bool) or not isinstance(cantidad, int | float):
+        raise OrdenRechazada("La cantidad tiene que ser un número.")
+    if cantidad != cantidad or cantidad in (float("inf"), float("-inf")) or cantidad < 0:
+        raise OrdenRechazada("La cantidad tiene que ser un número finito y no negativo.")
+    return float(cantidad)
+
+
+def _siguiente_orden(con: sqlite3.Connection, modificado_id: str) -> int:
+    fila = con.execute(
+        "SELECT coalesce(max(orden), 0) + 1 FROM cambio_modificado WHERE modificado_id = ?",
+        (modificado_id,),
+    ).fetchone()
+    return int(fila[0])
+
+
+@dataclass
+class CrearModificado(Orden):
+    medicion_id: str
+    titulo: str
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if leer(con, "medicion", {"id": self.medicion_id}) is None:
+            raise OrdenRechazada("La medición de base no existe.")
+        if not self.titulo.strip():
+            raise OrdenRechazada("El modificado necesita un título.")
+        numero = con.execute(
+            "SELECT coalesce(max(numero), 0) + 1 FROM modificado WHERE medicion_id = ?",
+            (self.medicion_id,),
+        ).fetchone()[0]
+        return [
+            Delta(
+                "modificado",
+                None,
+                {
+                    "id": self.id,
+                    "medicion_id": self.medicion_id,
+                    "numero": int(numero),
+                    "titulo": self.titulo.strip(),
+                    "creado": ahora(),
+                },
+            )
+        ]
+
+
+@dataclass
+class VariarPartida(Orden):
+    """Nueva cantidad (aumento, disminución o anulación con 0) de una partida de la base."""
+
+    modificado_id: str
+    partida_id: str
+    cantidad: float
+    motivo: str
+    justificacion: str
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        mod = _modificado(con, self.modificado_id)
+        justificacion = _motivo(self.motivo, self.justificacion)
+        cantidad = _cantidad(self.cantidad)
+        p = leer(con, "partida", {"id": self.partida_id})
+        if p is None or p["medicion_id"] != mod["medicion_id"]:
+            raise OrdenRechazada("Solo se pueden variar partidas de la medición de base.")
+        if p["estado"] not in ESTADOS_FIABLES:
+            raise OrdenRechazada(
+                "Esa partida está «a revisar»: compruébala y confírmala antes de modificarla."
+            )
+        if p["cantidad"] is None:
+            raise OrdenRechazada(
+                "La cantidad de contrato de esa partida no consta: no se puede calcular la "
+                "variación."
+            )
+        if abs(cantidad - p["cantidad"]) < 1e-9:
+            raise OrdenRechazada("La cantidad nueva es igual a la de contrato: no hay cambio.")
+        if con.execute(
+            "SELECT 1 FROM cambio_modificado WHERE modificado_id = ? AND tipo = 'variacion'"
+            " AND partida_id = ?",
+            (self.modificado_id, self.partida_id),
+        ).fetchone():
+            raise OrdenRechazada("Esa partida ya tiene una variación en este modificado.")
+        return [_fila_cambio(self, "variacion", cantidad, justificacion, con)]
+
+
+@dataclass
+class AnadirPartidaNueva(Orden):
+    """Partida nueva tomada de una oferta leída: código, unidad, descripción y precio de la
+    oferta (enlazados a su origen); la cantidad la pone el usuario."""
+
+    modificado_id: str
+    partida_id: str  # partida de una OFERTA leída
+    cantidad: float
+    motivo: str
+    justificacion: str
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        _modificado(con, self.modificado_id)
+        justificacion = _motivo(self.motivo, self.justificacion)
+        cantidad = _cantidad(self.cantidad)
+        if cantidad == 0:
+            raise OrdenRechazada("Una partida nueva necesita una cantidad mayor que cero.")
+        p = con.execute(
+            "SELECT p.*, m.clase FROM partida p JOIN medicion m ON m.id = p.medicion_id"
+            " WHERE p.id = ?",
+            (self.partida_id,),
+        ).fetchone()
+        if p is None or p["clase"] != "oferta":
+            raise OrdenRechazada("Las partidas nuevas se toman de una oferta leída.")
+        if p["estado"] not in ESTADOS_FIABLES:
+            raise OrdenRechazada(
+                "Esa línea de la oferta está «a revisar»: compruébala y confírmala antes de "
+                "usar su precio."
+            )
+        if p["precio"] is None:
+            raise OrdenRechazada("Esa línea de la oferta no tiene precio: no se puede usar.")
+        if con.execute(
+            "SELECT 1 FROM cambio_modificado WHERE modificado_id = ? AND tipo = 'nueva'"
+            " AND partida_id = ?",
+            (self.modificado_id, self.partida_id),
+        ).fetchone():
+            raise OrdenRechazada("Esa línea de la oferta ya está añadida a este modificado.")
+        return [_fila_cambio(self, "nueva", cantidad, justificacion, con)]
+
+
+def _fila_cambio(
+    orden, tipo: str, cantidad: float, justificacion: str, con: sqlite3.Connection
+) -> Delta:
+    return Delta(
+        "cambio_modificado",
+        None,
+        {
+            "id": orden.id,
+            "modificado_id": orden.modificado_id,
+            "orden": _siguiente_orden(con, orden.modificado_id),
+            "tipo": tipo,
+            "partida_id": orden.partida_id,
+            "cantidad": cantidad,
+            "motivo": orden.motivo,
+            "justificacion": justificacion,
+            "creado": ahora(),
+        },
+    )
+
+
+@dataclass
+class QuitarCambio(Orden):
+    cambio_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "cambio_modificado", {"id": self.cambio_id})
+        if antes is None:
+            raise OrdenRechazada("Ese cambio no existe.")
+        return [Delta("cambio_modificado", antes, None)]
+
+
+@dataclass
+class BorrarModificado(Orden):
+    modificado_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        mod = _modificado(con, self.modificado_id)
+        cambios = [
+            dict(r)
+            for r in con.execute(
+                "SELECT * FROM cambio_modificado WHERE modificado_id = ? ORDER BY orden",
+                (self.modificado_id,),
+            )
+        ]
+        return [Delta("cambio_modificado", c, None) for c in cambios] + [
+            Delta("modificado", mod, None)
+        ]
