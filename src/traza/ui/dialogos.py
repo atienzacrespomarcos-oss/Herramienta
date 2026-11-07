@@ -410,6 +410,32 @@ class Preguntas:
         texto, ok = QInputDialog.getItem(self.v, titulo, etiqueta, opciones, 0, False)
         return opciones.index(texto) if ok else None
 
+    # --- Planos ---------------------------------------------------------------------
+
+    def capas_plano(self, info, actual=None):
+        from traza.ui.dialogos_planos import DialogoCapasPlano
+
+        d = DialogoCapasPlano(self.v, info, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def nuevo_nivel(self):
+        from traza.ui.dialogos_planos import DialogoNivel
+
+        d = DialogoNivel(self.v)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def confirmar_contorno(self, propuesta: dict, niveles: list[dict]):
+        from traza.ui.dialogos_planos import DialogoContorno
+
+        d = DialogoContorno(self.v, propuesta, niveles)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def altura_espacio(self, espacio: dict):
+        from traza.ui.dialogos_planos import DialogoAltura
+
+        d = DialogoAltura(self.v, espacio)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def confirmar(self, titulo: str, texto: str) -> bool:
         return QMessageBox.question(self.v, titulo, texto) == QMessageBox.Yes
 

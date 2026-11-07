@@ -74,8 +74,14 @@ class VisorPlano(QGraphicsView):
                 escena.addPolygon(_poligono(c), borde, QBrush(relleno))
         rect = escena.itemsBoundingRect()
         if not rect.isEmpty():
-            escena.setSceneRect(rect.adjusted(-rect.width() * 0.05, -rect.height() * 0.05,
-                                              rect.width() * 0.05, rect.height() * 0.05))  # fmt: skip
+            escena.setSceneRect(
+                rect.adjusted(
+                    -rect.width() * 0.05,
+                    -rect.height() * 0.05,
+                    rect.width() * 0.05,
+                    rect.height() * 0.05,
+                )
+            )
             self.fitInView(escena.sceneRect(), Qt.KeepAspectRatio)
 
     def resaltar(self, contorno: Contorno | None, centrar: bool = True) -> None:

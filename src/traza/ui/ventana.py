@@ -666,11 +666,17 @@ class VentanaPrincipal(QMainWindow):
             self.tabla_mediciones.blockSignals(False)
         self._refrescar_partidas()
 
-    def _en_segundo_plano(self, funcion):
-        """Ejecuta la llamada a la IA en otro hilo con una ventana de progreso.
+    def _en_segundo_plano(
+        self,
+        funcion,
+        mensaje: str = "Leyendo el documento con IA… puede tardar unos minutos.",
+        titulo: str = "Leer con IA",
+    ):
+        """Ejecuta una tarea larga (la IA, leer un DXF grande) en otro hilo con una ventana
+        de progreso.
 
-        Solo la llamada a la IA (que no toca la base de datos: SQLite no admite usar la
-        conexión desde otro hilo); la importación vuelve a hacerse en el hilo principal.
+        Solo la tarea que no toca la base de datos (SQLite no admite usar la conexión desde
+        otro hilo); lo que se guarda vuelve a hacerse en el hilo principal.
         """
         resultado: dict = {}
 
@@ -682,10 +688,8 @@ class VentanaPrincipal(QMainWindow):
 
         hilo = threading.Thread(target=trabajo, daemon=True)
         hilo.start()
-        dialogo = QProgressDialog(
-            "Leyendo el documento con IA… puede tardar unos minutos.", None, 0, 0, self
-        )
-        dialogo.setWindowTitle("Leer con IA")
+        dialogo = QProgressDialog(mensaje, None, 0, 0, self)
+        dialogo.setWindowTitle(titulo)
         dialogo.setWindowModality(Qt.WindowModal)
         dialogo.setMinimumDuration(0)
         dialogo.show()
