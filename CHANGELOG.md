@@ -46,6 +46,13 @@
   - el visor muestra un nivel cada vez;
   - el diálogo ya no redondea lo guardado;
   - al quitar un espacio se avisa de que se quitan sus datos de cargas.
+- Segunda revisión:
+  - el uso se propone por inicio de palabra («Zona de distribución» no es UCI);
+  - «Recepción de mercancías» se propone como almacén;
+  - las cámaras no suman infiltración por la envolvente;
+  - los diálogos validan los mismos rangos que las órdenes;
+  - el visor se encuadra al reabrir un proyecto;
+  - se avisa de una solera sin perímetro expuesto.
 
 ### Etapa 3 · geometría DXF, bloque C (07-11-2026)
 - Paso «Planos y espacios», solo en encargos con diseño. Permite:

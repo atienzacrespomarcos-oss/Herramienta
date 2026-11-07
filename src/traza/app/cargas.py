@@ -8,6 +8,7 @@ que el usuario cambia manda. Cada dato del resultado dice de dónde sale (línea
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
@@ -104,6 +105,8 @@ PALABRAS_USO = (
     ("formacion", "reuniones"),
     ("oficina", "oficina_abierta"),
     ("administracion", "oficina_abierta"),
+    # «Recepción de mercancías» es logística, no un vestíbulo de 150 personas/100 m².
+    ("mercancia", "almacen"),
     ("recepcion", "vestibulo"),
     ("vestibulo", "vestibulo"),
     ("hall", "vestibulo"),
@@ -140,9 +143,11 @@ def _normalizar(texto: str) -> str:
 
 
 def uso_por_nombre(nombre: str) -> str | None:
+    """Por inicio de palabra: «Zona de distribución» contenía «uci» y salía UCI (revisión
+    07-11-2026); «Almacenes» sigue encontrando «almacen»."""
     n = _normalizar(nombre)
     for palabra, clave in PALABRAS_USO:
-        if palabra in n:
+        if re.search(r"\b" + re.escape(palabra), n):
             return clave
     return None
 
@@ -257,6 +262,11 @@ def calcular(
         area_losa = sum(c.e["superficie"] for c in en_terreno)
         perimetro = sum(t.largo for c in en_terreno for t in c.tramos)
         u_terreno = tc.u_solera(area_losa, perimetro) if area_losa and perimetro else 0.0
+        if en_terreno and not perimetro:
+            avisos.append(
+                "La planta en contacto con el terreno no tiene ningún lado de fachada: sin "
+                "pérdidas por la solera (revisa las fachadas)."
+            )
 
     resultados = []
     for c in validos:
@@ -485,18 +495,15 @@ def _espacio(
     co = cg.CO_OPACO["nuevo" if tipo in ("cte", "nave_panel") else "existente"]
     ch = cg.CH_CLASE[_clase_ventana(tipo, letra)]
     infil = 0.0
-    if area_opaca + area_huecos > 0:
+    fuente_infil = f"UNE-EN 12831 con n50 del CTE DB HE, Anejo H (Co {co:g}, Ch {ch:g})"
+    if uso.ventilacion.metodo == "ninguna":
+        # Cámara de panel frigorífico estanca: el aire entra por las puertas, que se meten
+        # como proceso; contar además la envolvente lo duplicaba (revisión 07-11-2026).
+        fuente_infil = "Cámara estanca: las entradas de aire por puertas se añaden como proceso"
+    elif area_opaca + area_huecos > 0:
         n50 = cg.n50(volumen, area_opaca, area_huecos, co, ch)
         infil = cg.infiltracion_m3h(volumen, n50, len(fachadas), cota + altura / 2)
-    datos.append(
-        Dato(
-            "Infiltración",
-            infil,
-            "m³/h",
-            CALCULO,
-            f"UNE-EN 12831 con n50 del CTE DB HE, Anejo H (Co {co:g}, Ch {ch:g})",
-        )
-    )
+    datos.append(Dato("Infiltración", infil, "m³/h", CALCULO, fuente_infil))
     impulsion = None
     if uso.impulsion_renovaciones:
         impulsion = uso.impulsion_renovaciones * volumen

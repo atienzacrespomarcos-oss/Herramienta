@@ -252,8 +252,10 @@ def hipotesis(r: Any) -> list[str]:
     lineas += [f"Invierno: {n}" for n in NOTAS_INVIERNO]
     lineas += [f"Verano: {n}" for n in NOTAS_VERANO]
     lineas += [
-        "Cubierta: la parte de la planta sin otro espacio encima (rejilla de 30 × 30 puntos); "
-        "solera: los espacios de la cota más baja, con la U de la losa entera (ISO 13370).",
+        "Cubierta: la parte de la planta sin otro espacio encima (rejilla de 30 × 30 puntos), "
+        "con su superficie en planta (en cubierta inclinada la real es algo mayor); solera: "
+        "los espacios de la cota más baja, con la U límite del CTE en edificio nuevo y, en el "
+        "resto, la de la losa entera (ISO 13370).",
         "Refrigeración simultánea: sin las cámaras frigoríficas (instalación de frío aparte).",
     ]
     lineas += [f"Aviso: {a}" for a in r.avisos]

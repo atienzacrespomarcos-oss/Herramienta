@@ -24,7 +24,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from traza.app.ordenes import AJUSTE_SIN_CALEFACCION, AJUSTES_CARGAS, SECTORES_FACHADA
+from traza.app.ordenes import (
+    AJUSTE_SIN_CALEFACCION,
+    AJUSTES_CARGAS,
+    RANGO_ALTITUD_M,
+    RANGO_TEMPERATURA_C,
+    SECTORES_FACHADA,
+)
 from traza.core.numeros import escribir_numero
 from traza.io.informe_cargas import MESES
 from traza.rules import cerramientos
@@ -162,6 +168,9 @@ class DialogoClima(QDialog):
         if altitud is None:
             self.error.setText("Escribe la altitud de la obra.")
             return
+        if not RANGO_ALTITUD_M[0] <= altitud <= RANGO_ALTITUD_M[1]:
+            self.error.setText("La altitud de la obra tiene que estar entre −100 y 4000 m.")
+            return
         if not 0 <= rec < 100:
             self.error.setText("El recuperador va de 0 a 100 % (sin llegar a 100).")
             return
@@ -262,6 +271,13 @@ class DialogoEspacioCargas(QDialog):
         except ValueError as exc:
             self.error.setText(str(exc))
             return
+        for clave in ("t_invierno_c", "t_verano_c"):
+            if (
+                clave in ajustes
+                and not RANGO_TEMPERATURA_C[0] <= ajustes[clave] <= RANGO_TEMPERATURA_C[1]
+            ):
+                self.error.setText(f"{AJUSTES_CARGAS[clave][0]}: entre −60 y 60 °C.")
+                return
         if self.sin_calefaccion.isChecked():
             if "t_invierno_c" in ajustes:
                 self.error.setText("Sin calefacción no lleva temperatura de invierno.")

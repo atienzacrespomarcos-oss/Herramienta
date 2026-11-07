@@ -330,3 +330,21 @@ def test_rangos_fisicos_y_notas_del_informe(nave, tmp_path):
 
 def test_racks_es_almacen():
     assert uso_por_nombre("Almacén de racks") == "almacen"
+
+
+def test_uso_por_inicio_de_palabra():
+    # «uci» dentro de «distribución» daba UCI; «Recepción de mercancías» daba vestíbulo
+    # (segunda revisión, 07-11-2026).
+    assert uso_por_nombre("Zona de distribución") is None
+    assert uso_por_nombre("Ejecución de pedidos") is None
+    assert uso_por_nombre("Recepción de mercancías") == "almacen"
+    assert uso_por_nombre("UCI pediátrica") == "reanimacion"
+    assert uso_por_nombre("Almacenes") == "almacen"
+
+
+def test_camara_sin_infiltracion_por_envolvente(nave):
+    p, ids, _ = nave
+    p.fijar_cargas_espacio(ids["OFICINAS"], "camara_refrigeracion")
+    cam = _por_codigo(p.calcular_cargas())["OFICINAS"]
+    assert cam.infiltracion_m3h == 0
+    assert "puertas" in {d.concepto: d for d in cam.datos}["Infiltración"].fuente

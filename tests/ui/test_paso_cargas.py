@@ -191,3 +191,32 @@ def test_un_fallo_del_calculo_no_tumba_la_ventana(ventana, monkeypatch):
     monkeypatch.setattr(p, "calcular_cargas", roto)
     v.refrescar()  # no lanza
     assert "No se ha podido calcular" in v.pagina_cargas.resumen.text()
+
+
+def test_rangos_en_los_dialogos_y_encuadre_al_reabrir(qtbot, ventana):
+    def de(clave):
+        return {k: (v, f) for k, (_c, v, _u, f) in propuestas(POR_CLAVE[clave], 50).items()}
+
+    d = DialogoEspacioCargas(None, "ESP-001", "despacho", {}, {}, de)
+    qtbot.addWidget(d)
+    d.campos["t_verano_c"].setText("-300")
+    d._aceptar()
+    assert d.resultado is None and "entre −60 y 60" in d.error.text()
+    c = DialogoClima(None, [{"id": "g", "nombre_original": "g.pdf"}], lambda _i: [ESTACION], None)
+    qtbot.addWidget(c)
+    c.altitud.setText("45000")
+    c._aceptar()
+    assert c.resultado is None and "altitud" in c.error.text()
+    # Cerrar el proyecto deja el visor listo para encuadrar el siguiente.
+    v, _ = ventana
+    v.ir_a_paso("cargas")
+    v.refrescar()
+    assert v.pagina_cargas._encuadrado
+    raiz = v.proyecto.carpeta.raiz
+    v.proyecto.cerrar()
+    v.proyecto = None
+    v.refrescar()
+    assert not v.pagina_cargas._encuadrado
+    from traza.app.proyecto import Proyecto
+
+    v._usar_proyecto(Proyecto.abrir(raiz))

@@ -205,6 +205,9 @@ class PaginaCargas(QWidget):
             _llenar(self.tabla_espacios, [])
             self._al_elegir()
             self.visor.vacio()
+            # Que el próximo proyecto se encuadre (salía a 1 m = 1 px; revisión 07-11-2026).
+            self._encuadrado = False
+            self._nivel_dibujado = None
             self.resumen.clear()
             return
         espacios = self.proyecto.espacios()

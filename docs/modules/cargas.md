@@ -214,6 +214,7 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
     abrir el paso y no se almacenan como propiedades. Los pasos siguientes (redes,
     equipos) llamarán a `Proyecto.calcular_cargas()`.
 - **Uso propuesto por el nombre** del espacio, con palabras clave en `PALABRAS_USO`:
+  - se compara por inicio de palabra, no por «contiene»: «distribución» contenía «uci»;
   - lo específico va antes que lo general, y una prueba lo vigila;
   - sin coincidencia, el espacio sale «sin uso» y no se calcula hasta elegirlo.
 - **Fachadas** (`engines/envolvente.py`):
@@ -244,6 +245,13 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
     Hipótesis;
   - PDF con los datos de partida, las cargas por espacio, el desglose de verano y las
     hipótesis con sus fuentes.
+
+- **Límites declarados**:
+  - la rejilla de la cubierta puede no ver un espacio muy estrecho y girado;
+  - los espacios de un mismo nivel se suponen dibujados con el mismo origen de
+    coordenadas, también si vienen de planos distintos;
+  - la sala de manipulación a 12 °C va con las cámaras, fuera de la simultánea de
+    climatización: se enfría con la instalación de frío.
 
 ## Pendiente
 - Validar con la guía del IDAE real y un proyecto del usuario.

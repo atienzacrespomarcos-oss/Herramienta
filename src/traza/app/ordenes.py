@@ -1349,6 +1349,11 @@ AJUSTES_CARGAS = {
     "aire_exterior_m3h": ("Aire exterior (m³/h)", False),
     "huecos": ("Huecos en fachada (fracción 0–1)", False),
 }
+#: Rangos físicos (los usan también los diálogos, para que no se pierda lo tecleado).
+#: −60 °C cubre el ultracongelado y 60 °C cualquier local de proceso; España va del nivel
+#: del mar a 3715 m (Teide).
+RANGO_TEMPERATURA_C = (-60.0, 60.0)
+RANGO_ALTITUD_M = (-100.0, 4000.0)
 #: Sin calefacción (cámaras, almacenes sin calefactar): se marca aparte.
 AJUSTE_SIN_CALEFACCION = "sin_calefaccion"
 SECTORES_FACHADA = ("N", "NE", "E", "SE", "S", "SO", "O", "NO")
@@ -1397,8 +1402,7 @@ class FijarCargasProyecto(Orden):
         if self.color not in COLORES:
             raise OrdenRechazada(f"Color de cerramientos no previsto: «{self.color}».")
         altitud = _finito("Altitud de la obra", self.altitud_obra)
-        if not -100 <= altitud <= 4000:
-            # España va del nivel del mar a 3715 m (Teide).
+        if not RANGO_ALTITUD_M[0] <= altitud <= RANGO_ALTITUD_M[1]:
             raise OrdenRechazada("La altitud de la obra tiene que estar entre −100 y 4000 m.")
         rec = _finito("Recuperador", self.recuperacion)
         if not 0 <= rec < 1:
@@ -1453,9 +1457,10 @@ class FijarCargasEspacio(Orden):
                 raise OrdenRechazada(f"«{etiqueta}» no admite valores negativos.")
             if clave == "huecos" and v > 1:
                 raise OrdenRechazada("Los huecos son una fracción de la fachada, de 0 a 1.")
-            if clave in ("t_invierno_c", "t_verano_c") and not -60 <= v <= 60:
+            lo, hi = RANGO_TEMPERATURA_C
+            if clave in ("t_invierno_c", "t_verano_c") and not lo <= v <= hi:
                 # Un −300 °C tecleado de más rompía el cálculo de todo el proyecto (revisión
-                # 07-11-2026). −60 cubre el ultracongelado y 60 cualquier local de proceso.
+                # 07-11-2026).
                 raise OrdenRechazada(f"«{etiqueta}» tiene que estar entre −60 y 60 °C.")
             ajustes[clave] = v
         if AJUSTE_SIN_CALEFACCION in ajustes and "t_invierno_c" in ajustes:
