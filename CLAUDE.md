@@ -19,6 +19,10 @@ criterio». Y: «Fusiona cuando esté en verde y sigue». Por tanto: parar solo 
 **qué** debe hacer la herramienta o **cómo** debe hacerlo para el usuario; lo demás se
 resuelve y se documenta. Los PR se fusionan cuando la CI está en verde y la revisión
 independiente no deja nada pendiente.
+Y (07-11-2026, ante preguntas sobre el caudal de los difusores): «Creo que estás hilando
+demasiado fino». Preguntar solo decisiones de alcance o de forma de trabajar; los detalles
+de método (fuentes de un dato, hipótesis por defecto, formatos) se deciden con criterio y
+se documentan en la ficha del módulo.
 
 ## Lo que el usuario quiere de la herramienta (06-11-2026)
 
