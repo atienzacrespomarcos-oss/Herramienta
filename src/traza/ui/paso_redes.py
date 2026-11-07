@@ -252,7 +252,11 @@ class PaginaRedes(QWidget):
             self.tabla_medicion,
             [[m.seccion, _n(m.longitud_m, 2), _n(m.superficie_m2, 2)] for m in r.medicion],
         )
-        texto = f"{_n(r.caudal_total_m3h, 0)} m³/h · {len(r.terminales)} terminales"
+        conectados = r.terminales_conectados
+        sueltos = len(r.terminales) - conectados
+        texto = f"{_n(r.caudal_total_m3h, 0)} m³/h · {conectados} terminales"
+        if sueltos:
+            texto += f" ({sueltos} sin conectar)"
         if c is not None:
             limite = dict(SFP)[r.sfp_exigida]
             texto += (

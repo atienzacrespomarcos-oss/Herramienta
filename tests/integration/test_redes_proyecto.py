@@ -218,3 +218,32 @@ def test_espacio_sin_terminales_y_terminal_suelto(red):
     r = p.calcular_red(red_id)
     # El almacén tiene carga y ningún difusor de esta red: se dice.
     assert any("ALMACÉN" in a and "no tiene terminales" in a for a in r.avisos)
+
+
+def test_dos_equipos_iguales_y_terminal_suelto(proyecto, tmp_path):
+    # Una segunda UTA lejos, primera en el fichero, y un difusor sin eje: se elige la UTA
+    # junto a los ejes y el difusor suelto no suma caudal.
+    doc = ezdxf.readfile(_nave_con_conductos(tmp_path, "600"))
+    msp = doc.modelspace()
+    primera = [e for e in msp.query("INSERT") if e.dxf.name == "UTA"][0]
+    primera.dxf.insert = (60000, 60000)  # la del fichero, lejos
+    msp.add_blockref("UTA", (45000, 10500), dxfattribs={"layer": "M-DIFUSORES"})
+    suelto = msp.add_blockref("DIFUSOR", (20000, 20000), dxfattribs={"layer": "M-DIFUSORES"})
+    suelto.add_auto_attribs({"CAUDAL": "999"})
+    ruta = tmp_path / "Dos.dxf"
+    doc.saveas(ruta)
+    p = proyecto
+    plano_id = p.leer_plano(p.incorporar_documento(ruta), "mm", ["A-ESPACIOS"], [], ["A-TEXTOS"])
+    red_id = p.definir_red(
+        titulo="R",
+        tipo="impulsion",
+        plano_id=plano_id,
+        capa_ejes="M-IMPULSION",
+        bloques_terminales=["DIFUSOR"],
+        bloque_equipo="UTA",
+    )
+    r = p.calcular_red(red_id)
+    assert any("más cercano a los ejes" in a for a in r.avisos)
+    assert r.calculo is not None and r.topologia.origen == (45.0, 10.0)
+    assert r.terminales_conectados == 1 and r.caudal_total_m3h == 600  # sin los 999
+    assert any("no está junto a ningún eje" in a for a in r.avisos)

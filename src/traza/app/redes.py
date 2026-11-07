@@ -24,6 +24,17 @@ ATRIBUTO_CAUDAL = "CAUDAL"  # m³/h
 CALOR_SENSIBLE_AIRE = 1230.0  # W/(m³/s·K)
 
 
+def _distancia_segmento(p, a, b) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    largo2 = dx * dx + dy * dy
+    s = (
+        0.0
+        if largo2 == 0
+        else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / largo2))
+    )
+    return ((p[0] - a[0] - s * dx) ** 2 + (p[1] - a[1] - s * dy) ** 2) ** 0.5
+
+
 @dataclass(frozen=True)
 class TerminalRed:
     codigo: str
@@ -59,6 +70,12 @@ class ResultadoRedAire:
             return 0.0
         conectados = {t.tramo.terminal for t in self.topologia.tramos if t.tramo.terminal}
         return sum(t.caudal_m3h for t in self.terminales if t.codigo in conectados)
+
+    @property
+    def terminales_conectados(self) -> int:
+        if self.topologia is None:
+            return 0
+        return len({t.tramo.terminal for t in self.topologia.tramos if t.tramo.terminal})
 
     @property
     def sfp_exigida(self) -> int:
@@ -126,11 +143,13 @@ def calcular(
         if eq:
             # Con varios equipos iguales (varias UTA), el de esta red es el que está junto a
             # sus ejes, no el primero del fichero (revisión 07-11-2026).
-            puntos = [p for pl in polilineas for p in pl]
+            segmentos = [s for pl in polilineas for s in zip(pl, pl[1:], strict=False)]
 
             def lejania(b) -> float:
+                # Distancia al EJE (no a sus vértices): un tramo recto largo solo tiene
+                # vértices en los extremos (segunda revisión, 07-11-2026).
                 x, y = b.x * f, b.y * f
-                return min(((x - px) ** 2 + (y - py) ** 2 for px, py in puntos), default=0.0)
+                return min((_distancia_segmento((x, y), a, c) for a, c in segmentos), default=0.0)
 
             elegido = min(eq, key=lejania)
             equipo = (elegido.x * f, elegido.y * f)

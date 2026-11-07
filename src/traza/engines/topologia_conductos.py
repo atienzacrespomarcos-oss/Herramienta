@@ -85,6 +85,7 @@ def _angulo(u: Punto, v: Punto) -> float:
 #: Lado de la celda de la rejilla espacial (m). Sin rejilla, 2000 segmentos tardaban
 #: 97 s (todas las búsquedas recorrían el dibujo entero; revisión 07-11-2026).
 CELDA_M = 1.0
+MAX_CELDAS_ARISTA = 10_000
 
 
 def _celda(p: Punto) -> tuple[int, int]:
@@ -97,6 +98,9 @@ class _Grafo:
         self.ady: dict[int, set[int]] = defaultdict(set)
         self._nodos_celda: dict[tuple[int, int], list[int]] = defaultdict(list)
         self._aristas_celda: dict[tuple[int, int], set[tuple[int, int]]] = defaultdict(set)
+        #: Aristas cuya caja ocupa demasiadas celdas (una diagonal enorme, p. ej. con la
+        #: unidad mal elegida): se miran siempre, en vez de llenar millones de celdas.
+        self._aristas_grandes: set[tuple[int, int]] = set()
 
     def nodo(self, p: Punto) -> int:
         cx, cy = _celda(p)
@@ -114,6 +118,8 @@ class _Grafo:
         (x0, y0), (x1, y1) = self.nodos[i], self.nodos[j]
         cx0, cy0 = _celda((min(x0, x1) - margen, min(y0, y1) - margen))
         cx1, cy1 = _celda((max(x0, x1) + margen, max(y0, y1) + margen))
+        if (cx1 - cx0 + 1) * (cy1 - cy0 + 1) > MAX_CELDAS_ARISTA:
+            return None
         return [(cx, cy) for cx in range(cx0, cx1 + 1) for cy in range(cy0, cy1 + 1)]
 
     def unir(self, i: int, j: int) -> None:
@@ -121,8 +127,12 @@ class _Grafo:
             self.ady[i].add(j)
             self.ady[j].add(i)
             arista = (min(i, j), max(i, j))
-            for c in self._celdas_arista(i, j, 0.0):
-                self._aristas_celda[c].add(arista)
+            celdas = self._celdas_arista(i, j, 0.0)
+            if celdas is None:
+                self._aristas_grandes.add(arista)
+            else:
+                for c in celdas:
+                    self._aristas_celda[c].add(arista)
 
     def aristas(self) -> list[tuple[int, int]]:
         return [(i, j) for i in self.ady for j in self.ady[i] if i < j]
@@ -131,7 +141,7 @@ class _Grafo:
         """Aristas cuya caja está a menos de `radio` de p (candidatas)."""
         cx0, cy0 = _celda((p[0] - radio, p[1] - radio))
         cx1, cy1 = _celda((p[0] + radio, p[1] + radio))
-        encontradas: set[tuple[int, int]] = set()
+        encontradas: set[tuple[int, int]] = set(self._aristas_grandes)
         for cx in range(cx0, cx1 + 1):
             for cy in range(cy0, cy1 + 1):
                 encontradas |= self._aristas_celda.get((cx, cy), set())
@@ -153,7 +163,8 @@ class _Grafo:
         self.ady[i].discard(j)
         self.ady[j].discard(i)
         arista = (min(i, j), max(i, j))
-        for c in self._celdas_arista(i, j, 0.0):
+        self._aristas_grandes.discard(arista)
+        for c in self._celdas_arista(i, j, 0.0) or ():
             self._aristas_celda[c].discard(arista)
         self.unir(i, k)
         self.unir(k, j)

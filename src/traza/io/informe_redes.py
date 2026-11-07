@@ -66,7 +66,8 @@ def exportar_excel(destino: Path, proyecto: str, r: Any) -> Path:
         ["Red", red["nombre"], ""],
         ["Tipo", TIPOS[red["tipo"]], ""],
         ["Caudal total", r.caudal_total_m3h, "m³/h"],
-        ["Terminales", len(r.terminales), ""],
+        ["Terminales conectados", r.terminales_conectados, ""],
+        ["Terminales sin conectar a la red", len(r.terminales) - r.terminales_conectados, ""],
     ]
     if c is not None:
         resumen += [

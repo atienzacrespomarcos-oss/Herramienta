@@ -138,3 +138,35 @@ def test_paso_recto_solo_entre_hermanos_con_caudal():
         equipo=(0, 0),
     )
     assert _por_terminal(top)["D"].es_paso
+
+
+def test_equipo_a_mitad_de_un_eje_largo():
+    # El bloque está a 1 m del centro de un eje de 20 m sin vértices intermedios: se
+    # engancha ahí y salen dos ramas desde el equipo.
+    top = leer(
+        [[(0, 0), (20, 0)]], [Terminal("A", 0, 0, 0.1), Terminal("B", 20, 0, 0.1)], equipo=(10, 1)
+    )
+    assert top.origen == (10, 0)
+    raices = [t.tramo for t in top.tramos if t.tramo.padre is None]
+    assert len(raices) == 2 and {r.terminal for r in raices} == {"A", "B"}
+
+
+def test_varios_terminales_en_un_nodo_con_hijos():
+    # Dos difusores sobre el mismo punto de un conducto que sigue hasta un tercero.
+    top = leer(
+        [[(0, 0), (20, 0)]],
+        [Terminal("D1", 10, 0.2, 0.1), Terminal("D2", 10, -0.2, 0.1), Terminal("D3", 20, 0, 0.1)],
+        equipo=(0, 0),
+    )
+    t = _por_terminal(top)
+    assert t["D1"].longitud_m == t["D2"].longitud_m == 0
+    assert t["D1"].padre == t["D2"].padre == t["D3"].padre
+    raiz = next(x.tramo for x in top.tramos if x.tramo.padre is None)
+    assert raiz.caudal_m3s == pytest.approx(0.3)
+
+
+def test_diagonal_enorme_no_cuelga_el_programa():
+    # Con la unidad mal elegida (mm leídos como m) una diagonal ocuparía millones de
+    # celdas: se trata aparte y se lee igual.
+    top = leer([[(0, 0), (40_000, 30_000)]], [Terminal("D", 40_000, 30_000, 0.1)], equipo=(0, 0))
+    assert top.tramos[0].tramo.longitud_m == pytest.approx(50_000)
