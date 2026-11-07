@@ -165,11 +165,24 @@ class Contorno:
             return False
         tramos = [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
         n = len(tramos)
-        for i in range(n):
-            for j in range(i + 1, n):
-                contiguos = j == i + 1 or (i == 0 and j == n - 1)
-                if _se_cortan(*tramos[i], *tramos[j], contiguos):
+        # Barrido por x: solo se comparan tramos cuyas cajas se solapan en x. Con todos los
+        # pares, un contorno de miles de vértices (parcela digitalizada) costaba millones de
+        # comprobaciones (revisión 06-11-2026).
+        orden = sorted(range(n), key=lambda k: min(tramos[k][0][0], tramos[k][1][0]))
+        activos: list[int] = []
+        for i in orden:
+            (ax, ay), (bx, by) = tramos[i]
+            x0 = min(ax, bx)
+            activos = [k for k in activos if max(tramos[k][0][0], tramos[k][1][0]) >= x0]
+            for j in activos:
+                (cx, cy), (dx, dy) = tramos[j]
+                if max(ay, by) < min(cy, dy) or max(cy, dy) < min(ay, by):
+                    continue  # sus cajas no se solapan en y
+                a, b = min(i, j), max(i, j)
+                contiguos = b == a + 1 or (a == 0 and b == n - 1)
+                if _se_cortan(*tramos[a], *tramos[b], contiguos):
                     return True
+            activos.append(i)
         return False
 
     def escalado(self, factor: float) -> Contorno:
@@ -178,7 +191,7 @@ class Contorno:
         return Contorno(tuple(Vertice(v.x * factor, v.y * factor, v.bulge) for v in self.vertices))
 
 
-@functools.lru_cache(maxsize=8192)
+@functools.lru_cache(maxsize=256)  # entradas, no bytes: pocas, que un contorno grande pesa
 def _aplanado_guardado(vertices: tuple[Vertice, ...], flecha: float) -> tuple:
     """El aplanado se reutiliza: clasificar N textos en M contornos no lo recalcula N·M
     veces (revisión 06-11-2026)."""

@@ -106,7 +106,17 @@ metros con la unidad confirmada. Un punto exactamente sobre el borde puede queda
 fuera.
 
 **Autointersección:** dos tramos no contiguos que se cruzan o se tocan, o dos contiguos que
-vuelven uno sobre otro, se comprueban sobre el contorno aplanado.
+vuelven uno sobre otro, se comprueban sobre el contorno aplanado. Solo se comparan los tramos
+cuyas cajas se solapan, con un barrido por x, para que un contorno de miles de vértices no
+tarde. **Limitación:** «colineal» y «se toca» se comparan de forma exacta. Un contorno que
+vuelve sobre sí mismo con coordenadas no enteras puede no detectarse como «se corta». Se
+queda entonces en «sin superficie», que también se avisa: nunca entra como espacio bueno.
+
+**Polilíneas ajustadas con PEDIT:**
+- Spline: se quitan los puntos de control y se usa la curva generada.
+- Curva: se usan sus vértices y arcos tal como vienen.
+
+Las dos están por validar con un DXF real.
 
 **Validación:** figuras de resultado conocido (rectángulo, círculo con dos semicírculos,
 semicírculo hacia fuera y hacia dentro, cuarto de círculo, arco de 270°), pruebas con

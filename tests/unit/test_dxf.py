@@ -322,3 +322,12 @@ def test_circulo_abierto_con_tres_puntos_se_propone(tmp_path):
     p = leer_dxf(_guardar(doc, tmp_path))
     [c] = p.contornos
     assert c.contorno.area == pytest.approx(math.pi) and not c.marcada_cerrada
+
+
+def test_segmento_circular_abierto_de_tres_puntos_con_arco_al_volver(tmp_path):
+    # A → B recto y B → A en arco (bulge en el vértice 1): encierra un semicírculo.
+    doc, msp = _nuevo(6)
+    msp.add_lwpolyline([(0, 0, 0, 0, 0), (2, 0, 0, 0, 1.0), (0, 0, 0, 0, 0)], format="xyseb")
+    p = leer_dxf(_guardar(doc, tmp_path))
+    [c] = p.contornos
+    assert c.contorno.area == pytest.approx(math.pi / 2)

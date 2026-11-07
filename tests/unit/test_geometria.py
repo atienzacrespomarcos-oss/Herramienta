@@ -201,3 +201,55 @@ def test_arcos_que_se_anulan_no_tienen_superficie_y_se_cortan():
     c = Contorno((Vertice(0, 0, 1.0), Vertice(2, 0, -1.0)))
     assert c.area == pytest.approx(0, abs=1e-12)
     assert c.autointersecante()
+
+
+def test_autointersecante_con_muchos_vertices_es_rapido():
+    import time
+
+    # Polígono estrellado de 4000 vértices sin cortes, y el mismo con un cruce al final.
+    n = 4000
+    vs = [
+        Vertice(
+            (10 + (k % 2)) * math.cos(2 * math.pi * k / n),
+            (10 + (k % 2)) * math.sin(2 * math.pi * k / n),
+        )
+        for k in range(n)
+    ]
+    t0 = time.perf_counter()
+    assert not Contorno(tuple(vs)).autointersecante()
+    cruzado = vs[:-1] + [Vertice(-20, 0)]  # último vértice al otro lado: atraviesa la estrella
+    assert Contorno(tuple(cruzado)).autointersecante()
+    assert time.perf_counter() - t0 < 5
+
+
+def test_barrido_da_lo_mismo_que_comparar_todos_los_pares():
+    import random
+
+    from traza.core.geometria import _se_cortan
+
+    def todos_los_pares(c):
+        pts = []
+        for q in c.aplanado():
+            if not pts or q != pts[-1]:
+                pts.append(q)
+        while len(pts) > 1 and pts[0] == pts[-1]:
+            pts.pop()
+        if len(pts) < 3:
+            return False  # degenerado: el lector lo trata como «sin superficie»
+        tr = [(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
+        n = len(tr)
+        return any(
+            _se_cortan(*tr[i], *tr[j], j == i + 1 or (i == 0 and j == n - 1))
+            for i in range(n)
+            for j in range(i + 1, n)
+        )
+
+    azar = random.Random(20261107)
+    cortes = 0
+    for _ in range(400):
+        n = azar.randint(3, 9)
+        c = Contorno(tuple(Vertice(azar.randint(0, 6), azar.randint(0, 6)) for _ in range(n)))
+        esperado = todos_los_pares(c)
+        cortes += esperado
+        assert c.autointersecante() == esperado
+    assert 50 < cortes < 400  # la muestra tiene de los dos casos

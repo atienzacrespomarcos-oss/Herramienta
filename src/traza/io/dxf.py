@@ -404,7 +404,7 @@ def _polilinea(plano, capa, e, tipo, vs: list[Vertice], cerrada: bool, cota: flo
     marcada = cerrada
     vuelve = (vs[0].x, vs[0].y) == (vs[-1].x, vs[-1].y)
     # Con 3 vértices (A, B, A) solo encierra algo si tiene arcos.
-    if not cerrada and vuelve and (len(vs) >= 4 or any(v.bulge for v in vs[:-2])):
+    if not cerrada and vuelve and (len(vs) >= 4 or any(v.bulge for v in vs[:-1])):
         # Abierta pero con el último punto en el primero: en planos ajenos es habitual. Se
         # propone como contorno (sin el vértice repetido), diciendo que no venía marcada.
         vs, cerrada = vs[:-1], True

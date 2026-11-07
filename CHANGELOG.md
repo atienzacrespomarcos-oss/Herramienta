@@ -27,6 +27,9 @@
   - arco de 0° a 360°;
   - serie para arcos casi rectos;
   - «está dentro» en metros y con el contorno aplanado guardado.
+- Segunda revisión: contorno abierto de 3 puntos que cierra con arco; la comprobación de
+  cruces barre por x (comparada con la de todos los pares en 400 polígonos al azar);
+  caché acotada; limitaciones declaradas.
 - ADR-0014 y ficha `docs/modules/geometria.md`, con las fuentes de Autodesk citadas.
 
 ### Etapa 2 · modificados (06-11-2026)
