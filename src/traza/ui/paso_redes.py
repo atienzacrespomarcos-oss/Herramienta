@@ -49,24 +49,21 @@ class PaginaRedes(QWidget):
         )
         self.resumen = QLabel()
         self.resumen.setWordWrap(True)
+        # Presentación limpia (usuario, 07-11-2026): lo que decide en pantalla; accesorios,
+        # clases y caminos completos, en el listado Excel.
         self.tabla_tramos = _tabla(
             [
                 "Tramo",
-                "Viene de",
-                "Clase",
-                "Longitud (m)",
                 "Caudal (m³/h)",
                 "Sección (mm)",
-                "v (m/s)",
-                "R (Pa/m)",
-                "Accesorios (Pa)",
-                "Total (Pa)",
+                "Velocidad (m/s)",
+                "Pa/m",
+                "Longitud (m)",
+                "Pérdida (Pa)",
                 "Terminal",
             ]
         )
-        self.tabla_terminales = _tabla(
-            ["Terminal", "Espacio", "Caudal (m³/h)", "Camino (Pa)", "A disipar (Pa)", "Caudal de"]
-        )
+        self.tabla_terminales = _tabla(["Terminal", "Espacio", "Caudal (m³/h)", "A disipar (Pa)"])
         self.tabla_medicion = _tabla(["Sección (mm)", "Longitud (m)", "Superficie (m²)"])
         self.tabla_tramos.itemSelectionChanged.connect(self._dibujar)
         self.pestanas = QTabWidget()
@@ -224,14 +221,11 @@ class PaginaRedes(QWidget):
                 filas.append(
                     [
                         t.tramo.id,
-                        t.tramo.padre or "equipo",
-                        t.tramo.clase,
-                        _n(t.tramo.longitud_m, 2),
                         _n(t.tramo.caudal_m3s * 3600, 0),
                         t.seccion.texto(),
-                        _n(t.velocidad_m_s, 2),
+                        _n(t.velocidad_m_s, 1),
                         _n(t.friccion_pa_m, 2),
-                        _n(t.perdida_accesorios_pa),
+                        _n(t.tramo.longitud_m, 1),
                         _n(t.perdida_pa),
                         t.tramo.terminal or "",
                     ]
@@ -245,24 +239,29 @@ class PaginaRedes(QWidget):
                     t.codigo,
                     t.espacio or "fuera",
                     _n(t.caudal_m3h, 0),
-                    _n(c.caminos.get(t.codigo)) if c else "",
                     _n(c.exceso_pa.get(t.codigo)) if c else "",
-                    t.origen_caudal,
                 ]
                 for t in r.terminales
             ],
         )
+        for fila, term in enumerate(r.terminales):
+            item = self.tabla_terminales.item(fila, 2)
+            if item is not None:
+                item.setToolTip(f"Caudal de: {term.origen_caudal}")
         _llenar(
             self.tabla_medicion,
             [[m.seccion, _n(m.longitud_m, 2), _n(m.superficie_m2, 2)] for m in r.medicion],
         )
-        texto = f"Caudal {_n(r.caudal_total_m3h, 0)} m³/h · {len(r.terminales)} terminales"
+        texto = f"{_n(r.caudal_total_m3h, 0)} m³/h · {len(r.terminales)} terminales"
         if c is not None:
             limite = dict(SFP)[r.sfp_exigida]
             texto += (
-                f" · presión necesaria en la red {_n(c.presion_necesaria_pa, 0)} Pa (crítico "
-                f"{c.terminal_critico}) · ventilador: SFP {r.sfp_exigida} como máximo "
-                f"(≤ {limite} W por m³/s, RITE IT 1.2.4.2.5)"
+                f" · {_n(c.presion_necesaria_pa, 0)} Pa en la red (crítico {c.terminal_critico})"
+                f" · ventilador SFP {r.sfp_exigida} como máximo"
+            )
+            self.resumen.setToolTip(
+                f"Presión necesaria en la red, sin el equipo. RITE IT 1.2.4.2.5: SFP "
+                f"{r.sfp_exigida} = como mucho {limite} W por m³/s."
             )
         if r.avisos:
             texto += "\n⚠ " + "\n⚠ ".join(r.avisos)

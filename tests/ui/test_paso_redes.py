@@ -72,7 +72,7 @@ def test_recorrido_completo(ventana, tmp_path):
     q.preparar("red_aire", definir)
     pr.a_nueva.trigger()
     assert pr.tabla_tramos.rowCount() == 3 and pr.tabla_terminales.rowCount() == 2
-    assert "presión necesaria" in pr.resumen.text() and "SFP 4" in pr.resumen.text()
+    assert "Pa en la red" in pr.resumen.text() and "SFP 4" in pr.resumen.text()
     assert pr.a_excel.isEnabled()
     pr.tabla_tramos.setCurrentCell(1, 0)  # dibuja el tramo elegido sin error
 

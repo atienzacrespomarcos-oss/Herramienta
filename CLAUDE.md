@@ -28,6 +28,10 @@ se documentan en la ficha del módulo.
 
 - **Muy intuitiva y a medida**: solo lo que usa. Nada de pantallas o funciones «por si
   acaso». Antes de añadir algo, comprobar que responde a una necesidad que él ha dicho.
+- **Presentación limpia** (07-11-2026): «Herramienta profesional y completa no quiere decir
+  herramienta recargada. Una presentación limpia es clave». En pantalla, lo que decide
+  (resultado y unidades); el detalle completo, en una pestaña aparte o en el Excel. Tablas
+  con pocas columnas, textos de resumen cortos.
 - Organizada en **pasos del proyecto**, adaptados al **tipo de encargo** (diseño +
   presupuesto + instalación / presupuesto + instalación / solo instalación). **Solo se ven
   los pasos que funcionan.**
