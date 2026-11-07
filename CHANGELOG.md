@@ -2,6 +2,18 @@
 
 ## [Sin publicar]
 
+### Etapa 3 · geometría DXF, bloque B (07-11-2026)
+- Esquema V4: `plano` (unidad confirmada, capas de espacios, obstáculos y nombres;
+  propuestas descartadas) y `geometria` (contorno en metros con su entidad DXF).
+- Tipos nivel, espacio y obstáculo. Alturas por nivel, con excepciones por espacio y
+  obstáculo.
+- Propuestas de contornos con superficie, perímetro y textos de dentro. Se confirman como
+  espacio u obstáculo, se descartan o se recuperan.
+- Superficie y perímetro con origen «cálculo» y su registro (motor, versión, entradas y
+  fórmula). El nombre sale del texto del plano, citado, o del usuario.
+- Bloques por capa y espacio, longitudes por capa y Excel del plano.
+- Los niveles, espacios y obstáculos no salen en «Equipos».
+
 ### Etapa 3 · geometría DXF, bloque A (06-11-2026)
 - Lector DXF (ezdxf). Hace inventario del espacio modelo:
   - capas;

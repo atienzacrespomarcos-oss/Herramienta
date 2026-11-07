@@ -8,7 +8,9 @@ puede saltarse ni el registro ni el bloqueo.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import sqlite3
 import uuid
 from abc import ABC, abstractmethod
@@ -17,6 +19,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from traza.core.estados import Estado, transicion_permitida
+from traza.core.geometria import MOTOR as MOTOR_GEOMETRIA
+from traza.core.geometria import VERSION as VERSION_GEOMETRIA
+from traza.core.geometria import Contorno, ContornoInvalido, Vertice
 from traza.core.procedencia import Origen, Procedencia
 from traza.core.tipos import Clase, tipo, validar_valor
 from traza.io.pdf import pagina_citada
@@ -785,3 +790,429 @@ class BorrarModificado(Orden):
         return [Delta("cambio_modificado", c, None) for c in cambios] + [
             Delta("modificado", mod, None)
         ]
+
+
+# --- Planos: niveles, espacios y obstáculos (Etapa 3, ADR-0014) --------------------------
+
+UNIDADES_PLANO = ("mm", "cm", "dm", "m")
+#: Prefijo y ancho del código visible de cada tipo de elemento de plano.
+_CODIGOS = {"nivel": ("NIV-", 2), "espacio": ("ESP-", 3), "obstaculo": ("OBS-", 3)}
+
+
+def _siguiente_codigo(con: sqlite3.Connection, tipo_elemento: str) -> str:
+    prefijo, ancho = _CODIGOS[tipo_elemento]
+    usados = {
+        r[0]
+        for r in con.execute("SELECT codigo FROM elemento WHERE codigo LIKE ?", (prefijo + "%",))
+    }
+    n = 1
+    while f"{prefijo}{n:0{ancho}d}" in usados:
+        n += 1
+    return f"{prefijo}{n:0{ancho}d}"
+
+
+def _plano(con: sqlite3.Connection, plano_id: str) -> Fila:
+    p = leer(con, "plano", {"id": plano_id})
+    if p is None:
+        raise OrdenRechazada("Ese plano no está leído en el proyecto.")
+    return p
+
+
+def _capas(nombres: list[str] | tuple[str, ...]) -> list[str]:
+    limpias = sorted({c for c in nombres if isinstance(c, str) and c.strip()})
+    if len(limpias) != len([c for c in nombres if isinstance(c, str) and c.strip()]):
+        raise OrdenRechazada("Una capa aparece repetida.")
+    return limpias
+
+
+def _filas_plano(unidad, espacios, obstaculos, textos) -> tuple[list[str], list[str], list[str]]:
+    if unidad not in UNIDADES_PLANO:
+        raise OrdenRechazada(f"Unidad del dibujo no prevista: «{unidad}».")
+    e, o, t = _capas(espacios), _capas(obstaculos), _capas(textos)
+    if not e and not o:
+        raise OrdenRechazada("Elige al menos una capa de espacios o de obstáculos.")
+    comunes = set(e) & set(o)
+    if comunes:
+        raise OrdenRechazada(
+            f"La capa «{sorted(comunes)[0]}» no puede ser a la vez de espacios y de obstáculos."
+        )
+    return e, o, t
+
+
+@dataclass
+class LeerPlano(Orden):
+    """El usuario dice cómo se lee un DXF del proyecto: la unidad (confirmada viendo la
+    medida total) y qué capas son espacios, obstáculos y nombres (planos ajenos)."""
+
+    documento_id: str
+    unidad: str
+    capas_espacios: list[str]
+    capas_obstaculos: list[str]
+    capas_textos: list[str]
+    lector: str
+    version_lector: str
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        doc = leer(con, "documento", {"id": self.documento_id})
+        if doc is None:
+            raise OrdenRechazada("El documento no está incorporado al proyecto.")
+        if doc["extension"].lower() != ".dxf":
+            raise OrdenRechazada(f"«{doc['nombre_original']}» no es un DXF.")
+        if con.execute(
+            "SELECT 1 FROM plano WHERE documento_id = ?", (self.documento_id,)
+        ).fetchone():
+            raise OrdenRechazada(
+                f"«{doc['nombre_original']}» ya está leído: cambia sus capas en lugar de leerlo "
+                "otra vez."
+            )
+        e, o, t = _filas_plano(
+            self.unidad,
+            self.capas_espacios,
+            self.capas_obstaculos,
+            self.capas_textos,
+        )
+        return [
+            Delta(
+                "plano",
+                None,
+                {
+                    "id": self.id,
+                    "documento_id": self.documento_id,
+                    "unidad": self.unidad,
+                    "capas_espacios": json.dumps(e, ensure_ascii=False),
+                    "capas_obstaculos": json.dumps(o, ensure_ascii=False),
+                    "capas_textos": json.dumps(t, ensure_ascii=False),
+                    "descartados": "[]",
+                    "lector": self.lector,
+                    "version_lector": self.version_lector,
+                    "leido": ahora(),
+                },
+            )
+        ]
+
+
+@dataclass
+class CambiarPlano(Orden):
+    """Cambia la unidad o las capas. La unidad no se cambia si ya hay geometría confirmada
+    con ella: sus superficies quedarían mal (habría que quitarla y confirmarla otra vez)."""
+
+    plano_id: str
+    unidad: str
+    capas_espacios: list[str]
+    capas_obstaculos: list[str]
+    capas_textos: list[str]
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = _plano(con, self.plano_id)
+        e, o, t = _filas_plano(
+            self.unidad,
+            self.capas_espacios,
+            self.capas_obstaculos,
+            self.capas_textos,
+        )
+        if self.unidad != antes["unidad"]:
+            n = con.execute(
+                "SELECT count(*) FROM geometria WHERE plano_id = ?", (self.plano_id,)
+            ).fetchone()[0]
+            if n:
+                raise OrdenRechazada(
+                    f"Hay {n} elemento(s) confirmados con la unidad «{antes['unidad']}»: quítalos "
+                    "antes de cambiarla, o sus superficies no corresponderían al plano."
+                )
+        despues = {
+            **antes,
+            "unidad": self.unidad,
+            "capas_espacios": json.dumps(e, ensure_ascii=False),
+            "capas_obstaculos": json.dumps(o, ensure_ascii=False),
+            "capas_textos": json.dumps(t, ensure_ascii=False),
+        }
+        if despues == antes:
+            raise OrdenRechazada("No hay cambios en el plano.")
+        return [Delta("plano", antes, despues)]
+
+
+@dataclass
+class DescartarPropuesta(Orden):
+    """El usuario rechaza un contorno propuesto: no se vuelve a proponer."""
+
+    plano_id: str
+    handle: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = _plano(con, self.plano_id)
+        descartados = json.loads(antes["descartados"])
+        if self.handle in descartados:
+            raise OrdenRechazada("Esa propuesta ya está descartada.")
+        if con.execute(
+            "SELECT 1 FROM geometria WHERE plano_id = ? AND handle = ?",
+            (self.plano_id, self.handle),
+        ).fetchone():
+            raise OrdenRechazada("Ese contorno ya está confirmado: quita el elemento si sobra.")
+        nuevos = sorted([*descartados, self.handle])
+        return [Delta("plano", antes, {**antes, "descartados": json.dumps(nuevos)})]
+
+
+@dataclass
+class RecuperarPropuesta(Orden):
+    plano_id: str
+    handle: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = _plano(con, self.plano_id)
+        descartados = json.loads(antes["descartados"])
+        if self.handle not in descartados:
+            raise OrdenRechazada("Esa propuesta no está descartada.")
+        nuevos = [h for h in descartados if h != self.handle]
+        return [Delta("plano", antes, {**antes, "descartados": json.dumps(nuevos)})]
+
+
+def _fila_propiedad(elemento_id: str, clave: str, valor, unidad, p: Procedencia) -> Fila:
+    return {
+        "elemento_id": elemento_id,
+        "clave": clave,
+        "valor": json.dumps(valor, ensure_ascii=False),
+        "unidad": unidad,
+        "origen": str(p.origen),
+        "documento_id": p.documento_id,
+        "localizador": p.localizador,
+        "registro_calculo_id": p.registro_calculo_id,
+        "nota": p.nota,
+        "confirmado": 1,
+        "modificado": ahora(),
+    }
+
+
+def _fila_elemento(elemento_id: str, tipo_elemento: str, codigo: str, padre_id) -> Fila:
+    t = tipo(tipo_elemento)
+    momento = ahora()
+    return {
+        "id": elemento_id,
+        "codigo": codigo,
+        "tipo": t.nombre,
+        "tipo_version": t.version,
+        "disciplina": str(t.disciplina),
+        "estado": str(Estado.BORRADOR),
+        "padre_id": padre_id,
+        "creado": momento,
+        "modificado": momento,
+    }
+
+
+def _numero_positivo(nombre: str, valor, admite_cero: bool = False) -> float:
+    if isinstance(valor, bool) or not isinstance(valor, int | float) or valor != valor:
+        raise OrdenRechazada(f"«{nombre}» tiene que ser un número.")
+    if valor in (float("inf"), float("-inf")) or valor < 0 or (valor == 0 and not admite_cero):
+        raise OrdenRechazada(f"«{nombre}» tiene que ser un número {'≥' if admite_cero else '>'} 0.")
+    return float(valor)
+
+
+@dataclass
+class CrearNivel(Orden):
+    # «titulo» y no «nombre»: `nombre` es la propiedad de Orden con que se anota la orden.
+    titulo: str
+    cota: float  # m
+    altura_libre: float  # m
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if not self.titulo.strip():
+            raise OrdenRechazada("El nivel necesita un nombre (p. ej. «Planta baja»).")
+        if isinstance(self.cota, bool) or not isinstance(self.cota, int | float):
+            raise OrdenRechazada("La cota tiene que ser un número.")
+        if not math.isfinite(self.cota):
+            raise OrdenRechazada("La cota tiene que ser un número finito.")
+        altura = _numero_positivo("Altura libre", self.altura_libre)
+        usuario = Procedencia(Origen.USUARIO)
+        return [
+            Delta(
+                "elemento",
+                None,
+                _fila_elemento(self.id, "nivel", _siguiente_codigo(con, "nivel"), None),
+            ),
+            Delta(
+                "propiedad",
+                None,
+                _fila_propiedad(self.id, "nombre", self.titulo.strip(), None, usuario),
+            ),
+            Delta(
+                "propiedad", None, _fila_propiedad(self.id, "cota", float(self.cota), "m", usuario)
+            ),
+            Delta(
+                "propiedad", None, _fila_propiedad(self.id, "altura_libre", altura, "m", usuario)
+            ),
+        ]
+
+
+@dataclass
+class ConfirmarContorno(Orden):
+    """El usuario confirma un contorno propuesto como ESPACIO u OBSTÁCULO de un nivel.
+
+    La geometría viene del DXF (la lee Proyecto) en metros, con la unidad del plano. La
+    superficie y el perímetro los calcula aquí el motor de geometría exacta y quedan con
+    origen «cálculo» y su registro (motor, versión, entradas y fórmula). El nombre, si sale
+    de un texto del plano, cita ese texto; si lo escribe el usuario, es suyo.
+    """
+
+    tipo_elemento: str  # espacio | obstaculo
+    plano_id: str
+    handle: str
+    capa: str
+    nivel_id: str
+    vertices: tuple[tuple[float, float, float], ...]  # (x, y, bulge) en metros
+    titulo: str | None = None  # el nombre del elemento (ver CrearNivel)
+    nombre_procedencia: Procedencia | None = None
+    altura: float | None = None  # obstáculo: si no consta, toda la del nivel
+    cota_inferior: float | None = None  # obstáculo: sobre el suelo del nivel
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if self.tipo_elemento not in ("espacio", "obstaculo"):
+            raise OrdenRechazada(f"Tipo de contorno no previsto: «{self.tipo_elemento}».")
+        plano = _plano(con, self.plano_id)
+        nivel = _elemento(con, self.nivel_id)
+        if nivel["tipo"] != "nivel":
+            raise OrdenRechazada("Los espacios y obstáculos cuelgan de un nivel.")
+        if self.handle in json.loads(plano["descartados"]):
+            raise OrdenRechazada("Ese contorno está descartado: recupéralo antes de confirmarlo.")
+        if con.execute(
+            "SELECT 1 FROM geometria WHERE plano_id = ? AND handle = ?",
+            (self.plano_id, self.handle),
+        ).fetchone():
+            raise OrdenRechazada("Ese contorno ya está confirmado.")
+        try:
+            contorno = Contorno(tuple(Vertice(x, y, b) for x, y, b in self.vertices))
+        except (ContornoInvalido, TypeError, ValueError) as exc:
+            raise OrdenRechazada(f"Contorno no válido: {exc}") from None
+        if contorno.autointersecante():
+            raise OrdenRechazada(
+                "Ese contorno se corta a sí mismo: su superficie no tiene sentido físico. "
+                "Corrígelo en el plano (o dibuja el contorno bueno en otra polilínea)."
+            )
+        doc = leer(con, "documento", {"id": plano["documento_id"]})
+        assert doc is not None
+        registro = _registro_contorno(doc["sha256"], plano, self.handle, contorno)
+        cita = Procedencia(Origen.CALCULO, registro_calculo_id=registro["id"])
+        codigo = _siguiente_codigo(con, self.tipo_elemento)
+        deltas = [
+            Delta("registro_calculo", None, registro),
+            Delta(
+                "elemento", None, _fila_elemento(self.id, self.tipo_elemento, codigo, self.nivel_id)
+            ),
+            Delta(
+                "geometria",
+                None,
+                {
+                    "elemento_id": self.id,
+                    "plano_id": self.plano_id,
+                    "handle": self.handle,
+                    "capa": self.capa,
+                    "contorno": json.dumps([[v.x, v.y, v.bulge] for v in contorno.vertices]),
+                },
+            ),
+            Delta(
+                "propiedad",
+                None,
+                _fila_propiedad(self.id, "superficie", contorno.area, "m**2", cita),
+            ),
+        ]
+        if self.tipo_elemento == "espacio":
+            deltas.append(
+                Delta(
+                    "propiedad",
+                    None,
+                    _fila_propiedad(self.id, "perimetro", contorno.perimetro, "m", cita),
+                )
+            )
+        nombre = (self.titulo or "").strip()
+        if self.tipo_elemento == "espacio" and not nombre:
+            raise OrdenRechazada("El espacio necesita un nombre (el del plano o uno tuyo).")
+        if nombre:
+            p = self.nombre_procedencia or Procedencia(Origen.USUARIO)
+            if p.origen not in (Origen.USUARIO, Origen.DOCUMENTO):
+                raise OrdenRechazada("El nombre lo da el plano o el usuario.")
+            if p.origen is Origen.DOCUMENTO and p.documento_id != plano["documento_id"]:
+                raise OrdenRechazada("El nombre tiene que citar un texto de este mismo plano.")
+            deltas.append(
+                Delta("propiedad", None, _fila_propiedad(self.id, "nombre", nombre, None, p))
+            )
+        usuario = Procedencia(Origen.USUARIO)
+        if self.altura is not None:
+            if self.tipo_elemento != "obstaculo":
+                raise OrdenRechazada(
+                    "La altura de un espacio se pone después, si no es la del nivel."
+                )
+            h = _numero_positivo("Altura", self.altura)
+            deltas.append(
+                Delta("propiedad", None, _fila_propiedad(self.id, "altura", h, "m", usuario))
+            )
+        if self.cota_inferior is not None:
+            if self.tipo_elemento != "obstaculo":
+                raise OrdenRechazada("La cota inferior solo la tienen los obstáculos.")
+            c = _numero_positivo("Cota inferior", self.cota_inferior, admite_cero=True)
+            deltas.append(
+                Delta("propiedad", None, _fila_propiedad(self.id, "cota_inferior", c, "m", usuario))
+            )
+        return deltas
+
+
+def _registro_contorno(sha_documento: str, plano: Fila, handle: str, contorno: Contorno) -> Fila:
+    entradas = {
+        "documento_sha256": sha_documento,
+        "handle": handle,
+        "unidad_dibujo": plano["unidad"],
+        "vertices_m": [[v.x, v.y, v.bulge] for v in contorno.vertices],
+    }
+    texto = json.dumps(entradas, sort_keys=True)
+    contenido = {
+        "metodo": (
+            "Superficie: polígono de cuerdas (fórmula de Gauss) más segmentos circulares "
+            "(c²/8)·(θ−sen θ)/sen²(θ/2), θ = 4·atan(bulge). Perímetro: cuerdas y arcos "
+            "c·(|θ|/2)/sen(|θ|/2). Exactos, sin aproximar los arcos (core/geometria.py)."
+        ),
+        "fuente_bulge": "Autodesk, DXF Reference, VERTEX, código 42",
+        "aproximaciones": [],
+        "entradas": entradas,
+        "resultados": {"superficie_m2": contorno.area, "perimetro_m": contorno.perimetro},
+    }
+    return {
+        "id": nuevo_id(),
+        "motor": MOTOR_GEOMETRIA,
+        "version": VERSION_GEOMETRIA,
+        "fecha": ahora(),
+        "hash_entradas": hashlib.sha256(texto.encode("utf-8")).hexdigest(),
+        "contenido": json.dumps(contenido, ensure_ascii=False, sort_keys=True),
+        "obsoleto": 0,
+    }
+
+
+@dataclass
+class QuitarDePlano(Orden):
+    """Quita un nivel, espacio u obstáculo confirmado (para corregirlo y confirmarlo otra
+    vez). Un nivel con espacios u obstáculos no se quita: primero ellos."""
+
+    elemento_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        el = _elemento(con, self.elemento_id)
+        if el["tipo"] not in ("nivel", "espacio", "obstaculo"):
+            raise OrdenRechazada("Solo se quitan aquí niveles, espacios y obstáculos.")
+        hijos = con.execute(
+            "SELECT count(*) FROM elemento WHERE padre_id = ?", (self.elemento_id,)
+        ).fetchone()[0]
+        if hijos:
+            raise OrdenRechazada(
+                f"«{el['codigo']}» tiene {hijos} espacio(s) u obstáculo(s): quítalos antes."
+            )
+        props = [
+            dict(r)
+            for r in con.execute(
+                "SELECT * FROM propiedad WHERE elemento_id = ? ORDER BY clave", (self.elemento_id,)
+            )
+        ]
+        deltas = [Delta("propiedad", p, None) for p in props]
+        geo = leer(con, "geometria", {"elemento_id": self.elemento_id})
+        if geo is not None:
+            deltas.append(Delta("geometria", geo, None))
+        deltas.append(Delta("elemento", el, None))
+        return deltas

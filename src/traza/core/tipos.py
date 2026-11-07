@@ -137,3 +137,72 @@ EQUIPO = registrar(
         ),
     )
 )
+
+
+# --- Geometría del edificio (Etapa 3, docs/modules/geometria.md) ----------------------
+# Decisión del usuario (06-11-2026): alturas por NIVEL, que heredan sus espacios, con
+# excepciones por espacio; cubierta inclinada con altura mínima y máxima. Superficie y
+# perímetro salen del contorno confirmado (origen «cálculo», con su registro).
+
+NIVEL = registrar(
+    TipoElemento(
+        nombre="nivel",
+        etiqueta="Nivel",
+        disciplina=Disciplina.GENERAL,
+        version=1,
+        propiedades=(
+            DefPropiedad("nombre", "Nombre", Clase.TEXTO, obligatoria_para_aprobar=True),
+            DefPropiedad(
+                "cota",
+                "Cota del suelo",
+                Clase.NUMERO,
+                "m",
+                obligatoria_para_aprobar=True,
+                admite_negativo=True,
+            ),
+            DefPropiedad(
+                "altura_libre", "Altura libre", Clase.NUMERO, "m", obligatoria_para_aprobar=True
+            ),
+        ),
+    )
+)
+
+ESPACIO = registrar(
+    TipoElemento(
+        nombre="espacio",
+        etiqueta="Espacio",
+        disciplina=Disciplina.GENERAL,
+        version=1,
+        propiedades=(
+            DefPropiedad("nombre", "Nombre", Clase.TEXTO, obligatoria_para_aprobar=True),
+            DefPropiedad("superficie", "Superficie", Clase.NUMERO, "m**2"),
+            DefPropiedad("perimetro", "Perímetro", Clase.NUMERO, "m"),
+            # Excepciones a la altura del nivel (si no constan, se hereda la del nivel).
+            DefPropiedad("altura_libre", "Altura libre (si no es la del nivel)", Clase.NUMERO, "m"),
+            DefPropiedad("altura_minima", "Altura mínima (cubierta inclinada)", Clase.NUMERO, "m"),
+            DefPropiedad("altura_maxima", "Altura máxima (cubierta inclinada)", Clase.NUMERO, "m"),
+        ),
+    )
+)
+
+OBSTACULO = registrar(
+    TipoElemento(
+        nombre="obstaculo",
+        etiqueta="Obstáculo",
+        disciplina=Disciplina.GENERAL,
+        version=1,
+        propiedades=(
+            DefPropiedad("nombre", "Nombre (pilar, cercha, equipo existente…)", Clase.TEXTO),
+            DefPropiedad("superficie", "Superficie en planta", Clase.NUMERO, "m**2"),
+            DefPropiedad(
+                "cota_inferior", "Cota inferior sobre el suelo del nivel", Clase.NUMERO, "m"
+            ),
+            # Si no consta, ocupa toda la altura del nivel (como un pilar).
+            DefPropiedad("altura", "Altura (si no ocupa toda la del nivel)", Clase.NUMERO, "m"),
+        ),
+    )
+)
+
+#: Se crean desde el paso «Planos», con su geometría y su procedencia; no a mano en
+#: «Equipos» (un espacio sin contorno no tendría de dónde sacar su superficie).
+TIPOS_DE_PLANO = frozenset({NIVEL.nombre, ESPACIO.nombre, OBSTACULO.nombre})

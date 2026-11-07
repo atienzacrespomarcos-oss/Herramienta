@@ -34,6 +34,10 @@ from dataclasses import dataclass
 
 #: Flecha máxima (m) al aproximar un arco por cuerdas para clasificar puntos: 1 mm.
 FLECHA_MAX = 0.001
+#: Motor y versión con que se anotan en el registro de cálculo la superficie y el
+#: perímetro. Si cambian las fórmulas, cambia la versión.
+MOTOR = "geometria.contorno"
+VERSION = "1.0.0"
 
 
 class ContornoInvalido(ValueError):

@@ -71,8 +71,8 @@ from traza.app.ordenes import (
 from traza.app.proyecto import Proyecto
 from traza.core.estados import Estado
 from traza.core.numeros import escribir_numero
+from traza.core.tipos import TIPOS_DE_PLANO, tipos
 from traza.core.tipos import tipo as tipo_de
-from traza.core.tipos import tipos
 from traza.ui.dialogos import Preguntas
 
 ETIQUETA_ORIGEN = {
@@ -1057,7 +1057,10 @@ class VentanaPrincipal(QMainWindow):
         try:
             self.arbol.clear()
             if self.proyecto is not None:
-                elementos = self.proyecto.elementos()
+                # Niveles, espacios y obstáculos viven en el paso «Planos».
+                elementos = [
+                    e for e in self.proyecto.elementos() if e["tipo"] not in TIPOS_DE_PLANO
+                ]
                 nodos: dict[str, QTreeWidgetItem] = {}
                 pendientes = list(elementos)
                 # Padres antes que hijos, sea cual sea el orden alfabético.
@@ -1276,7 +1279,10 @@ class VentanaPrincipal(QMainWindow):
     # --- Acciones: elementos -------------------------------------------------------------
 
     def accion_nuevo_elemento(self) -> None:
-        r = self.preguntas.nuevo_elemento(list(tipos()), self.proyecto.elementos())
+        r = self.preguntas.nuevo_elemento(
+            [t for t in tipos() if t.nombre not in TIPOS_DE_PLANO],
+            [e for e in self.proyecto.elementos() if e["tipo"] not in TIPOS_DE_PLANO],
+        )
         if r is None:
             return
         tipo, codigo, padre = r

@@ -261,3 +261,111 @@ def exportar_modificado(destino: Path, proyecto: str, modificado: dict, resumen)
     wb.save(temporal)
     temporal.replace(destino)
     return destino
+
+
+# --- Plano (Etapa 3, docs/modules/geometria.md) -------------------------------------------
+
+
+def _hoja(wb, titulo: str, columnas: list[tuple[str, int]], filas: list[list], numericas=()):
+    ws = wb.create_sheet(titulo)
+    ws.append([c for c, _ in columnas])
+    for celda in ws[1]:
+        celda.font = Font(bold=True)
+    for i, (_, ancho) in enumerate(columnas, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+    for fila in filas:
+        ws.append([_texto(v) for v in fila])
+        for col in numericas:
+            ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
+    _sin_formulas(ws)
+    ws.freeze_panes = "A2"
+    return ws
+
+
+def exportar_plano(
+    destino: Path,
+    proyecto: str,
+    plano: dict,
+    espacios: list[dict],
+    obstaculos: list[dict],
+    bloques,
+    longitudes,
+    avisos_lectura: list[str],
+) -> Path:
+    """Espacios, obstáculos, bloques por capa y espacio, y longitudes por capa de un plano.
+
+    Superficies y perímetros, del contorno confirmado (cálculo exacto). Alturas: la propia o
+    la del nivel, y se dice cuál. Lo que no consta, vacío."""
+    if destino.suffix.lower() != ".xlsx":
+        destino = destino.with_name(destino.name + ".xlsx")
+    wb = Workbook()
+    wb.remove(wb.active)
+    _hoja(
+        wb,
+        "Espacios",
+        [("Código", 10), ("Nombre", 28), ("Nivel", 18), ("Superficie (m²)", 15),
+         ("Perímetro (m)", 14), ("Altura (m)", 11), ("Altura de", 12), ("Alt. mín. (m)", 12),
+         ("Alt. máx. (m)", 12), ("Capa", 20), ("Entidad DXF", 12)],
+        [
+            [e["codigo"], e["nombre"], e["nivel_nombre"], e["superficie"], e["perimetro"],
+             e["altura"], e["altura_origen"], e["altura_minima"], e["altura_maxima"], e["capa"],
+             e["handle"]]
+            for e in espacios
+        ],
+        numericas=(4, 5, 6, 8, 9),
+    )  # fmt: skip
+    _hoja(
+        wb,
+        "Obstáculos",
+        [("Código", 10), ("Nombre", 28), ("Nivel", 18), ("Superficie (m²)", 15),
+         ("Cota inferior (m)", 16), ("Altura (m)", 11), ("Altura de", 12), ("Capa", 20),
+         ("Entidad DXF", 12)],
+        [
+            [o["codigo"], o["nombre"], o["nivel_nombre"], o["superficie"], o["cota_inferior"],
+             o["altura"], o["altura_origen"], o["capa"], o["handle"]]
+            for o in obstaculos
+        ],
+        numericas=(4, 5, 6),
+    )  # fmt: skip
+    _hoja(
+        wb,
+        "Bloques",
+        [("Bloque", 28), ("Capa", 20), ("Espacio", 32), ("Cantidad", 10)],
+        [[f.bloque, f.capa, f.espacio, f.cantidad] for f in bloques.filas],
+    )
+    _hoja(
+        wb,
+        "Longitudes por capa",
+        [("Capa", 28), ("Longitud en planta (m)", 22), ("Visible", 9), ("Sin medir", 10)],
+        [
+            [f.capa, f.longitud_m, "Sí" if f.visible else "No", f.sin_medir or None]
+            for f in longitudes
+        ],
+        numericas=(2,),
+    )
+    notas = [
+        ["Proyecto", proyecto],
+        ["Plano", plano["documento_nombre"]],
+        ["Unidad del dibujo (confirmada)", plano["unidad"]],
+        ["Capas de espacios", ", ".join(plano["capas_espacios"])],
+        ["Capas de obstáculos", ", ".join(plano["capas_obstaculos"])],
+        ["Capas de nombres", ", ".join(plano["capas_textos"]) or "todas"],
+        ["Generado por", "TRAZA"],
+        ["Nota", "Celdas vacías = no consta (no es cero)."],
+        ["Nota", "Superficies y perímetros: cálculo exacto del contorno (con arcos)."],
+        ["Nota", "Longitudes: en planta (proyección horizontal); SPLINE y ELLIPSE no se miden."],
+    ]
+    if bloques.en_varios:
+        notas.append(
+            [
+                "Aviso",
+                f"{bloques.en_varios} bloque(s) caen en varios espacios: cuentan en el menor.",
+            ]
+        )
+    notas += [["Aviso de lectura", a] for a in avisos_lectura]
+    _hoja(wb, "Información", [("Dato", 30), ("Valor", 90)], notas)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporal = destino.with_suffix(".xlsx.parcial")
+    wb.save(temporal)
+    temporal.replace(destino)
+    return destino

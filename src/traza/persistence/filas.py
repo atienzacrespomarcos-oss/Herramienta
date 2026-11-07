@@ -27,6 +27,9 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "partida": ("id",),
     "modificado": ("id",),
     "cambio_modificado": ("id",),
+    "plano": ("id",),
+    "geometria": ("elemento_id",),
+    "registro_calculo": ("id",),
 }
 
 

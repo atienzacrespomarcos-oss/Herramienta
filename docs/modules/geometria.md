@@ -1,7 +1,10 @@
 # Módulo: geometría desde planos DXF
 
-Estado: **en desarrollo**. Este bloque (3.A) entrega el lector DXF y la geometría de contornos;
-faltan el modelo (3.B) y la interfaz (3.C).
+Estado: **en desarrollo**. Hechos:
+- 3.A: el lector DXF y la geometría de contornos;
+- 3.B: niveles, espacios y obstáculos en el modelo, con su Excel.
+
+Falta la interfaz (3.C).
 
 ## Decisiones del usuario (06-11-2026)
 
@@ -123,12 +126,63 @@ semicírculo hacia fuera y hacia dentro, cuarto de círculo, arco de 270°), pru
 hypothesis (traslación y bulges cualesquiera) y casos límite (bulge diminuto, coordenadas
 UTM).
 
+## Modelo (3.B): niveles, espacios y obstáculos
+
+**Cómo se lee un plano** (`plano`, esquema V4). Lo decide el usuario y queda guardado:
+- unidad confirmada (mm, cm, dm o m);
+- capas de **espacios**, de **obstáculos** y de **nombres**. Si no se eligen capas de
+  nombres, valen los textos de todas.
+
+Las capas tienen que existir en el dibujo, y una capa no puede ser a la vez de espacios y de
+obstáculos. La unidad no se cambia si ya hay geometría confirmada con ella, porque sus
+superficies ya no corresponderían al plano.
+
+**Propuestas** (`app/planos.py`):
+- Son todos los contornos cerrados de las capas elegidas que aún no están confirmados ni
+  descartados.
+- Cada una lleva su superficie y su perímetro en m y los textos de la capa de nombres que
+  caen dentro.
+- Solo se **sugiere** nombre si cae **un** texto. Con varios, elegir uno sería suponer.
+- Descartar una propuesta la quita de la lista. Se puede recuperar.
+
+**Confirmar** (`ConfirmarContorno`) crea un **espacio** (ESP-001…) o un **obstáculo**
+(OBS-001…), según la capa, colgado de un **nivel** (NIV-01…). Cada valor lleva su origen:
+
+| Valor | Origen |
+|---|---|
+| Contorno | Tabla `geometria`: en metros, con la entidad del DXF (handle y capa) de la que sale. |
+| Superficie y perímetro | **Cálculo**, con su registro: motor `geometria.contorno` 1.0.0, huella de las entradas (documento, handle, unidad, vértices), fórmula y «sin aproximaciones». Los calcula la propia orden con el núcleo: no se fía del valor que le pasen. |
+| Nombre | El **texto del plano**, citado con su handle y capa, o el que escribe el usuario (origen «usuario»). |
+| Alturas | **Nivel**: cota (admite negativa, sótanos) y altura libre. **Espacio**: la hereda del nivel salvo excepción propia (altura libre, o mínima y máxima en cubierta inclinada). **Obstáculo**: cota inferior y altura; sin altura, ocupa toda la del nivel. Las consultas dicen siempre si la altura es «propia» o «del nivel». |
+
+Un contorno que **se corta a sí mismo no se confirma**: su superficie no tiene sentido.
+Hay que corregirlo en el plano.
+
+**Quitar** un espacio u obstáculo lo devuelve a las propuestas. Un nivel con espacios no se
+quita. Todo se puede deshacer.
+
+**Bloques por espacio:**
+- Se cuentan por nombre, capa y espacio según su **punto de inserción**.
+- Un bloque que cae en varios espacios (uno dentro de otro) cuenta en el más pequeño, y se
+  dice cuántos hay así.
+- Los que no caen en ningún espacio salen como «Fuera de los espacios confirmados».
+
+**Longitudes por capa**, en metros y en planta.
+
+**Excel del plano**, con estas hojas:
+- Espacios;
+- Obstáculos;
+- Bloques;
+- Longitudes por capa;
+- Información: unidad, capas, notas y avisos de lectura.
+
+Lo que no consta queda vacío.
+
+Los niveles, espacios y obstáculos no aparecen en el paso «Equipos»: se crean con su
+geometría desde «Planos».
+
 ## Pendiente
 
-- 3.B Modelo:
-  - niveles, espacios y obstáculos con procedencia (documento + handle de la entidad);
-  - propuestas confirmadas por el usuario;
-  - bloques por capa y espacio, y longitudes por capa, en Excel.
 - 3.C Interfaz: paso «Planos», solo en encargos con diseño, con visor 2D.
 - Validación con un **DXF real del usuario**: superficies y alturas frente a su medición
   manual, y capas y bloques reconocidos (criterio de la Etapa 2 de la hoja de ruta).

@@ -190,5 +190,35 @@ CREATE TABLE cambio_modificado (
 CREATE INDEX cambio_modificado_partida ON cambio_modificado(partida_id);
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3)
+# V4 (07-11-2026): geometría desde planos DXF (docs/modules/geometria.md, ADR-0014).
+# - `plano`: cómo se lee un DXF del proyecto. Lo decide el usuario: unidad confirmada y
+#   qué capas son espacios, obstáculos y nombres. `descartados`: propuestas que el usuario
+#   ha rechazado (handles), para no volver a proponerlas.
+# - `geometria`: el contorno (en metros, coordenadas del dibujo) de un elemento confirmado,
+#   con la entidad DXF de la que sale: la procedencia de la geometría.
+V4 = """
+CREATE TABLE plano (
+    id TEXT PRIMARY KEY,
+    documento_id TEXT NOT NULL UNIQUE REFERENCES documento(id),
+    unidad TEXT NOT NULL CHECK (unidad IN ('mm','cm','dm','m')),
+    capas_espacios TEXT NOT NULL,
+    capas_obstaculos TEXT NOT NULL,
+    capas_textos TEXT NOT NULL,
+    descartados TEXT NOT NULL,
+    lector TEXT NOT NULL,
+    version_lector TEXT NOT NULL,
+    leido TEXT NOT NULL
+);
+
+CREATE TABLE geometria (
+    elemento_id TEXT PRIMARY KEY REFERENCES elemento(id),
+    plano_id TEXT NOT NULL REFERENCES plano(id),
+    handle TEXT NOT NULL CHECK (length(trim(handle)) > 0),
+    capa TEXT NOT NULL,
+    contorno TEXT NOT NULL,
+    UNIQUE (plano_id, handle)
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4)
 VERSION_ACTUAL = len(MIGRACIONES)
