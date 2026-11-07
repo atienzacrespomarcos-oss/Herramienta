@@ -2,6 +2,32 @@
 
 ## [Sin publicar]
 
+### Etapa 3 · geometría DXF, bloque B (07-11-2026)
+- Esquema V4: `plano` (unidad confirmada, capas de espacios, obstáculos y nombres;
+  propuestas descartadas) y `geometria` (contorno en metros con su entidad DXF).
+- Tipos nivel, espacio y obstáculo. Alturas por nivel, con excepciones por espacio y
+  obstáculo.
+- Propuestas de contornos con superficie, perímetro y textos de dentro. Se confirman como
+  espacio u obstáculo, se descartan o se recuperan.
+- Superficie y perímetro con origen «cálculo» y su registro (motor, versión, entradas y
+  fórmula). El nombre sale del texto del plano, citado, o del usuario.
+- Bloques por capa y espacio, longitudes por capa y Excel del plano.
+- Los niveles, espacios y obstáculos no salen en «Equipos».
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - el Excel ya no convierte en fórmula un texto con «=» en ninguna fila;
+  - no se puede quitar un espacio de un nivel aprobado;
+  - no se cambia el nivel de un espacio aprobado que hereda su altura;
+  - los resultados de cálculo no se pisan ni se borran a mano;
+  - altura de espacio en tres modos coherentes; alturas que no admiten 0;
+  - un obstáculo elevado no hereda la altura del nivel;
+  - los tipos de plano no se crean por otra vía;
+  - descartar solo lo que es una propuesta;
+  - capas sin distinguir mayúsculas;
+  - el historial muestra los elementos quitados.
+- Segunda revisión: repetir una altura propuesta por la IA la hace del usuario; una misma
+  capa con otras mayúsculas ya no sale partida; las capas se guardan con el nombre del DXF;
+  el bloqueo de un nivel dice qué elementos aprobados dependen de él.
+
 ### Etapa 3 · geometría DXF, bloque A (06-11-2026)
 - Lector DXF (ezdxf). Hace inventario del espacio modelo:
   - capas;

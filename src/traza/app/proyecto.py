@@ -14,12 +14,17 @@ from typing import Any
 from traza.ai import claude_code
 from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
+from traza.app import planos as calculo_planos
 from traza.app.ordenes import (
     ENCARGOS,
     CambiarEstado,
+    CambiarPlano,
+    ConfirmarContorno,
     CrearPendiente,
+    DescartarPropuesta,
     FijarPropiedad,
     ImportarMedicion,
+    LeerPlano,
     Orden,
     OrdenRechazada,
     PartidaNueva,
@@ -28,11 +33,12 @@ from traza.app.ordenes import (
     nuevo_id,
 )
 from traza.core.estados import Estado
-from traza.core.procedencia import Origen
-from traza.io import bc3, bc3_modificar
+from traza.core.geometria import Contorno, Vertice
+from traza.core.procedencia import Origen, Procedencia
+from traza.io import bc3, bc3_modificar, dxf
 from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
-from traza.io.excel import exportar_modificado, exportar_partidas
+from traza.io.excel import exportar_modificado, exportar_partidas, exportar_plano
 from traza.io.pdf import contar_paginas, renderizar_pagina
 from traza.persistence import carpeta as fs
 from traza.persistence.filas import Conflicto, Delta, a_json, aplicar, leer
@@ -59,6 +65,8 @@ class Proyecto:
         #: Quién lee PDF y Excel. Por defecto Claude Code (ADR-0013); las pruebas lo sustituyen.
         self.extractor_ia = claude_code.extraer
         self._rehacer: list[_Paso] = []
+        #: DXF ya leídos en esta sesión (el documento no cambia).
+        self._planos_dxf: dict[str, dxf.PlanoDxf] = {}
 
     # --- Ciclo de vida -----------------------------------------------------------------
 
@@ -209,22 +217,41 @@ class Proyecto:
 
     def _comprobar_bloqueo(self, d: Delta) -> None:
         """Línea roja 5: lo aprobado no se toca sin reabrirlo con una decisión escrita."""
+        afectados: list[dict | None] = []
         if d.tabla == "elemento":
-            el = d.antes
-            if el is None and d.despues is not None and d.despues["padre_id"]:
-                # Añadir un componente a un conjunto aprobado también lo modifica.
-                el = leer(self._con, "elemento", {"id": d.despues["padre_id"]})
+            afectados.append(d.antes)
+            fila = d.despues if d.antes is None else (d.antes if d.despues is None else None)
+            if fila is not None and fila["padre_id"]:
+                # Añadir un componente a un conjunto aprobado, o quitárselo, también lo
+                # modifica (revisión 07-11-2026: quitar un espacio de un nivel aprobado pasaba).
+                afectados.append(leer(self._con, "elemento", {"id": fila["padre_id"]}))
         elif d.tabla in ("propiedad", "decision"):
             fila = d.antes or d.despues
             assert fila is not None
             el = leer(self._con, "elemento", {"id": fila["elemento_id"]})
+            afectados.append(el)
+            if d.tabla == "propiedad" and el is not None and el["tipo"] == "nivel":
+                # Los espacios y obstáculos heredan la altura del nivel (y su nombre y cota
+                # salen con ellos): cambiarlo cambia los aprobados en silencio (revisión
+                # 07-11-2026).
+                aprobados = self._filas(
+                    "SELECT codigo FROM elemento WHERE padre_id = ? AND estado = ?",
+                    (el["id"], str(Estado.APROBADO)),
+                )
+                if aprobados:
+                    raise ElementoBloqueado(
+                        f"El nivel «{el['codigo']}» tiene elementos aprobados que dependen de "
+                        f"él ({', '.join(a['codigo'] for a in aprobados)}): reábrelos antes "
+                        "de cambiarlo."
+                    )
         else:
             return
-        if el is not None and el["estado"] == Estado.APROBADO:
-            raise ElementoBloqueado(
-                f"«{el['codigo']}» está aprobado. Para cambiarlo hay que reabrirlo indicando "
-                "el motivo."
-            )
+        for el in afectados:
+            if el is not None and el["estado"] == Estado.APROBADO:
+                raise ElementoBloqueado(
+                    f"«{el['codigo']}» está aprobado. Para cambiarlo hay que reabrirlo "
+                    "indicando el motivo."
+                )
 
     def _transaccion(self, nombre, autor, obtener_deltas, orden_id: str | None = None) -> _Paso:
         orden_id = orden_id or nuevo_id()
@@ -707,6 +734,249 @@ class Proyecto:
         ]
         return ruta, avisos
 
+    # --- Planos: niveles, espacios y obstáculos (Etapa 3) --------------------------------
+
+    def plano_dxf(self, documento_id: str) -> dxf.PlanoDxf:
+        """Lo leído de un DXF del proyecto. El documento no cambia (almacén de solo lectura),
+        así que se lee una vez por sesión."""
+        if documento_id not in self._planos_dxf:
+            doc = leer(self._con, "documento", {"id": documento_id})
+            if doc is None:
+                raise OrdenRechazada("Documento no incorporado.")
+            if doc["extension"].lower() != ".dxf":
+                raise OrdenRechazada(f"«{doc['nombre_original']}» no es un DXF.")
+            try:
+                self._planos_dxf[documento_id] = dxf.leer_dxf(self.ruta_documento(documento_id))
+            except dxf.DxfError as exc:
+                raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        return self._planos_dxf[documento_id]
+
+    def leer_plano(
+        self,
+        documento_id: str,
+        unidad: str,
+        capas_espacios: list[str],
+        capas_obstaculos: list[str],
+        capas_textos: list[str] | None = None,
+    ) -> str:
+        """Registra cómo se lee un DXF. Las capas tienen que existir en el dibujo."""
+        plano = self.plano_dxf(documento_id)
+        _capas_existen(plano, [*capas_espacios, *capas_obstaculos, *(capas_textos or [])])
+        orden = LeerPlano(
+            documento_id,
+            unidad,
+            _nombres_del_dxf(plano, capas_espacios),
+            _nombres_del_dxf(plano, capas_obstaculos),
+            _nombres_del_dxf(plano, capas_textos),
+            dxf.LECTOR,
+            dxf.VERSION,
+        )
+        self.ejecutar(orden)
+        return orden.id
+
+    def cambiar_plano(
+        self,
+        plano_id: str,
+        unidad: str,
+        capas_espacios: list[str],
+        capas_obstaculos: list[str],
+        capas_textos: list[str] | None = None,
+    ) -> None:
+        fila = self.plano(plano_id)
+        dibujo = self.plano_dxf(fila["documento_id"])
+        _capas_existen(dibujo, [*capas_espacios, *capas_obstaculos, *(capas_textos or [])])
+        self.ejecutar(
+            CambiarPlano(
+                plano_id,
+                unidad,
+                _nombres_del_dxf(dibujo, capas_espacios),
+                _nombres_del_dxf(dibujo, capas_obstaculos),
+                _nombres_del_dxf(dibujo, capas_textos),
+            )
+        )
+
+    def planos(self) -> list[dict[str, Any]]:
+        filas = self._filas(
+            "SELECT p.*, d.nombre_original AS documento_nombre FROM plano p"
+            " JOIN documento d ON d.id = p.documento_id ORDER BY p.leido"
+        )
+        for f in filas:
+            for clave in ("capas_espacios", "capas_obstaculos", "capas_textos", "descartados"):
+                f[clave] = json.loads(f[clave])
+        return filas
+
+    def plano(self, plano_id: str) -> dict[str, Any]:
+        fila = next((p for p in self.planos() if p["id"] == plano_id), None)
+        if fila is None:
+            raise OrdenRechazada("Ese plano no está leído en el proyecto.")
+        return fila
+
+    def propuestas(self, plano_id: str) -> list[calculo_planos.Propuesta]:
+        p = self.plano(plano_id)
+        confirmados = {
+            r["handle"]
+            for r in self._filas("SELECT handle FROM geometria WHERE plano_id = ?", (plano_id,))
+        }
+        return calculo_planos.propuestas(
+            self.plano_dxf(p["documento_id"]),
+            p["unidad"],
+            p["capas_espacios"],
+            p["capas_obstaculos"],
+            p["capas_textos"],
+            confirmados,
+            set(p["descartados"]),
+        )
+
+    def confirmar_contorno(
+        self,
+        plano_id: str,
+        handle: str,
+        nivel_id: str,
+        nombre: str | None = None,
+        texto_handle: str | None = None,
+        altura: float | None = None,
+        cota_inferior: float | None = None,
+    ) -> str:
+        """Confirma una propuesta como espacio u obstáculo (según su capa). Con
+        `texto_handle`, el nombre es ese texto del plano y lo cita."""
+        p = self.plano(plano_id)
+        propuesta = next((x for x in self.propuestas(plano_id) if x.handle == handle), None)
+        if propuesta is None:
+            raise OrdenRechazada(
+                "Ese contorno no está entre las propuestas (ya confirmado, descartado o fuera "
+                "de las capas elegidas)."
+            )
+        procedencia = None
+        if texto_handle is not None:
+            texto = next((t for t in propuesta.textos if t.handle == texto_handle), None)
+            if texto is None:
+                raise OrdenRechazada("Ese texto no está dentro del contorno.")
+            nombre = texto.texto
+            procedencia = Procedencia(
+                Origen.DOCUMENTO,
+                documento_id=p["documento_id"],
+                localizador=f"texto {texto.handle} (capa «{texto.capa}»)",
+            )
+        orden = ConfirmarContorno(
+            propuesta.rol,
+            plano_id,
+            handle,
+            propuesta.capa,
+            nivel_id,
+            tuple((v.x, v.y, v.bulge) for v in propuesta.contorno.vertices),
+            nombre,
+            procedencia,
+            altura,
+            cota_inferior,
+        )
+        self.ejecutar(orden)
+        return orden.id
+
+    def descartar_propuesta(self, plano_id: str, handle: str) -> None:
+        """Descarta una propuesta que existe (la orden sola no conoce el DXF)."""
+        if handle not in {x.handle for x in self.propuestas(plano_id)}:
+            raise OrdenRechazada("Ese contorno no está entre las propuestas del plano.")
+        self.ejecutar(DescartarPropuesta(plano_id, handle))
+
+    def _valores(self, tipos_elemento: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+        marcas = ",".join("?" * len(tipos_elemento))
+        valores: dict[str, dict[str, Any]] = {}
+        for r in self._filas(
+            "SELECT p.elemento_id, p.clave, p.valor FROM propiedad p"
+            f" JOIN elemento e ON e.id = p.elemento_id WHERE e.tipo IN ({marcas})",
+            tipos_elemento,
+        ):
+            valores.setdefault(r["elemento_id"], {})[r["clave"]] = json.loads(r["valor"])
+        return valores
+
+    def niveles(self) -> list[dict[str, Any]]:
+        v = self._valores(("nivel",))
+        filas = self._filas("SELECT * FROM elemento WHERE tipo = 'nivel' ORDER BY codigo")
+        for f in filas:
+            f.update({k: v.get(f["id"], {}).get(k) for k in ("nombre", "cota", "altura_libre")})
+        return sorted(filas, key=lambda f: (f["cota"] is None, f["cota"], f["codigo"]))
+
+    def contornos_confirmados(self, tipo_elemento: str) -> list[dict[str, Any]]:
+        """Espacios u obstáculos con su nivel, geometría y alturas.
+
+        Altura de un espacio (decisión del usuario): la suya si consta; si no, la del nivel
+        («heredada»). Con altura mínima y máxima (cubierta inclinada), las dos.
+        """
+        v = self._valores((tipo_elemento, "nivel"))
+        filas = self._filas(
+            "SELECT e.*, g.plano_id, g.handle, g.capa, g.contorno, n.codigo AS nivel_codigo"
+            " FROM elemento e JOIN geometria g ON g.elemento_id = e.id"
+            " LEFT JOIN elemento n ON n.id = e.padre_id"
+            " WHERE e.tipo = ? ORDER BY e.codigo",
+            (tipo_elemento,),
+        )
+        for f in filas:
+            propias = v.get(f["id"], {})
+            nivel = v.get(f["padre_id"], {})
+            f["nivel_nombre"] = nivel.get("nombre")
+            f["contorno"] = Contorno(tuple(Vertice(*xyb) for xyb in json.loads(f["contorno"])))
+            for k in (
+                "nombre",
+                "superficie",
+                "perimetro",
+                "altura_minima",
+                "altura_maxima",
+                "cota_inferior",
+            ):
+                f[k] = propias.get(k)
+            clave = "altura_libre" if tipo_elemento == "espacio" else "altura"
+            inclinada = f["altura_minima"] is not None or f["altura_maxima"] is not None
+            if propias.get(clave) is not None:
+                f["altura"], f["altura_origen"] = propias[clave], "propia"
+            elif inclinada:
+                # Cubierta inclinada: no hay UNA altura; mínima y máxima van en sus columnas
+                # (revisión 07-11-2026: salía la del nivel junto a la mínima y la máxima).
+                f["altura"], f["altura_origen"] = None, "inclinada"
+            elif tipo_elemento == "obstaculo" and (f["cota_inferior"] or 0) > 0:
+                # Un obstáculo que no arranca del suelo no ocupa toda la altura del nivel:
+                # heredarla daría una cara superior por encima del techo. No consta.
+                f["altura"], f["altura_origen"] = None, None
+            elif nivel.get("altura_libre") is not None:
+                f["altura"], f["altura_origen"] = nivel["altura_libre"], "del nivel"
+            else:
+                f["altura"], f["altura_origen"] = None, None
+        return filas
+
+    def espacios(self) -> list[dict[str, Any]]:
+        return self.contornos_confirmados("espacio")
+
+    def obstaculos(self) -> list[dict[str, Any]]:
+        return self.contornos_confirmados("obstaculo")
+
+    def bloques_por_espacio(self, plano_id: str) -> calculo_planos.Bloques:
+        p = self.plano(plano_id)
+        espacios = [
+            calculo_planos.EspacioConfirmado(e["id"], e["codigo"], e["nombre"] or "", e["contorno"])
+            for e in self.espacios()
+            if e["plano_id"] == plano_id
+        ]
+        return calculo_planos.bloques_por_espacio(
+            self.plano_dxf(p["documento_id"]), p["unidad"], espacios
+        )
+
+    def longitudes_por_capa(self, plano_id: str) -> list[calculo_planos.FilaLongitud]:
+        p = self.plano(plano_id)
+        return calculo_planos.longitudes_por_capa(self.plano_dxf(p["documento_id"]), p["unidad"])
+
+    def exportar_plano_excel(self, plano_id: str, destino: Path) -> Path:
+        p = self.plano(plano_id)
+        dxf_leido = self.plano_dxf(p["documento_id"])
+        return exportar_plano(
+            Path(destino),
+            self.nombre,
+            p,
+            [e for e in self.espacios() if e["plano_id"] == plano_id],
+            [o for o in self.obstaculos() if o["plano_id"] == plano_id],
+            self.bloques_por_espacio(plano_id),
+            self.longitudes_por_capa(plano_id),
+            dxf_leido.avisos,
+        )
+
 
 def _codigo_libre(propuesto: str, usados: set[str]) -> str:
     """Código BC3 libre a partir de `propuesto` (que ya es válido): si está usado, se le
@@ -717,3 +987,17 @@ def _codigo_libre(propuesto: str, usados: set[str]) -> str:
         codigo = f"{propuesto}.{n}"
     usados.add(codigo)
     return codigo
+
+
+def _capas_existen(plano: dxf.PlanoDxf, capas: list[str]) -> None:
+    existentes = {c.casefold() for c in plano.capas}
+    faltan = sorted({c for c in capas if c.strip().casefold() not in existentes})
+    if faltan:
+        raise OrdenRechazada(f"El plano no tiene la capa «{faltan[0]}».")
+
+
+def _nombres_del_dxf(plano: dxf.PlanoDxf, capas: list[str] | None) -> list[str]:
+    """Las capas con el nombre que tienen en el DXF (el usuario puede escribirlas con otras
+    mayúsculas): así el Excel y la pantalla dicen lo mismo que el plano."""
+    reales = {c.casefold(): c for c in plano.capas}
+    return [reales.get(c.strip().casefold(), c) for c in (capas or [])]
