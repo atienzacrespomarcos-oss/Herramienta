@@ -112,3 +112,29 @@ def test_dibujo_grande_en_poco_tiempo():
     # 399 derivaciones con dos hijos (798 tramos) más el tramo del equipo; el último ramal
     # sale del extremo del tronco: es un codo, no una derivación.
     assert len(top.tramos) == 799 and not top.avisos
+
+
+def test_dos_terminales_en_el_mismo_punto():
+    # Dos difusores juntos al final del conducto: los dos cuentan (antes el segundo se
+    # descartaba diciendo que no estaba junto a ningún eje).
+    top = leer(
+        [[(0, 0), (8, 0)]],
+        [Terminal("D1", 8, 0.02, 0.1), Terminal("D2", 8, -0.02, 0.1)],
+        equipo=(0, 0),
+    )
+    t = _por_terminal(top)
+    assert set(t) == {"D1", "D2"} and not top.avisos
+    assert t["D1"].longitud_m == 0 and t["D2"].longitud_m == 0
+    raiz = next(x.tramo for x in top.tramos if x.tramo.padre is None)
+    assert raiz.caudal_m3s == pytest.approx(0.2) and raiz.terminal is None
+
+
+def test_paso_recto_solo_entre_hermanos_con_caudal():
+    # En la T, la rama que sigue recta no tiene terminal (vacía); la que lleva aire gira
+    # 30°: es el paso (se desvía menos de 45°), no una derivación.
+    top = leer(
+        [[(0, 0), (10, 0), (20, 0)], [(10, 0), (10 + 8.66, 5)]],
+        [Terminal("D", 10 + 8.66, 5, 0.2)],
+        equipo=(0, 0),
+    )
+    assert _por_terminal(top)["D"].es_paso

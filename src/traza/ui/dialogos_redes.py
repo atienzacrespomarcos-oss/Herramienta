@@ -71,7 +71,7 @@ class DialogoRed(QDialog):
         f.addRow("Bloque del equipo", self.equipo)
         f.addRow(self.climatizacion)
         f.addRow("Pérdida de carga objetivo (Pa/m)", self.friccion)
-        f.addRow("Alto máximo del conducto (mm, vacío = sin límite)", self.alto)
+        f.addRow("Alto máximo del conducto (mm; vacío = hasta 3 m)", self.alto)
         f.addRow("Forma", self.forma)
         f.addRow("Salto térmico de impulsión (K)", self.salto)
         f.addRow(self.error)

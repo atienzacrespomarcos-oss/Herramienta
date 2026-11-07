@@ -60,49 +60,11 @@ def k_reynolds(re: float, r_b: float) -> float:
 
 
 def codo_radio(a: float, b: float, r_b: float, angulo: float, re: float) -> float:
-    """C = C′·K_Re·K_θ. a = ancho (en el plano del giro, el «b» del manual es el lado del
-    giro): se usa a/b con b = lado en el plano del giro."""
+    """C = C′·K_Re·K_θ, con b = lado en el plano del giro y a = el otro (como en el manual).
+    Por debajo de 20° (la tabla de K_θ empieza ahí) se toma el valor de 20°, del lado de la
+    seguridad."""
     c = interpolar_tabla(CODO_R_B, CODO_A_B, CODO_C, r_b, a / b)
     return c * k_reynolds(re, r_b) * interpolar(THETA, K_THETA, angulo)
-
-
-# --- Codo a bisel, sin álabes (p. 54) ----------------------------------------------------
-BISEL_THETA = (20, 30, 45, 60, 75, 90)
-BISEL_C = (
-    (0.08, 0.08, 0.08, 0.07, 0.07, 0.07, 0.06, 0.06, 0.05, 0.05, 0.05),
-    (0.18, 0.17, 0.17, 0.16, 0.15, 0.15, 0.13, 0.13, 0.12, 0.12, 0.11),
-    (0.38, 0.37, 0.36, 0.34, 0.33, 0.31, 0.28, 0.27, 0.26, 0.25, 0.24),
-    (0.60, 0.59, 0.57, 0.55, 0.52, 0.49, 0.46, 0.43, 0.41, 0.39, 0.38),
-    (0.89, 0.87, 0.84, 0.81, 0.77, 0.73, 0.67, 0.63, 0.61, 0.58, 0.57),
-    (1.3, 1.3, 1.2, 1.2, 1.1, 1.1, 0.98, 0.92, 0.89, 0.85, 0.83),
-)
-K_RE_BISEL = (1.40, 1.26, 1.19, 1.14, 1.09, 1.06, 1.04, 1.0)
-RE_BISEL_1E4 = (1, 2, 3, 4, 6, 8, 10, 14)
-
-
-def codo_bisel(a: float, b: float, angulo: float, re: float) -> float:
-    c = interpolar_tabla(BISEL_THETA, CODO_A_B, BISEL_C, angulo, a / b)
-    return c * interpolar(RE_BISEL_1E4, K_RE_BISEL, re / 1e4)
-
-
-# --- Reducción, sección rectangular (p. 53); C con la velocidad de salida -------------
-# Los intervalos del manual («15–40», «50–60») valen lo mismo en sus dos extremos.
-RED_THETA = (10, 15, 40, 50, 60, 90, 120, 150, 180)
-RED_AE_AS = (2, 4, 6, 10)
-RED_C = (
-    (0.05, 0.05, 0.05, 0.06, 0.06, 0.12, 0.18, 0.24, 0.26),
-    (0.05, 0.04, 0.04, 0.07, 0.07, 0.17, 0.27, 0.35, 0.41),
-    (0.05, 0.04, 0.04, 0.07, 0.07, 0.18, 0.28, 0.36, 0.42),
-    (0.05, 0.05, 0.05, 0.08, 0.08, 0.19, 0.29, 0.37, 0.43),
-)
-
-
-def reduccion(area_entrada: float, area_salida: float, angulo: float = 30.0) -> float:
-    """Reducción (estrechamiento) con la velocidad de SALIDA. 30° de ángulo total por
-    defecto, dentro del intervalo 15–40° del manual."""
-    if area_entrada <= area_salida:
-        return 0.0  # ensanchamiento o igual: no es una reducción
-    return interpolar_tabla(RED_AE_AS, RED_THETA, RED_C, area_entrada / area_salida, angulo)
 
 
 # --- Derivación a bisel (p. 55): 15° < θ ≤ 90°, Ae = As + Ad -------------------------

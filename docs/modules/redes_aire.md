@@ -31,16 +31,14 @@ Estado: **en desarrollo**.
   - viscosidad 1,81·10⁻⁵ Pa·s, la del aire normal de ASHRAE a 20 °C.
 
 ### Pérdidas en accesorios
-- Coeficientes del **manual Climaver, pp. 53–55**, que son los de ASHRAE para chapa:
-  - codo de radio uniforme (C′, K_Re y K_θ);
-  - reducción;
-  - Y simétrica;
-  - codo achaflanado;
-  - codo a bisel;
-  - piezas en Z;
-  - bordeo de obstáculo;
-  - derivación con radio;
-  - derivación a bisel (C_d y C_s).
+- Coeficientes del **manual Climaver, pp. 53–55**, que son los de ASHRAE para chapa. Se usan
+  los dos accesorios que aparecen en una red leída del plano:
+  - **codo de radio uniforme** (C′, K_Re y K_θ):
+    - «b» es el lado en el plano del giro; en un plano en planta, el ancho;
+    - por debajo de 20° se toma K_θ de 20°, del lado de la seguridad;
+  - **derivación a bisel** (C_d y C_s).
+- El manual tiene más piezas (reducción, Y, achaflanado, en Z, bordeo, derivación con
+  radio). Se añadirán cuando la herramienta las distinga en el dibujo.
 - **Errata del manual**: en K_Re de codos con r/b ≥ 0,75 y Re = 6·10⁴ pone 0,46. ASHRAE
   (tabla del codo de radio uniforme) da **1,46**, que es además el único valor que sigue la
   serie decreciente: se usa 1,46.
@@ -61,10 +59,13 @@ Estado: **en desarrollo**.
   - batería de frío en seco 60 Pa;
   - batería de frío con deshumectación 120 Pa;
   - atenuador 60 Pa.
-  Se toman como pérdida por defecto de difusores y rejillas.
+  Se toman como pérdida por defecto de difusores y rejillas. En extracción, 20 Pa: sus
+  rejillas son de aspiración, como las de retorno.
 - **RITE IT 1.2.4.2.5**, potencia específica de ventiladores (SFP, tabla 2.4.2.7):
   - en impulsión, SFP 4 (≤ 2000 W/(m³/s)) en climatización y SFP 3 en ventilación;
-  - en extracción, SFP 3 en climatización y SFP 2 en ventilación.
+  - en extracción, SFP 3 en climatización y SFP 2 en ventilación;
+  - el ventilador de retorno se clasifica como el de extracción: el RITE solo nombra
+    impulsión y extracción.
 - **RITE IT 1.2.4.2.3**: estanquidad de la red, clase ATC 4 o superior.
 
 ### Secciones comerciales
@@ -80,6 +81,8 @@ Estado: **en desarrollo**.
 ### Caudales
 - **Impulsión** de un espacio: el mayor entre su aire exterior y el que pide su carga
   sensible de verano, Q = q_s/(ρ·c_p·ΔT).
+  - Es la carga **del local**: sin la del aire exterior de ventilación, que se trata en el
+    equipo, y con la infiltración, que entra en el local.
   - ΔT de impulsión = 10 K, el salto típico: ASHRAE impulsa a unos 13 °C con el local a
     24 °C, es decir, unos 11 K. Se toma algo menos, del lado de más caudal.
 - **Retorno** de un espacio: su impulsión menos su aire exterior.
@@ -128,6 +131,11 @@ Estado: **en desarrollo**.
 - **Atributos de bloque**:
   - CAUDAL, en m³/h, manda sobre el de las cargas;
   - REF da el código del terminal; una REF repetida se distingue y se avisa.
+
+- **Límites declarados**:
+  - dos ejes colineales que se solapan en parte no se funden;
+  - el alto «sin límite» llega a 3 m, el mayor lado que se fabrica de forma habitual;
+  - con varios bloques de equipo iguales, se toma el más cercano a los ejes de la red.
 
 ## Pendiente
 - Validar con un DXF real del usuario y contrastar con su cálculo previo (criterio de

@@ -26,6 +26,21 @@
 - Listado Excel con tramos, accesorios, terminales, medición e hipótesis.
 - Esquema V6: `red_aire`. Un nivel que usa una red no se quita.
 - CLAUDE.md: se preguntan menos detalles finos de método; se deciden y se documentan.
+- La topología se lee con una rejilla espacial: 2000 segmentos pasan de 97 s a 0,2 s.
+- Presentación limpia en Cargas y Redes, según el criterio del usuario: pocas columnas y el
+  detalle en pestañas o en el Excel.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - un espacio con caudal sin terminales en la red se avisa, y el caudal total cuenta solo
+    los terminales conectados;
+  - dos terminales en el mismo punto cuentan los dos;
+  - las polilíneas cerradas conservan su lado de cierre;
+  - con varios equipos iguales se toma el más cercano a los ejes;
+  - el alto «sin límite» ya no se queda en 1 m;
+  - la relación a/b de los codos usa el ancho como lado en el plano del giro;
+  - el paso recto se decide solo entre ramas con caudal;
+  - el equipo se engancha al punto de eje más cercano;
+  - la impulsión sale de la carga del local, sin la del aire exterior;
+  - se quita el código de accesorios que no se usaba.
 
 ### Etapa 4 · cargas y ventilación (07-11-2026)
 - Criterio de fuentes del usuario: buscar, usar y citar, sin etiquetas de «no verificado»

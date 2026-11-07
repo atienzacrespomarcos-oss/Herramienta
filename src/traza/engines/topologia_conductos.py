@@ -198,7 +198,9 @@ def leer(
                 break
 
     avisos: list[str] = []
-    en_nodo: dict[int, Terminal] = {}
+    # Varios terminales pueden caer en el mismo punto (dos difusores juntos, o junto a un
+    # vértice): antes el segundo se descartaba con un aviso falso (revisión 07-11-2026).
+    en_nodo: dict[int, list[Terminal]] = defaultdict(list)
     for term in terminales:
         p = (term.x, term.y)
         libres = [
@@ -210,17 +212,18 @@ def leer(
             n = min(libres, key=lambda k: _dist(g.nodos[k], p))
         else:
             n = g.punto_en_eje(p, TERMINAL_M)
-        if n is None or n in en_nodo:
+        if n is None:
             avisos.append(f"Terminal {term.codigo}: no está junto a ningún eje; no se calcula.")
             continue
-        en_nodo[n] = term
+        en_nodo[n].append(term)
 
     if equipo is not None:
-        raiz = min(g.ady, key=lambda n: _dist(g.nodos[n], equipo))
-        if _dist(g.nodos[raiz], equipo) > EQUIPO_M:
-            raiz = g.punto_en_eje(equipo, EQUIPO_M)
-            if raiz is None:
-                raise TopologiaInvalida("El bloque del equipo no está junto a ningún eje.")
+        # El punto de eje más cercano (un extremo o un punto intermedio), con el mismo
+        # criterio que los terminales: antes se tomaba el vértice más cercano aunque el eje
+        # pasara mucho más cerca de otro punto (revisión 07-11-2026).
+        raiz = g.punto_en_eje(equipo, EQUIPO_M)
+        if raiz is None:
+            raise TopologiaInvalida("El bloque del equipo no está junto a ningún eje.")
     else:
         libres = [n for n in g.ady if len(g.ady[n]) == 1 and n not in en_nodo]
         if len(libres) != 1:
@@ -268,7 +271,7 @@ def leer(
     caudal_nodo: dict[int, float] = defaultdict(float)
     for n in reversed(orden):
         if n in en_nodo:
-            caudal_nodo[n] += en_nodo[n].caudal_m3s
+            caudal_nodo[n] += sum(x.caudal_m3s for x in en_nodo[n])
         if padre[n] is not None:
             caudal_nodo[padre[n]] += caudal_nodo[n]
 
@@ -297,7 +300,8 @@ def leer(
         # Un difusor montado sobre un conducto que sigue (no en su extremo) no cierra el
         # tramo como terminal: va en su propio ramal de longitud 0 (abajo). Si no, su
         # pérdida se sumaba a los caminos de aguas abajo.
-        terminal = en_nodo.get(camino[-1]) if not hijos[camino[-1]] else None
+        fin = camino[-1]
+        terminal = en_nodo[fin][0] if not hijos[fin] and len(en_nodo.get(fin, ())) == 1 else None
         clase = (
             "terminal" if terminal else "principal" if (camino[0], camino[1]) in tronco else "ramal"
         )
@@ -307,10 +311,12 @@ def leer(
             anterior = next(c for c in crudos if c[-1] == camino[0])
             dir_padre = _direccion_final([g.nodos[i] for i in anterior])
             dir_hijo = _direccion_inicial(list(puntos))
+            # Solo entre hermanos con caudal: uno vacío (que no se calcula) no puede quitarle
+            # el «paso recto» al que sí lleva aire (revisión 07-11-2026).
             angulos = {
                 tuple(c): _angulo(dir_padre, _direccion_inicial([g.nodos[i] for i in c]))
                 for c in crudos
-                if c[0] == camino[0]
+                if c[0] == camino[0] and caudal_nodo[c[-1]] > 0
             }
             recto = min(angulos, key=angulos.get)
             es_paso = tuple(camino) == recto and _angulo(dir_padre, dir_hijo) < PASO_MAX_GRADOS
@@ -331,9 +337,10 @@ def leer(
         )
     n_tramos = len(crudos)
     for n in orden:
-        if n in en_nodo and hijos[n]:
+        if n not in en_nodo or (not hijos[n] and len(en_nodo[n]) == 1):
+            continue
+        for term in en_nodo[n]:
             n_tramos += 1
-            term = en_nodo[n]
             resultado.append(
                 TramoGeometrico(
                     Tramo(

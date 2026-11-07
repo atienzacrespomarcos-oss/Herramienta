@@ -36,8 +36,6 @@ def test_coeficientes_de_tabla():
     assert acc.codo_radio(0.4, 0.4, 1.0, 45, 3e5) == pytest.approx(0.21 * 0.60)
     # Interpolación entre a/b = 1 (0,21) y 1,5 (0,19) en r/b = 1.
     assert acc.codo_radio(0.5, 0.4, 1.0, 90, 3e5) == pytest.approx(0.20)
-    assert acc.reduccion(2.0, 1.0, 30) == pytest.approx(0.05)
-    assert acc.reduccion(1.0, 2.0) == 0  # ensanchamiento: no es reducción
     assert acc.derivacion_ramal(3, 5, 90) == pytest.approx(1.0)
     assert acc.derivacion_ramal(0.5, 1, 45) == pytest.approx(0.45)
     assert acc.derivacion_paso(1.0, 1.0, 0.5) == pytest.approx(0.20)
@@ -114,3 +112,24 @@ def test_potencia_especifica_rite():
     assert cd.categoria_sfp(300) == 0
     assert cd.rendimiento_minimo(1000, 4) == pytest.approx(0.5)
     assert cd.SFP_EXIGIDA[("impulsion", True)] == 4
+
+
+def test_sin_alto_maximo_y_codo_con_el_ancho_en_el_plano_del_giro():
+    # Sin alto máximo se puede pasar de 1 m de alto (antes se limitaba a 1 m sin decirlo).
+    d = cd.dimensionar(25.0, "rectangular", 0.8, 10, alto_max_m=None)
+    assert not d.avisos and d.seccion.b_m > 1.0
+    # Codo de un 600 × 300 que gira en planta: lado en el plano del giro = ancho (600),
+    # a/b = 300/600 = 0,5 ⇒ C′ = 0,25 con r/b = 1 (manual Climaver, p. 53).
+    tramo = cd.Tramo(
+        "T",
+        None,
+        1,
+        0.7,
+        "principal",
+        codos=(90,),
+        seccion_fija=cd.Seccion("rectangular", 0.6, 0.3),
+    )
+    r = cd.calcular_red([tramo], "impulsion", 0.8, 0.4)
+    [(_n, c, _pa)] = r.tramos[0].accesorios
+    re = cd.reynolds(0.7, cd.Seccion("rectangular", 0.6, 0.3))
+    assert c == pytest.approx(0.25 * acc.k_reynolds(re, 1.0))

@@ -51,6 +51,8 @@ DIAMETROS_M = tuple(
 PASO_RECTANGULAR_M = 0.05
 LADO_MINIMO_M = 0.10
 RELACION_MAXIMA = 4.0
+#: Alto con «sin límite»: el mayor lado que se fabrica en panel o chapa de forma habitual.
+ALTO_SIN_LIMITE_M = 3.0
 
 #: Velocidad máxima por clase de tramo (manual Climaver, 4.3.4).
 VELOCIDAD_MAXIMA = {"principal": 10.0, "ramal": 7.5, "terminal": 4.0}
@@ -184,7 +186,8 @@ def dimensionar(
         s = Seccion("circular", DIAMETROS_M[-1])
         return resultado(s, ("Caudal mayor que el del mayor diámetro comercial (Ø1250).",))
 
-    alto = alto_max_m if alto_max_m is not None else 1.0
+    # Sin alto máximo: hasta ALTO_SIN_LIMITE_M (antes se ponía 1 m sin decirlo).
+    alto = alto_max_m if alto_max_m is not None else ALTO_SIN_LIMITE_M
     pasos_b = [LADO_MINIMO_M + PASO_RECTANGULAR_M * i for i in range(200)]
     pasos_b = [b for b in pasos_b if b <= alto + 1e-9] or [LADO_MINIMO_M]
     for relacion, aviso in (
@@ -292,10 +295,12 @@ def calcular_red(
         pv = a.densidad * d.velocidad_m_s**2 / 2
         accesorios: list[tuple[str, float, float]] = []
         s = d.seccion
-        lado_a, lado_b = (s.a_m, s.b_m) if s.forma == "rectangular" else (s.a_m, s.a_m)
+        # Los giros del plano son horizontales: el lado en el plano del giro («b» del manual)
+        # es el ancho, y «a» el alto (revisión 07-11-2026: estaban al revés).
+        ancho, alto = (s.a_m, s.b_m) if s.forma == "rectangular" else (s.a_m, s.a_m)
         re = reynolds(t.caudal_m3s, s, a)
         for angulo in t.codos:
-            c = acc.codo_radio(lado_a, lado_b, R_B_CODO, angulo, re)
+            c = acc.codo_radio(alto, ancho, R_B_CODO, angulo, re)
             accesorios.append((f"Codo {angulo:.0f}°", c, c * pv))
         if t.padre is not None:
             ve = dim[t.padre].velocidad_m_s

@@ -87,10 +87,9 @@ def test_red_calculada_desde_las_cargas(red):
     cargas = {c.nombre: c for c in p.calcular_cargas().espacios}
     ofi = cargas["OFICINAS"]
     presion = p.calcular_cargas().condiciones["normal"].presion_pa
-    q = max(
-        ofi.aire_exterior_m3h,
-        ofi.verano.sensible_w / (CALOR_SENSIBLE_AIRE * presion / 101_325 * 10) * 3600,
-    )
+    # Carga del local sin la del aire exterior (que trata el equipo).
+    local = sum(p.sensible_w for p in ofi.verano.partidas if p.concepto != "Ventilación")
+    q = max(ofi.aire_exterior_m3h, local / (CALOR_SENSIBLE_AIRE * presion / 101_325 * 10) * 3600)
     assert r.caudal_total_m3h == pytest.approx(q)
     assert [t.caudal_m3h for t in r.terminales] == pytest.approx([q / 2, q / 2])
     assert all("OFICINAS" in t.espacio for t in r.terminales)
@@ -212,3 +211,10 @@ def test_validaciones_y_nivel_protegido(red):
     assert p.redes() == []
     p.deshacer()
     assert p.redes()[0]["tipo"] == "extraccion"
+
+
+def test_espacio_sin_terminales_y_terminal_suelto(red):
+    p, red_id, _, _ = red
+    r = p.calcular_red(red_id)
+    # El almacén tiene carga y ningún difusor de esta red: se dice.
+    assert any("ALMACÉN" in a and "no tiene terminales" in a for a in r.avisos)

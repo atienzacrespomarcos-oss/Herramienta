@@ -53,7 +53,12 @@ class ResultadoRedAire:
 
     @property
     def caudal_total_m3h(self) -> float:
-        return sum(t.caudal_m3h for t in self.terminales)
+        """El de los terminales que de verdad cuelgan de la red (uno suelto no lleva aire
+        por ella; revisión 07-11-2026)."""
+        if self.topologia is None:
+            return 0.0
+        conectados = {t.tramo.terminal for t in self.topologia.tramos if t.tramo.terminal}
+        return sum(t.caudal_m3h for t in self.terminales if t.codigo in conectados)
 
     @property
     def sfp_exigida(self) -> int:
@@ -80,7 +85,11 @@ def caudal_espacio_m3h(tipo: str, carga, salto_k: float, presion_pa: float) -> t
     exterior = carga.aire_exterior_m3h
     if tipo == "extraccion":
         return exterior, "aire exterior del espacio (cargas)"
-    sensible = max(carga.verano.sensible_w, 0.0)
+    # La carga del LOCAL: sin la del aire exterior de ventilación, que se trata en el equipo
+    # (sí con la infiltración, que entra al local; revisión 07-11-2026).
+    sensible = max(
+        sum(p.sensible_w for p in carga.verano.partidas if p.concepto != "Ventilación"), 0.0
+    )
     por_carga = sensible / (CALOR_SENSIBLE_AIRE * presion_pa / 101_325 * salto_k) * 3600
     impulsion = max(exterior, por_carga)
     if tipo == "impulsion":
@@ -114,12 +123,22 @@ def calcular(
     equipo = None
     if red["bloque_equipo"]:
         eq = [b for b in plano.bloques if b.nombre.casefold() == red["bloque_equipo"].casefold()]
-        if len(eq) > 1:
-            avisos.append(
-                f"Hay {len(eq)} bloques «{red['bloque_equipo']}»: se toma el primero como equipo."
-            )
         if eq:
-            equipo = (eq[0].x * f, eq[0].y * f)
+            # Con varios equipos iguales (varias UTA), el de esta red es el que está junto a
+            # sus ejes, no el primero del fichero (revisión 07-11-2026).
+            puntos = [p for pl in polilineas for p in pl]
+
+            def lejania(b) -> float:
+                x, y = b.x * f, b.y * f
+                return min(((x - px) ** 2 + (y - py) ** 2 for px, py in puntos), default=0.0)
+
+            elegido = min(eq, key=lejania)
+            equipo = (elegido.x * f, elegido.y * f)
+            if len(eq) > 1:
+                avisos.append(
+                    f"Hay {len(eq)} bloques «{red['bloque_equipo']}»: se toma el más cercano a "
+                    "los ejes de esta red."
+                )
         else:
             avisos.append(f"No hay ningún bloque «{red['bloque_equipo']}» en el plano.")
 
@@ -179,6 +198,19 @@ def calcular(
                 TerminalRed(codigo, b.nombre, b.x * f, b.y * f, donde, caudal, origen)
             )
 
+    # Espacios con caudal y sin ningún terminal de esta red: su aire no entra en el cálculo
+    # (p. ej. retorno por plenum). Se dice, para que no parezca completo (revisión 07-11-2026).
+    if cargas is not None:
+        for e in del_nivel:
+            c = cargas_por_id.get(e["id"])
+            if c is None or e["id"] in por_espacio:
+                continue
+            q, _ = caudal_espacio_m3h(tipo, c, red["salto_impulsion"], presion)
+            if q > 0:
+                avisos.append(
+                    f"{e['codigo']} {e['nombre'] or ''}: necesita {q:.0f} m³/h y no tiene "
+                    "terminales de esta red."
+                )
     con_caudal = [t for t in terminales if t.caudal_m3h > 0]
     try:
         topologia = topo.leer(

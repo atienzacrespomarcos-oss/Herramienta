@@ -343,3 +343,13 @@ def test_capa_citada_con_otras_mayusculas_es_la_misma(tmp_path):
     p = leer_dxf(_guardar(doc, tmp_path))
     assert p.capas["MUROS"].longitud == pytest.approx(7)
     assert "muros" not in p.capas
+
+
+def test_trazo_de_polilinea_cerrada_vuelve_al_primer_punto(tmp_path):
+    # Sin el punto final se perdía el lado de cierre (en el visor y en los ejes de
+    # conductos, donde un contorno cerrado tiene que leerse como anillo).
+    doc, msp = _nuevo()
+    msp.add_lwpolyline([(0, 0), (1000, 0), (1000, 500)], close=True)
+    plano = leer_dxf(_guardar(doc, tmp_path))
+    [(_capa, pts)] = plano.trazos
+    assert pts[0] == pts[-1] and len(pts) == 4
