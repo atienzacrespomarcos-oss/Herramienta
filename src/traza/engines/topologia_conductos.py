@@ -82,37 +82,86 @@ def _angulo(u: Punto, v: Punto) -> float:
     return math.degrees(math.acos(max(-1.0, min(1.0, c))))
 
 
+#: Lado de la celda de la rejilla espacial (m). Sin rejilla, 2000 segmentos tardaban
+#: 97 s (todas las búsquedas recorrían el dibujo entero; revisión 07-11-2026).
+CELDA_M = 1.0
+
+
+def _celda(p: Punto) -> tuple[int, int]:
+    return (math.floor(p[0] / CELDA_M), math.floor(p[1] / CELDA_M))
+
+
 class _Grafo:
     def __init__(self) -> None:
         self.nodos: list[Punto] = []
         self.ady: dict[int, set[int]] = defaultdict(set)
+        self._nodos_celda: dict[tuple[int, int], list[int]] = defaultdict(list)
+        self._aristas_celda: dict[tuple[int, int], set[tuple[int, int]]] = defaultdict(set)
 
     def nodo(self, p: Punto) -> int:
-        for i, q in enumerate(self.nodos):
-            if _dist(p, q) <= UNION_M:
-                return i
+        cx, cy = _celda(p)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for i in self._nodos_celda.get((cx + dx, cy + dy), ()):
+                    if _dist(p, self.nodos[i]) <= UNION_M:
+                        return i
         self.nodos.append(p)
-        return len(self.nodos) - 1
+        k = len(self.nodos) - 1
+        self._nodos_celda[(cx, cy)].append(k)
+        return k
+
+    def _celdas_arista(self, i: int, j: int, margen: float):
+        (x0, y0), (x1, y1) = self.nodos[i], self.nodos[j]
+        cx0, cy0 = _celda((min(x0, x1) - margen, min(y0, y1) - margen))
+        cx1, cy1 = _celda((max(x0, x1) + margen, max(y0, y1) + margen))
+        return [(cx, cy) for cx in range(cx0, cx1 + 1) for cy in range(cy0, cy1 + 1)]
 
     def unir(self, i: int, j: int) -> None:
-        if i != j:
+        if i != j and j not in self.ady[i]:
             self.ady[i].add(j)
             self.ady[j].add(i)
+            arista = (min(i, j), max(i, j))
+            for c in self._celdas_arista(i, j, 0.0):
+                self._aristas_celda[c].add(arista)
 
     def aristas(self) -> list[tuple[int, int]]:
         return [(i, j) for i in self.ady for j in self.ady[i] if i < j]
+
+    def cerca(self, p: Punto, radio: float) -> set[tuple[int, int]]:
+        """Aristas cuya caja está a menos de `radio` de p (candidatas)."""
+        cx0, cy0 = _celda((p[0] - radio, p[1] - radio))
+        cx1, cy1 = _celda((p[0] + radio, p[1] + radio))
+        encontradas: set[tuple[int, int]] = set()
+        for cx in range(cx0, cx1 + 1):
+            for cy in range(cy0, cy1 + 1):
+                encontradas |= self._aristas_celda.get((cx, cy), set())
+        return encontradas
+
+    def nodos_cerca(self, p: Punto, radio: float) -> list[int]:
+        cx0, cy0 = _celda((p[0] - radio, p[1] - radio))
+        cx1, cy1 = _celda((p[0] + radio, p[1] + radio))
+        return [
+            i
+            for cx in range(cx0, cx1 + 1)
+            for cy in range(cy0, cy1 + 1)
+            for i in self._nodos_celda.get((cx, cy), ())
+            if _dist(p, self.nodos[i]) <= radio
+        ]
 
     def partir(self, i: int, j: int, k: int) -> None:
         """Inserta el nodo k en la arista i–j."""
         self.ady[i].discard(j)
         self.ady[j].discard(i)
+        arista = (min(i, j), max(i, j))
+        for c in self._celdas_arista(i, j, 0.0):
+            self._aristas_celda[c].discard(arista)
         self.unir(i, k)
         self.unir(k, j)
 
     def punto_en_eje(self, p: Punto, tolerancia: float) -> int | None:
         """Nodo en el punto de un eje más cercano a p (lo crea partiendo la arista)."""
         mejor = None
-        for i, j in self.aristas():
+        for i, j in sorted(self.cerca(p, tolerancia)):
             _t, q = _proyeccion(p, self.nodos[i], self.nodos[j])
             d = _dist(p, q)
             if d <= tolerancia and (mejor is None or d < mejor[0]):
@@ -139,19 +188,13 @@ def leer(
     if not g.aristas():
         raise TopologiaInvalida("No hay ejes de conductos en la capa elegida.")
     # Derivaciones en T: un extremo que cae dentro de otro eje.
-    cambiado = True
-    while cambiado:
-        cambiado = False
-        for n in [n for n in list(g.ady) if len(g.ady[n]) == 1]:
-            for i, j in g.aristas():
-                if n in (i, j):
-                    continue
-                t, q = _proyeccion(g.nodos[n], g.nodos[i], g.nodos[j])
-                if 0 < t < 1 and _dist(g.nodos[n], q) <= UNION_M:
-                    g.partir(i, j, n)
-                    cambiado = True
-                    break
-            if cambiado:
+    for n in [n for n in list(g.ady) if len(g.ady[n]) == 1]:
+        for i, j in sorted(g.cerca(g.nodos[n], UNION_M)):
+            if n in (i, j):
+                continue
+            t, q = _proyeccion(g.nodos[n], g.nodos[i], g.nodos[j])
+            if 0 < t < 1 and _dist(g.nodos[n], q) <= UNION_M:
+                g.partir(i, j, n)
                 break
 
     avisos: list[str] = []
@@ -160,8 +203,8 @@ def leer(
         p = (term.x, term.y)
         libres = [
             n
-            for n in g.ady
-            if len(g.ady[n]) == 1 and n not in en_nodo and _dist(g.nodos[n], p) <= TERMINAL_M
+            for n in g.nodos_cerca(p, TERMINAL_M)
+            if len(g.ady.get(n, ())) == 1 and n not in en_nodo
         ]
         if libres:
             n = min(libres, key=lambda k: _dist(g.nodos[k], p))

@@ -93,3 +93,20 @@ def test_rama_sin_terminal_se_avisa():
     top = leer([[(0, 0), (10, 0)], [(5, 0), (5, 4)]], [Terminal("D", 10, 0, 0.1)], equipo=(0, 0))
     assert any("no lleva caudal" in a for a in top.avisos)
     assert all(t.tramo.caudal_m3s > 0 for t in top.tramos)
+
+
+def test_dibujo_grande_en_poco_tiempo():
+    # 400 ramales en T sobre un tronco de una sola línea: 2000 segmentos. Antes de la
+    # rejilla espacial tardaba 97 s; ahora, décimas. Margen amplio para la CI de Windows.
+    import time
+
+    pl = [[(0.0, 0.0), (1203.0, 0.0)]]
+    terminales = []
+    for i in range(400):
+        x = 3.0 + 3.0 * i
+        pl.append([(x, 0.0)] + [(x, -1.0 * (k + 1)) for k in range(5)])
+        terminales.append(Terminal(f"D{i}", x, -5.0, 0.05))
+    inicio = time.perf_counter()
+    top = leer(pl, terminales, equipo=(0.0, 0.0))
+    assert time.perf_counter() - inicio < 10
+    assert len(top.tramos) == 800 and not top.avisos
