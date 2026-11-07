@@ -203,8 +203,9 @@ instalación no hay que sacar espacios del plano, así que el paso no aparece.
 1. En AutoCAD: *Guardar como… DXF* (cualquier versión que lea AutoCAD 2013). En
    «Documentación», incorporar el DXF.
 2. *Planos → Leer plano DXF…*: se elige el DXF y se abre el diálogo de capas y unidad.
-   - **Unidad:** viene propuesta la del DXF. Debajo se ve **cuánto mide el dibujo** con la
-     unidad elegida («60 × 40 m»). Si no es lo que mide la nave, la unidad no es esa.
+   - **Unidad:** viene propuesta la del DXF. Si el DXF no la declara, no se preselecciona
+     ninguna y hay que elegirla. Debajo se ve **cuánto mide el dibujo** con la unidad
+     elegida («60 × 40 m»). Si no es lo que mide la nave, la unidad no es esa.
    - **Capas:** una tabla con cuántos contornos, textos y entidades tiene cada capa. Se
      marca cuáles son de **espacios**, de **obstáculos** y de **nombres**. Una capa no puede
      ser de espacios y de obstáculos a la vez: al marcar una, se desmarca la otra.
@@ -215,7 +216,8 @@ instalación no hay que sacar espacios del plano, así que el paso no aparece.
    - Se avisa si se corta a sí mismo o si no venía cerrado.
    - Al elegir uno, se resalta en naranja en el visor.
    - *Confirmar propuesta…*: nivel (si no hay ninguno, se crea en ese momento) y nombre,
-     que puede ser un texto del plano o uno propio. En los obstáculos, además, altura y
+     que puede ser un texto del plano o uno propio. Si dentro caen varios textos, no se
+     preselecciona ninguno: hay que elegir. En los obstáculos, además, altura y
      cota inferior, que pueden quedar vacías («no consta»).
    - *Descartar*. Lo descartado se recupera con *Recuperar propuestas descartadas…*.
 4. **Pestañas** de espacios, obstáculos, niveles, bloques por espacio y longitudes por
@@ -231,8 +233,17 @@ instalación no hay que sacar espacios del plano, así que el paso no aparece.
 - No mide: los trazos llegan ya aplanados del lector, aproximación declarada solo para
   dibujar.
 
-Un DXF grande se lee en segundo plano con una ventana de progreso. La ventana no se queda
-congelada.
+Un DXF grande se lee en segundo plano con una ventana de progreso, la primera vez en cada
+sesión: al leerlo o al abrir un proyecto que ya lo tiene. La ventana no se queda congelada.
+
+Otros detalles de uso:
+- Tras confirmar o descartar no queda elegida otra propuesta en su lugar. La que estaba
+  elegida y sigue existiendo, sigue elegida.
+- El visor no se reencuadra en cada cambio: conserva el zoom hasta que se elige otro plano.
+- Las capas apagadas del DXF no se dibujan.
+- Si el fichero del plano ya no se puede leer, el paso lo dice y el resto de la ventana sigue
+  funcionando.
+- El menú «Planos» solo aparece en encargos con diseño, como el paso.
 
 ## Pendiente
 

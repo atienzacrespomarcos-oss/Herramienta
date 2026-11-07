@@ -74,8 +74,9 @@ independiente no deja nada pendiente.
 - Validación: el usuario **no tiene programas de cálculo**. Los motores se validan con
   ejemplos resueltos publicados y localizables (reglas en `docs/TESTING_STRATEGY.md` §0.2).
   Sin ejemplo publicado, el motor queda «Limitada», nunca «Validada».
-- Entregas: **una rama y un PR en borrador por bloque**; nada entra en `main` sin que
-  el usuario lo fusione.
+- Entregas: **una rama y un PR en borrador por bloque**. Desde el 07-11-2026 Claude lo
+  fusiona cuando la CI está en verde y la revisión independiente no deja nada pendiente
+  (petición del usuario, ver «Forma de trabajo»).
 
 ## Comandos
 

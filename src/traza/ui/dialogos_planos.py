@@ -33,8 +33,11 @@ from PySide6.QtWidgets import (
 
 from traza.app.ordenes import MODOS_ALTURA
 from traza.core.numeros import escribir_numero, leer_numero
+from traza.io.dxf import UNIDADES as UNIDADES_DXF
 
-UNIDADES = ("mm", "cm", "dm", "m")
+# Las mismas unidades que el lector (un test ata las tres listas: lector, órdenes, diálogo).
+UNIDADES = tuple(UNIDADES_DXF)
+ELIGE = "__elige__"
 COLUMNAS_CAPAS = ["Capa", "Contornos", "Textos", "Entidades", "Espacios", "Obstáculos", "Nombres"]
 
 
@@ -87,11 +90,15 @@ class DialogoCapasPlano(QDialog):
         self.info = info
         self.resultado: DatosCapas | None = None
         self.unidad = QComboBox()
+        inicial = (actual.unidad if actual else None) or info.unidad_propuesta
+        if inicial not in UNIDADES:
+            # Sin unidad declarada no se preselecciona ninguna: aceptar el «mm» del primer
+            # puesto sin mirarlo multiplicaría las superficies por 10², 10⁴ o 10⁶.
+            self.unidad.addItem("— elige la unidad —", ELIGE)
         for u in UNIDADES:
             self.unidad.addItem(u, u)
-        inicial = (actual.unidad if actual else None) or info.unidad_propuesta
         if inicial in UNIDADES:
-            self.unidad.setCurrentIndex(UNIDADES.index(inicial))
+            self.unidad.setCurrentIndex(self.unidad.findData(inicial))
         self.medida = QLabel()
         self.medida.setWordWrap(True)
         self.unidad.currentIndexChanged.connect(self._actualizar_medida)
@@ -157,6 +164,9 @@ class DialogoCapasPlano(QDialog):
         self._actualizar_medida()
 
     def _actualizar_medida(self) -> None:
+        if self.unidad.currentData() == ELIGE:
+            self.medida.setText("Elige la unidad y comprueba aquí cuánto mide el dibujo.")
+            return
         m = self.info.medidas.get(self.unidad.currentData())
         self.medida.setText(
             "El dibujo está vacío."
@@ -192,6 +202,9 @@ class DialogoCapasPlano(QDialog):
         ]
 
     def _aceptar(self) -> None:
+        if self.unidad.currentData() == ELIGE:
+            self.error.setText("Elige la unidad del dibujo.")
+            return
         espacios, obstaculos = self._marcadas(4), self._marcadas(5)
         if not espacios and not obstaculos:
             self.error.setText("Marca al menos una capa de espacios o de obstáculos.")
@@ -209,7 +222,8 @@ class DialogoNivel(QDialog):
         self.resultado: tuple[str, float, float] | None = None
         self.nombre = QLineEdit()
         self.nombre.setPlaceholderText("Planta baja, entreplanta, sótano…")
-        self.cota = QLineEdit("0")
+        self.cota = QLineEdit()
+        self.cota.setPlaceholderText("0 en planta baja; negativa en sótanos")
         self.altura = QLineEdit()
         self.altura.setPlaceholderText("Altura libre hasta el techo o la cubierta")
         self.error = QLabel()
@@ -229,10 +243,16 @@ class DialogoNivel(QDialog):
             self.error.setText("El nivel necesita un nombre.")
             return
         try:
-            cota = float(leer_numero(self.cota.text()))
-            altura = float(leer_numero(self.altura.text()))
+            cota = _numero_opcional(self.cota.text(), "Cota")
+            altura = _numero_opcional(self.altura.text(), "Altura libre")
         except ValueError as exc:
             self.error.setText(str(exc))
+            return
+        if cota is None or altura is None:
+            self.error.setText("Escribe la cota del suelo y la altura libre del nivel.")
+            return
+        if altura <= 0:
+            self.error.setText("La altura libre tiene que ser mayor que 0.")
             return
         self.resultado = (self.nombre.text().strip(), cota, altura)
         self.accept()
@@ -263,6 +283,10 @@ class DialogoContorno(QDialog):
         for n in niveles:
             self.nivel.addItem(f"{n['codigo']} {n['nombre'] or ''}".strip(), n["id"])
         self.nombre = QComboBox()
+        if len(propuesta["textos"]) > 1:
+            # Con varios textos dentro, elegir uno sería suponer (app/planos.py): no se
+            # preselecciona ninguno (revisión 07-11-2026).
+            self.nombre.addItem(f"— elige entre {len(propuesta['textos'])} textos —", ELIGE)
         for handle, texto in propuesta["textos"]:
             self.nombre.addItem(f"«{texto}» (texto del plano)", handle)
         self.nombre.addItem(OTRO_NOMBRE, None)
@@ -302,6 +326,9 @@ class DialogoContorno(QDialog):
             self.error.setText("Crea antes un nivel (planta baja…).")
             return
         handle = self.nombre.currentData()
+        if handle == ELIGE:
+            self.error.setText("Elige el nombre: uno de los textos del plano o uno tuyo.")
+            return
         propio = (self.propio.text().strip() or None) if handle is None else None
         if self.es_espacio and handle is None and not propio:
             self.error.setText("El espacio necesita un nombre: el del plano o uno tuyo.")

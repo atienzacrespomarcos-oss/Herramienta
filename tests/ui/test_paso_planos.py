@@ -201,3 +201,109 @@ def test_dialogos_de_nivel_contorno_y_altura(qtbot):
     a.maxima.setText("10,5")
     a._aceptar()
     assert a.resultado == ("inclinada", None, 6.0, 10.5)
+
+
+# --- Revisión independiente del bloque C (07-11-2026) -------------------------------------
+
+
+def _leer_nave(v, q, tmp_path):
+    v.proyecto.incorporar_documento(_nave(tmp_path))
+    v.refrescar()
+    q.preparar("elegir", 0)
+    q.preparar("capas_plano", DatosCapas("mm", ["A-ESPACIOS"], ["E-PILARES"], ["A-TEXTOS"]))
+    v.pagina_planos.a_leer.trigger()
+
+
+def test_quitar_un_nivel_desde_su_pestana(ventana):
+    v, q = ventana
+    pp = v.pagina_planos
+    q.preparar("nuevo_nivel", ("Entreplanta mal creada", 4.0, 3.0))
+    pp.a_nivel.trigger()
+    pp.pestanas.setCurrentWidget(pp.tabla_niveles)
+    pp.tabla_niveles.setCurrentCell(0, 0)
+    assert pp.a_quitar.isEnabled()
+    q.preparar("confirmar", True)
+    pp.a_quitar.trigger()
+    assert v.proyecto.niveles() == []
+
+
+def test_varios_textos_dentro_no_se_preselecciona_ninguno(qtbot):
+    d = DialogoContorno(
+        None,
+        {
+            "rol": "espacio",
+            "capa": "E",
+            "superficie": 20,
+            "textos": [("1A", "OFICINAS"), ("1B", "WC")],
+        },
+        [{"id": "n1", "codigo": "NIV-01", "nombre": "PB"}],
+    )
+    qtbot.addWidget(d)
+    d._aceptar()
+    assert d.resultado is None and "Elige el nombre" in d.error.text()
+    d.nombre.setCurrentIndex(2)
+    d._aceptar()
+    assert d.resultado == DatosContorno("n1", None, "1B")
+
+
+def test_sin_unidad_declarada_hay_que_elegirla(qtbot):
+    info = InfoPlano("X.dxf", (CapaInfo("E", 1, 0, 1, True),), None, {"mm": (1.0, 1.0)})
+    d = DialogoCapasPlano(None, info)
+    qtbot.addWidget(d)
+    d.marcar("E", "espacios")
+    d._aceptar()
+    assert d.resultado is None and "Elige la unidad" in d.error.text()
+    d.unidad.setCurrentIndex(d.unidad.findData("m"))
+    d._aceptar()
+    assert d.resultado.unidad == "m"
+
+
+def test_tras_descartar_no_queda_elegida_otra_propuesta(ventana, tmp_path):
+    v, q = ventana
+    pp = v.pagina_planos
+    _leer_nave(v, q, tmp_path)
+    pp.pestanas.setCurrentWidget(pp.tabla_propuestas)
+    pp.tabla_propuestas.setCurrentCell(0, 0)
+    pp.a_descartar.trigger()
+    # La fila elegida desaparece: no se elige otra en su lugar (no confirmar a ciegas).
+    assert pp.tabla_propuestas.currentRow() == -1
+    assert not pp.a_confirmar.isEnabled()
+    # Y una elegida que sigue existiendo, sigue elegida tras refrescar.
+    pp.tabla_propuestas.setCurrentCell(2, 0)
+    elegida = pp.tabla_propuestas.item(2, 0).data(0x0100)
+    v.refrescar()
+    assert pp.tabla_propuestas.item(pp.tabla_propuestas.currentRow(), 0).data(0x0100) == elegida
+
+
+def test_menu_planos_solo_en_encargos_con_diseno(ventana):
+    v, q = ventana
+    from traza.app.ordenes import CambiarEncargo
+
+    assert v.menu_planos.menuAction().isVisible()
+    v.proyecto.ejecutar(CambiarEncargo("instalacion"))
+    v.refrescar()
+    assert not v.menu_planos.menuAction().isVisible()
+    assert not v.pagina_planos.a_leer.isEnabled() and not v.pagina_planos.a_nivel.isEnabled()
+
+
+def test_plano_que_ya_no_se_puede_leer_no_deja_la_ventana_a_medias(ventana, tmp_path):
+    v, q = ventana
+    _leer_nave(v, q, tmp_path)
+    p = v.proyecto
+    doc_id = p.planos()[0]["documento_id"]
+    ruta = p.ruta_documento(doc_id)
+    ruta.chmod(0o644)
+    ruta.write_bytes(b"esto ya no es un dxf")
+    p._planos_dxf.clear()  # como en una sesión nueva
+    v.refrescar()
+    assert "No se puede leer el plano" in v.pagina_planos.resumen.text()
+    assert v.pagina_planos.tabla_propuestas.rowCount() == 0
+    assert v.tabla_historial.rowCount() > 0  # el resto de la ventana sí se refrescó
+
+
+def test_unidades_atadas_entre_lector_ordenes_y_dialogo():
+    from traza.app.ordenes import UNIDADES_PLANO
+    from traza.io.dxf import UNIDADES
+    from traza.ui.dialogos_planos import UNIDADES as UNIDADES_DIALOGO
+
+    assert tuple(UNIDADES) == UNIDADES_PLANO == UNIDADES_DIALOGO

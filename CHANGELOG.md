@@ -16,6 +16,17 @@
   miraba el texto, y un fallo de tipo «AttributeError» habría pasado inadvertido.
 - Forma de trabajo actualizada en CLAUDE.md: Claude para solo ante dudas sobre qué debe
   hacer la herramienta o cómo, y fusiona cuando la CI está en verde.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - «Quitar» ya se habilita para un nivel;
+  - con varios textos dentro no se preselecciona ningún nombre;
+  - sin unidad declarada hay que elegirla;
+  - la selección se conserva por id tras refrescar;
+  - el menú «Planos» solo sale en encargos con diseño;
+  - un plano ilegible no deja la ventana a medias;
+  - lectura en segundo plano también al abrir el proyecto;
+  - el visor no pierde el zoom;
+  - las capas apagadas no se dibujan;
+  - las unidades del lector, las órdenes y el diálogo, atadas con un test.
 
 ### Etapa 3 · geometría DXF, bloque B (07-11-2026)
 - Esquema V4: `plano` (unidad confirmada, capas de espacios, obstáculos y nombres;

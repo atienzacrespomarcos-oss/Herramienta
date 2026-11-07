@@ -35,11 +35,13 @@ class VisorPlano(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self._resaltado = None
+        self._por_encuadrar = False
         self.vacio()
 
     def vacio(self, texto: str = "Sin plano leído") -> None:
         self.scene().clear()
         self._resaltado = None
+        self.resetTransform()  # tras un zoom, el texto podía quedar fuera de cuadro
         self.scene().addText(texto)
 
     def dibujar(
@@ -49,6 +51,7 @@ class VisorPlano(QGraphicsView):
         capas_visibles: set[str] | None,
         espacios: list[Contorno],
         obstaculos: list[Contorno],
+        encuadrar: bool = True,
     ) -> None:
         """`trazos` en unidades del dibujo; `factor` = metros por unidad. Contornos en m."""
         escena = self.scene()
@@ -82,7 +85,19 @@ class VisorPlano(QGraphicsView):
                     rect.height() * 0.05,
                 )
             )
-            self.fitInView(escena.sceneRect(), Qt.KeepAspectRatio)
+            # Encuadrar con el visor sin mostrar no sirve (aún no tiene tamaño): se deja para
+            # cuando se muestre (showEvent). Y no en cada refresco: se perdía el zoom.
+            self._por_encuadrar = self._por_encuadrar or encuadrar
+            self._encuadrar_si_toca()
+
+    def _encuadrar_si_toca(self) -> None:
+        if self._por_encuadrar and self.isVisible():
+            self.fitInView(self.scene().sceneRect(), Qt.KeepAspectRatio)
+            self._por_encuadrar = False
+
+    def showEvent(self, evento) -> None:  # noqa: N802 (nombre de Qt)
+        super().showEvent(evento)
+        self._encuadrar_si_toca()
 
     def resaltar(self, contorno: Contorno | None, centrar: bool = True) -> None:
         escena = self.scene()

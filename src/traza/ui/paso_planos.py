@@ -14,6 +14,7 @@ preguntas por `ventana.preguntas` (las pruebas las sustituyen).
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from PySide6.QtCore import Qt
@@ -28,9 +29,15 @@ from PySide6.QtWidgets import (
 )
 
 from traza.app import planos as calculo_planos
-from traza.app.ordenes import CrearNivel, FijarAlturaEspacio, QuitarDePlano, RecuperarPropuesta
+from traza.app.ordenes import (
+    CrearNivel,
+    FijarAlturaEspacio,
+    OrdenRechazada,
+    QuitarDePlano,
+    RecuperarPropuesta,
+)
 from traza.core.numeros import escribir_numero
-from traza.io.dxf import UNIDADES
+from traza.io.dxf import UNIDADES, DxfError
 from traza.ui.dialogos_planos import CapaInfo, DatosCapas, InfoPlano
 from traza.ui.visor_plano import VisorPlano
 
@@ -81,7 +88,12 @@ class PaginaPlanos(QWidget):
         self.tabla_niveles = _tabla(["Código", "Nombre", "Cota (m)", "Altura libre (m)"])
         self.tabla_bloques = _tabla(["Bloque", "Capa", "Espacio", "Cantidad"])
         self.tabla_longitudes = _tabla(["Capa", "Longitud en planta (m)", "Visible", "Sin medir"])
-        for t in (self.tabla_propuestas, self.tabla_espacios, self.tabla_obstaculos):
+        for t in (
+            self.tabla_propuestas,
+            self.tabla_espacios,
+            self.tabla_obstaculos,
+            self.tabla_niveles,
+        ):
             t.itemSelectionChanged.connect(self._al_elegir_fila)
         self.pestanas = QTabWidget()
         for tabla, titulo in (
@@ -128,6 +140,9 @@ class PaginaPlanos(QWidget):
         caja.addWidget(self.resumen)
         caja.addWidget(division, 1)
         self._propuestas: list[calculo_planos.Propuesta] = []
+        #: Plano para el que ya se encuadró el visor: no se reencuadra en cada refresco (se
+        #: perdían el zoom y la posición del usuario).
+        self._encuadrado: str | None = None
         self._espacios: list[dict] = []
         self._obstaculos: list[dict] = []
 
@@ -160,7 +175,7 @@ class PaginaPlanos(QWidget):
             if d["extension"].lower() == ".dxf" and d["id"] not in leidos
         ]
 
-    def _info(self, documento: dict) -> InfoPlano:
+    def _info(self, documento: dict, elegidas: set[str] = frozenset()) -> InfoPlano:
         plano = self.proyecto.plano_dxf(
             documento["id"],
             esperar=lambda f: self.v._en_segundo_plano(f, "Leyendo el plano DXF…", "Leer plano"),
@@ -176,7 +191,7 @@ class PaginaPlanos(QWidget):
                 c.visible,
             )
             for c in sorted(plano.capas.values(), key=lambda c: c.nombre.lower())
-            if sum(c.entidades.values())
+            if sum(c.entidades.values()) or c.nombre in elegidas
         )
         return InfoPlano(
             documento["nombre_original"],
@@ -216,7 +231,8 @@ class PaginaPlanos(QWidget):
         actual = DatosCapas(
             p["unidad"], p["capas_espacios"], p["capas_obstaculos"], p["capas_textos"]
         )
-        datos = self.v.preguntas.capas_plano(self._info(doc), actual)
+        elegidas = {*p["capas_espacios"], *p["capas_obstaculos"], *p["capas_textos"]}
+        datos = self.v.preguntas.capas_plano(self._info(doc, elegidas), actual)
         if datos is not None:
             self.proyecto.cambiar_plano(
                 p["id"], datos.unidad, datos.espacios, datos.obstaculos, datos.textos
@@ -296,16 +312,19 @@ class PaginaPlanos(QWidget):
         if pestana not in fuentes:
             return
         el = self._fila_elegida(pestana, fuentes[pestana])
+        vuelve = (
+            "Su contorno vuelve a las propuestas. " if pestana is not self.tabla_niveles else ""
+        )
         if el is not None and self.v.preguntas.confirmar(
             "Quitar",
-            f"Se quita «{el['codigo']} {el.get('nombre') or ''}». Un espacio u obstáculo "
-            "vuelve a las propuestas. Se puede deshacer. ¿Continuar?",
+            f"Se quita «{el['codigo']} {el.get('nombre') or ''}». {vuelve}Se puede "
+            "deshacer. ¿Continuar?",
         ):
             self.v._ejecutar(QuitarDePlano(el["id"]))
 
     def accion_exportar(self) -> None:
         p = self.proyecto.plano(self.plano_id())
-        nombre = p["documento_nombre"].rsplit(".", 1)[0]
+        nombre = re.sub(r'[<>:"/\\|?*]', "_", p["documento_nombre"].rsplit(".", 1)[0])
         sugerido = self.proyecto.carpeta.exportaciones / f"{self.proyecto.nombre} - {nombre}.xlsx"
         destino = self.v.preguntas.destino_excel(sugerido)
         if destino is not None:
@@ -395,9 +414,71 @@ class PaginaPlanos(QWidget):
             self._propuestas, self._espacios, self._obstaculos = [], [], []
             self.resumen.setText("" if self.proyecto is None else "Lee un plano DXF para empezar.")
             self.visor.vacio()
+            self._encuadrado = None
             return
+        try:
+            self._rellenar(plano_id)
+        except (OrdenRechazada, DxfError) as exc:
+            # Un plano que ya no se puede leer (fichero del almacén dañado o alterado) no
+            # puede dejar la ventana a medias: se dice y se vacía (revisión 07-11-2026).
+            for t in (
+                self.tabla_propuestas,
+                self.tabla_espacios,
+                self.tabla_obstaculos,
+                self.tabla_bloques,
+                self.tabla_longitudes,
+            ):
+                _llenar(t, [])
+            self._propuestas, self._espacios, self._obstaculos = [], [], []
+            self.resumen.setText(f"⚠ No se puede leer el plano: {exc}")
+            self.visor.vacio("No se puede leer el plano")
+
+    def _seleccion(self) -> dict:
+        def ident(tabla):
+            f = tabla.currentRow()
+            item = tabla.item(f, 0) if f >= 0 else None
+            return item.data(Qt.UserRole) if item else None
+
+        return {t: ident(t) for t in self._tablas_con_seleccion()}
+
+    def _tablas_con_seleccion(self):
+        return (
+            self.tabla_propuestas,
+            self.tabla_espacios,
+            self.tabla_obstaculos,
+            self.tabla_niveles,
+        )
+
+    def _restaurar(self, seleccion: dict) -> None:
+        """Tras refrescar, cada tabla vuelve a la MISMA fila (por id) o a ninguna: antes se
+        quedaba en el mismo número de fila, que tras confirmar o descartar era otra
+        propuesta sin resaltar (revisión 07-11-2026)."""
+        for tabla, ident in seleccion.items():
+            tabla.blockSignals(True)
+            try:
+                fila = next(
+                    (
+                        i
+                        for i in range(tabla.rowCount())
+                        if ident is not None and tabla.item(i, 0).data(Qt.UserRole) == ident
+                    ),
+                    -1,
+                )
+                tabla.clearSelection()
+                tabla.setCurrentCell(fila, 0 if fila >= 0 else -1)
+            finally:
+                tabla.blockSignals(False)
+
+    def _rellenar(self, plano_id: str) -> None:
+        from traza.ui.ventana import _llenar
+
+        seleccion = self._seleccion()
         p = self.proyecto.plano(plano_id)
-        plano = self.proyecto.plano_dxf(p["documento_id"])
+        # La primera vez en la sesión se lee el fichero, en segundo plano si es grande.
+        plano = self.proyecto.plano_dxf(
+            p["documento_id"],
+            esperar=lambda f: self.v._en_segundo_plano(f, "Leyendo el plano DXF…", "Leer plano"),
+        )
         f = UNIDADES[p["unidad"]]
         self._propuestas = self.proyecto.propuestas(plano_id)
         self._espacios = [e for e in self.proyecto.espacios() if e["plano_id"] == plano_id]
@@ -489,10 +570,14 @@ class PaginaPlanos(QWidget):
         self.visor.dibujar(
             plano.trazos,
             f,
-            None,
+            {c.nombre for c in plano.capas.values() if c.visible},
             [e["contorno"] for e in self._espacios],
             [o["contorno"] for o in self._obstaculos],
+            encuadrar=self._encuadrado != plano_id,
         )
+        self._encuadrado = plano_id
+        self._restaurar(seleccion)
+        self._al_elegir_fila()
 
     def _filas_niveles(self) -> tuple[list[list[str]], list[str]]:
         niveles = self.proyecto.niveles()
@@ -511,6 +596,14 @@ class PaginaPlanos(QWidget):
         return _m(e["altura"])
 
     def actualizar_estado(self, hay: bool) -> None:
+        from traza.ui.ventana import PASOS
+
+        # El menú, como el paso, solo en encargos con diseño: «solo se ve lo que se usa».
+        con_paso = hay and any(
+            clave == "planos" and self.proyecto.encargo in encargos for clave, _, encargos in PASOS
+        )
+        self.v.menu_planos.menuAction().setVisible(con_paso)
+        hay = con_paso
         plano = hay and self.plano_id() is not None
         self.a_leer.setEnabled(hay)
         self.a_nivel.setEnabled(hay)
