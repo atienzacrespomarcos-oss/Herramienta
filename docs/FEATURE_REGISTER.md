@@ -15,7 +15,7 @@ declarados).
 | — | Interfaz: ventana principal, árbol, propiedades, documentos, historial, pendientes | 1 | Implementada | `docs/modules/interfaz.md`. Pasa a Validada cuando el usuario complete el escenario de aceptación con TRAZA.exe en su Windows. |
 | — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |
 | RF-020, 021 | Gestión documental y vínculo dato ↔ documento | 1 | Implementada | PDF con comprobación de página citada; XLSX/DXF se incorporan pero su cita (hoja/celda) aún no se comprueba. |
-| RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 3 | En desarrollo | `docs/modules/geometria.md`. 3.A (lector DXF y geometría exacta) y 3.B (niveles, espacios y obstáculos con procedencia, propuestas confirmadas, bloques por espacio, longitudes por capa, Excel) implementados con planos de prueba. Faltan interfaz (3.C) y un DXF real del usuario. |
+| RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 3 | Implementada | `docs/modules/geometria.md`. Implementada con planos de prueba: lector DXF y geometría exacta (3.A), niveles, espacios y obstáculos con procedencia, propuestas confirmadas, bloques por espacio, longitudes por capa y Excel (3.B), y paso «Planos y espacios» con visor 2D (3.C). Falta validarla con un DXF real del usuario. |
 | RF-101, 102 | Cargas térmicas y caudales de ventilación | 3.1 | Pendiente | |
 | RF-100 | Redes de aire | 3.2 | Pendiente | |
 | — | Ventilación y extracción industrial | 3.3 | Pendiente | |

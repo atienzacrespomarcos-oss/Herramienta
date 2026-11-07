@@ -10,8 +10,15 @@ Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 
 **Pregunta → respuesta con acciones.** Ante cada decisión: presentar opciones concretas
 (con la recomendada marcada y su consecuencia), el usuario decide, Claude ejecuta. No
-decidir por él lo que es suyo (alcance, prioridades, aspecto, fusionar PR); sí resolver
+decidir por él lo que es suyo (alcance, prioridades, aspecto); sí resolver
 sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha del módulo.
+
+**Actualización del 07-11-2026 (usuario; prevalece sobre el párrafo anterior):** «Solo quiero que pares cuando tengas dudas de
+qué debe incorporar la herramienta, o cosas de cómo debe hacer algo. Si no, continúa con tu
+criterio». Y: «Fusiona cuando esté en verde y sigue». Por tanto: parar solo ante dudas de
+**qué** debe hacer la herramienta o **cómo** debe hacerlo para el usuario; lo demás se
+resuelve y se documenta. Los PR se fusionan cuando la CI está en verde y la revisión
+independiente no deja nada pendiente.
 
 ## Lo que el usuario quiere de la herramienta (06-11-2026)
 
@@ -67,8 +74,9 @@ sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha 
 - Validación: el usuario **no tiene programas de cálculo**. Los motores se validan con
   ejemplos resueltos publicados y localizables (reglas en `docs/TESTING_STRATEGY.md` §0.2).
   Sin ejemplo publicado, el motor queda «Limitada», nunca «Validada».
-- Entregas: **una rama y un PR en borrador por bloque**; nada entra en `main` sin que
-  el usuario lo fusione.
+- Entregas: **una rama y un PR en borrador por bloque**. Desde el 07-11-2026 Claude lo
+  fusiona cuando la CI está en verde y la revisión independiente no deja nada pendiente
+  (petición del usuario, ver «Forma de trabajo»).
 
 ## Comandos
 

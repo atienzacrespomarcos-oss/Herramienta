@@ -2,6 +2,39 @@
 
 ## [Sin publicar]
 
+### Etapa 3 · geometría DXF, bloque C (07-11-2026)
+- Paso «Planos y espacios», solo en encargos con diseño. Permite:
+  - leer un DXF eligiendo la unidad (con la medida total a la vista) y las capas por rol;
+  - revisar las propuestas resaltadas en el visor y confirmarlas o descartarlas;
+  - crear niveles y fijar la altura de cada espacio (del nivel, propia o inclinada);
+  - quitar elementos;
+  - ver bloques por espacio y longitudes por capa;
+  - exportar el Excel del plano.
+- Visor 2D de referencia (zoom y desplazamiento).
+- Un DXF grande se lee en segundo plano con progreso.
+- Pruebas de interfaz: el aviso de error inesperado se reconoce por su título. Antes se
+  miraba el texto, y un fallo de tipo «AttributeError» habría pasado inadvertido.
+- Forma de trabajo actualizada en CLAUDE.md: Claude para solo ante dudas sobre qué debe
+  hacer la herramienta o cómo, y fusiona cuando la CI está en verde.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - «Quitar» ya se habilita para un nivel;
+  - con varios textos dentro no se preselecciona ningún nombre;
+  - sin unidad declarada hay que elegirla;
+  - la selección se conserva por id tras refrescar;
+  - el menú «Planos» solo sale en encargos con diseño;
+  - un plano ilegible no deja la ventana a medias;
+  - lectura en segundo plano también al abrir el proyecto;
+  - el visor no pierde el zoom;
+  - las capas apagadas no se dibujan;
+  - las unidades del lector, las órdenes y el diálogo, atadas con un test.
+- Segunda revisión:
+  - un plano que vuelve a leerse se reencuadra;
+  - el visor vacío no queda fuera de cuadro;
+  - la selección de niveles se conserva también sin plano;
+  - refrescar no recoloca la vista;
+  - pruebas con la ventana mostrada (zoom), de las capas apagadas y de la lectura en
+    segundo plano al abrir.
+
 ### Etapa 3 · geometría DXF, bloque B (07-11-2026)
 - Esquema V4: `plano` (unidad confirmada, capas de espacios, obstáculos y nombres;
   propuestas descartadas) y `geometria` (contorno en metros con su entidad DXF).

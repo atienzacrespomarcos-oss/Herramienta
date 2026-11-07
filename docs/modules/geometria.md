@@ -1,10 +1,9 @@
 # Módulo: geometría desde planos DXF
 
-Estado: **en desarrollo**. Hechos:
+Estado: **implementado** (falta validarlo con un DXF real del usuario). Hechos:
 - 3.A: el lector DXF y la geometría de contornos;
-- 3.B: niveles, espacios y obstáculos en el modelo, con su Excel.
-
-Falta la interfaz (3.C).
+- 3.B: niveles, espacios y obstáculos en el modelo, con su Excel;
+- 3.C: el paso «Planos y espacios» de la ventana, con visor 2D.
 
 ## Decisiones del usuario (06-11-2026)
 
@@ -195,8 +194,58 @@ Lo que no consta queda vacío.
 Los niveles, espacios y obstáculos no aparecen en el paso «Equipos»: se crean con su
 geometría desde «Planos».
 
+## Interfaz (3.C): paso «Planos y espacios»
+
+Solo en encargos **«Diseño + presupuesto + instalación»**. En los de presupuesto o
+instalación no hay que sacar espacios del plano, así que el paso no aparece.
+
+**Cómo se usa:**
+1. En AutoCAD: *Guardar como… DXF* (cualquier versión que lea AutoCAD 2013). En
+   «Documentación», incorporar el DXF.
+2. *Planos → Leer plano DXF…*: se elige el DXF y se abre el diálogo de capas y unidad.
+   - **Unidad:** viene propuesta la del DXF. Si el DXF no la declara, no se preselecciona
+     ninguna y hay que elegirla. Debajo se ve **cuánto mide el dibujo** con la unidad
+     elegida («60 × 40 m»). Si no es lo que mide la nave, la unidad no es esa.
+   - **Capas:** una tabla con cuántos contornos, textos y entidades tiene cada capa. Se
+     marca cuáles son de **espacios**, de **obstáculos** y de **nombres**. Una capa no puede
+     ser de espacios y de obstáculos a la vez: al marcar una, se desmarca la otra.
+   - Los avisos de lectura del DXF se ven en el mismo diálogo.
+3. **Propuestas** (pestaña y visor):
+   - Cada contorno muestra su tipo, capa, superficie y nombre del plano. Si dentro caen
+     varios textos, dice «N textos: elige».
+   - Se avisa si se corta a sí mismo o si no venía cerrado.
+   - Al elegir uno, se resalta en naranja en el visor.
+   - *Confirmar propuesta…*: nivel (si no hay ninguno, se crea en ese momento) y nombre,
+     que puede ser un texto del plano o uno propio. Si dentro caen varios textos, no se
+     preselecciona ninguno: hay que elegir. En los obstáculos, además, altura y
+     cota inferior, que pueden quedar vacías («no consta»).
+   - *Descartar*. Lo descartado se recupera con *Recuperar propuestas descartadas…*.
+4. **Pestañas** de espacios, obstáculos, niveles, bloques por espacio y longitudes por
+   capa. *Altura del espacio…* ofrece los tres modos: del nivel, propia o inclinada.
+   *Quitar* devuelve un espacio u obstáculo a las propuestas.
+5. *Exportar Excel del plano…*.
+
+**Visor 2D:**
+- Es una referencia y no edita.
+- Muestra el plano en gris, los espacios en azul, los obstáculos en marrón y la selección
+  en naranja.
+- Zoom con la rueda y desplazamiento arrastrando.
+- No mide: los trazos llegan ya aplanados del lector, aproximación declarada solo para
+  dibujar.
+
+Un DXF grande se lee en segundo plano con una ventana de progreso, la primera vez en cada
+sesión: al leerlo o al abrir un proyecto que ya lo tiene. La ventana no se queda congelada.
+
+Otros detalles de uso:
+- Tras confirmar o descartar no queda elegida otra propuesta en su lugar. La que estaba
+  elegida y sigue existiendo, sigue elegida.
+- El visor no se reencuadra en cada cambio: conserva el zoom hasta que se elige otro plano.
+- Las capas apagadas del DXF no se dibujan.
+- Si el fichero del plano ya no se puede leer, el paso lo dice y el resto de la ventana sigue
+  funcionando.
+- El menú «Planos» solo aparece en encargos con diseño, como el paso.
+
 ## Pendiente
 
-- 3.C Interfaz: paso «Planos», solo en encargos con diseño, con visor 2D.
 - Validación con un **DXF real del usuario**: superficies y alturas frente a su medición
   manual, y capas y bloques reconocidos (criterio de la Etapa 2 de la hoja de ruta).

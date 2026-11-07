@@ -736,17 +736,25 @@ class Proyecto:
 
     # --- Planos: niveles, espacios y obstáculos (Etapa 3) --------------------------------
 
-    def plano_dxf(self, documento_id: str) -> dxf.PlanoDxf:
+    def plano_dxf(
+        self, documento_id: str, esperar: Callable[[Callable], Any] | None = None
+    ) -> dxf.PlanoDxf:
         """Lo leído de un DXF del proyecto. El documento no cambia (almacén de solo lectura),
-        así que se lee una vez por sesión."""
+        así que se lee una vez por sesión.
+
+        `esperar` permite a la interfaz leer el fichero en otro hilo (un DXF grande tarda):
+        solo la lectura del fichero, que no toca la base de datos (SQLite no admite usar la
+        conexión desde otro hilo)."""
         if documento_id not in self._planos_dxf:
             doc = leer(self._con, "documento", {"id": documento_id})
             if doc is None:
                 raise OrdenRechazada("Documento no incorporado.")
             if doc["extension"].lower() != ".dxf":
                 raise OrdenRechazada(f"«{doc['nombre_original']}» no es un DXF.")
+            ruta = self.ruta_documento(documento_id)
+            esperar = esperar or (lambda f: f())
             try:
-                self._planos_dxf[documento_id] = dxf.leer_dxf(self.ruta_documento(documento_id))
+                self._planos_dxf[documento_id] = esperar(lambda: dxf.leer_dxf(ruta))
             except dxf.DxfError as exc:
                 raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
         return self._planos_dxf[documento_id]
