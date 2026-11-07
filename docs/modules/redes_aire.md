@@ -86,3 +86,52 @@ Estado: **en desarrollo**.
 - **Extracción**: el aire exterior del espacio.
 - **Reparto**: a partes iguales entre los terminales del espacio. El atributo CAUDAL del
   bloque, si lo tiene, manda.
+
+## En el proyecto (`app/redes.py`, paso «Redes de aire»)
+- **Qué se guarda** (esquema V6, tabla `red_aire`):
+  - el nombre, el tipo, el plano y el nivel;
+  - la capa de los ejes, los bloques de terminales y el bloque del equipo;
+  - los criterios: pérdida de carga objetivo, alto máximo, forma, salto de impulsión y si
+    es climatización o ventilación.
+  - Los tramos y resultados se calculan del dibujo cada vez. Corregir el trazado es
+    corregirlo en AutoCAD y volver a incorporar el DXF.
+- **Lectura del dibujo** (`engines/topologia_conductos.py`):
+  - extremos a menos de 5 cm se unen;
+  - un extremo sobre otro eje es una derivación en T;
+  - un terminal se conecta al extremo libre más cercano a menos de 1 m. Si no hay
+    ninguno, se conecta al punto más cercano del eje, como un difusor montado sobre el
+    conducto, que va en su propio ramal de longitud 0;
+  - el equipo es el punto más cercano a su bloque, a menos de 2 m;
+  - un anillo se rechaza: la red tiene que ser un árbol;
+  - una rama sin terminal se avisa y no se calcula.
+- **Codos**: cambios de dirección de más de 10° entre lados de al menos 0,5 m. Un arco
+  dibujado por cuerdas cuenta como un solo codo. Radio igual al lado del giro (r/b = 1).
+  En circulares se usa la tabla de rectangulares con a/b = 1.
+- **Derivaciones**:
+  - sigue «recto» el hijo de dirección más parecida al padre si se desvía menos de 45°;
+  - coeficientes de la derivación a bisel a 90°: C_d = 1 en el ramal, C_s del paso según
+    v_s/v_e y A_s/A_e.
+  - En retorno y extracción (aire que converge) se usan los mismos coeficientes, como
+    aproximación declarada: el manual no da tes convergentes.
+- **Clase del tramo**:
+  - principal: el tronco que, desde el equipo, sigue al hijo de más caudal;
+  - terminal: el que acaba en un terminal;
+  - ramal: el resto.
+- **Presión necesaria**: la del camino crítico de la red, sin el equipo; filtros, baterías
+  y atenuadores los da su fabricante. Para cada terminal se calcula la presión que su
+  compuerta tiene que disipar para equilibrar.
+- **SFP** (RITE IT 1.2.4.2.5): rendimiento mínimo del motoventilador = Δp de la red /
+  límite de la categoría exigida. Es una cota inferior, porque el equipo suma su propia
+  pérdida.
+- **Listado Excel**: Resumen, Tramos, Accesorios, Terminales (con la presión a disipar),
+  Medición (metros y superficie de conducto por sección) e Hipótesis.
+- **Atributos de bloque**:
+  - CAUDAL, en m³/h, manda sobre el de las cargas;
+  - REF da el código del terminal; una REF repetida se distingue y se avisa.
+
+## Pendiente
+- Validar con un DXF real del usuario y contrastar con su cálculo previo (criterio de
+  aceptación de la Etapa 3 de la hoja de ruta).
+- DXF de salida con etiquetas de sección y caudal, y LISP para AutoCAD 2013–2017.
+- Secciones fijadas a mano por tramo: el motor ya las admite (`seccion_fija`), pero la
+  interfaz aún no las ofrece.

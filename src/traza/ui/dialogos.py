@@ -450,6 +450,12 @@ class Preguntas:
         d = DialogoEspacioCargas(self.v, espacio, uso, ajustes, fachadas, propuestas_de)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def red_aire(self, planos: list[dict], niveles: list[dict], info, actual: dict | None):
+        from traza.ui.dialogos_redes import DialogoRed
+
+        d = DialogoRed(self.v, planos, niveles, info, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def destino_pdf(self, sugerido: Path) -> Path | None:
         ruta, _ = QFileDialog.getSaveFileName(
             self.v, "Exportar informe PDF", str(sugerido), "PDF (*.pdf)"

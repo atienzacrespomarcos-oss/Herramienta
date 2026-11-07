@@ -126,12 +126,19 @@ class VisorPlano(QGraphicsView):
 
     def marcar_fachadas(self, tramos: list[tuple[tuple[float, float], tuple[float, float]]]):
         """Tramos de fachada (m) en rojo y gruesos, encima de los contornos (paso Cargas)."""
-        pluma = QPen(COLOR_FACHADA)
+        self.marcar_lineas([list(t) for t in tramos], COLOR_FACHADA, 4)
+
+    def marcar_lineas(self, lineas: list[list[tuple[float, float]]], color: QColor, ancho: int):
+        """Polilíneas en metros encima de todo (fachadas, ejes de conductos)."""
+        pluma = QPen(color)
         pluma.setCosmetic(True)
-        pluma.setWidth(4)
+        pluma.setWidth(ancho)
         camino = QPainterPath()
-        for (x0, y0), (x1, y1) in tramos:
-            camino.moveTo(x0, -y0)
-            camino.lineTo(x1, -y1)
+        for pts in lineas:
+            if len(pts) < 2:
+                continue
+            camino.moveTo(pts[0][0], -pts[0][1])
+            for x, y in pts[1:]:
+                camino.lineTo(x, -y)
         # Por encima del resaltado del espacio elegido, que si no las tapa.
         self.scene().addPath(camino, pluma).setZValue(10)

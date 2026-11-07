@@ -126,6 +126,7 @@ PASOS = [
     ("documentacion", "Documentación", TODOS),
     ("planos", "Planos y espacios", frozenset({"diseno"})),
     ("cargas", "Cargas y ventilación", frozenset({"diseno"})),
+    ("redes", "Redes de aire", frozenset({"diseno"})),
     ("mediciones", "Mediciones y ofertas", TODOS),
     ("modificados", "Modificados", TODOS),
     ("equipos", "Equipos", TODOS),
@@ -380,10 +381,15 @@ class VentanaPrincipal(QMainWindow):
         from traza.ui.paso_cargas import PaginaCargas
 
         self.pagina_cargas = PaginaCargas(self)
+        # Paso Redes de aire: módulo propio (ui/paso_redes.py).
+        from traza.ui.paso_redes import PaginaRedes
+
+        self.pagina_redes = PaginaRedes(self)
         self._pagina = {
             "documentacion": doc,
             "planos": self.pagina_planos,
             "cargas": self.pagina_cargas,
+            "redes": self.pagina_redes,
             "mediciones": med,
             "modificados": mo,
             "equipos": eq,
@@ -561,6 +567,8 @@ class VentanaPrincipal(QMainWindow):
         self.menu_planos = mb.addMenu("&Planos")
         # Menú del paso Cargas: lo llena ui/paso_cargas.PaginaCargas.
         self.menu_cargas = mb.addMenu("&Cargas")
+        # Menú del paso Redes de aire: lo llena ui/paso_redes.PaginaRedes.
+        self.menu_redes = mb.addMenu("&Redes")
 
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
@@ -588,6 +596,8 @@ class VentanaPrincipal(QMainWindow):
             self.pagina_planos.actualizar_estado(hay)
         if hasattr(self, "pagina_cargas"):
             self.pagina_cargas.actualizar_estado(hay)
+        if hasattr(self, "pagina_redes"):
+            self.pagina_redes.actualizar_estado(hay)
         el = self.elemento_seleccionado() if hay else None
         aprobado = el is not None and el["estado"] == Estado.APROBADO
         for a in (
@@ -642,6 +652,7 @@ class VentanaPrincipal(QMainWindow):
         self._refrescar_modificados()
         self.pagina_planos.refrescar()
         self.pagina_cargas.refrescar()
+        self.pagina_redes.refrescar()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()

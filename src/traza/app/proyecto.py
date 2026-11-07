@@ -16,12 +16,15 @@ from traza.app import cargas as calculo_cargas
 from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
 from traza.app import planos as calculo_planos
+from traza.app import redes as calculo_redes
 from traza.app.ordenes import (
     ENCARGOS,
+    BorrarRed,
     CambiarEstado,
     CambiarPlano,
     ConfirmarContorno,
     CrearPendiente,
+    DefinirRed,
     DescartarPropuesta,
     FijarCargasEspacio,
     FijarCargasProyecto,
@@ -38,7 +41,7 @@ from traza.app.ordenes import (
 from traza.core.estados import Estado
 from traza.core.geometria import Contorno, Vertice
 from traza.core.procedencia import Origen, Procedencia
-from traza.io import bc3, bc3_modificar, clima_idae, dxf, informe_cargas
+from traza.io import bc3, bc3_modificar, clima_idae, dxf, informe_cargas, informe_redes
 from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
 from traza.io.excel import exportar_modificado, exportar_partidas, exportar_plano
@@ -1074,6 +1077,59 @@ class Proyecto:
 
     def exportar_cargas_pdf(self, destino: Path) -> Path:
         return informe_cargas.exportar_pdf(Path(destino), self.nombre, self.calcular_cargas())
+
+    # --- Redes de aire -------------------------------------------------------------------
+
+    def redes(self) -> list[dict[str, Any]]:
+        filas = self._filas("SELECT * FROM red_aire ORDER BY nombre")
+        for f in filas:
+            f["bloques_terminales"] = json.loads(f["bloques_terminales"])
+        return filas
+
+    def red(self, red_id: str) -> dict[str, Any]:
+        for r in self.redes():
+            if r["id"] == red_id:
+                return r
+        raise OrdenRechazada("Esa red no existe.")
+
+    def definir_red(self, **datos: Any) -> str:
+        """Crea o cambia una red (`id` para cambiarla). Comprueba antes contra el DXF que la
+        capa de ejes y los bloques existen (la orden no lee ficheros)."""
+        p = self.plano(datos["plano_id"])
+        leido = self.plano_dxf(p["documento_id"])
+        capas = {c.casefold(): c for c in leido.capas}
+        if datos["capa_ejes"].casefold() not in capas:
+            raise OrdenRechazada(f"El plano no tiene la capa «{datos['capa_ejes']}».")
+        nombres = {b.nombre.casefold() for b in leido.bloques}
+        for b in [*datos["bloques_terminales"], datos.get("bloque_equipo") or ""]:
+            if b and b.casefold() not in nombres:
+                raise OrdenRechazada(f"El plano no tiene ningún bloque «{b}».")
+        orden = DefinirRed(**datos)
+        self.ejecutar(orden)
+        return orden.id
+
+    def borrar_red(self, red_id: str) -> None:
+        self.ejecutar(BorrarRed(red_id))
+
+    def calcular_red(self, red_id: str) -> calculo_redes.ResultadoRedAire:
+        red = self.red(red_id)
+        p = self.plano(red["plano_id"])
+        cargas, aviso = None, None
+        try:
+            cargas = self.calcular_cargas()
+        except OrdenRechazada as exc:
+            aviso = f"Sin cargas ({exc}): solo valen los caudales del atributo CAUDAL."
+        r = calculo_redes.calcular(
+            red, self.plano_dxf(p["documento_id"]), p["unidad"], self.espacios(), cargas
+        )
+        if aviso:
+            r = calculo_redes.ResultadoRedAire(
+                r.red, r.terminales, r.topologia, r.calculo, (aviso, *r.avisos), r.medicion
+            )
+        return r
+
+    def exportar_red_excel(self, red_id: str, destino: Path) -> Path:
+        return informe_redes.exportar_excel(Path(destino), self.nombre, self.calcular_red(red_id))
 
 
 def _codigo_libre(propuesto: str, usados: set[str]) -> str:
