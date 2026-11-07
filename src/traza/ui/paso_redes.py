@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from traza.app.ordenes import TIPOS_RED, OrdenRechazada
 from traza.core.numeros import escribir_numero
+from traza.engines.conductos import SFP
 from traza.ui.visor_plano import VisorPlano
 
 COLOR_EJES = QColor(40, 110, 200)
@@ -257,11 +258,11 @@ class PaginaRedes(QWidget):
         )
         texto = f"Caudal {_n(r.caudal_total_m3h, 0)} m³/h · {len(r.terminales)} terminales"
         if c is not None:
-            rend = r.rendimiento_minimo
+            limite = dict(SFP)[r.sfp_exigida]
             texto += (
-                f" · presión necesaria {_n(c.presion_necesaria_pa, 0)} Pa (crítico "
-                f"{c.terminal_critico}) · SFP {r.sfp_exigida} exigida: rendimiento del "
-                f"motoventilador ≥ {_n(rend * 100 if rend else None, 0)} % solo con la red"
+                f" · presión necesaria en la red {_n(c.presion_necesaria_pa, 0)} Pa (crítico "
+                f"{c.terminal_critico}) · ventilador: SFP {r.sfp_exigida} como máximo "
+                f"(≤ {limite} W por m³/s, RITE IT 1.2.4.2.5)"
             )
         if r.avisos:
             texto += "\n⚠ " + "\n⚠ ".join(r.avisos)
