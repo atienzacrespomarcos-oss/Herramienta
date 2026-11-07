@@ -1142,9 +1142,17 @@ class VentanaPrincipal(QMainWindow):
         if self.proyecto is None:
             _llenar(self.tabla_historial, [])
             return
-        codigos = {e["id"]: e["codigo"] for e in self.proyecto.elementos()}
+        cambios = self.proyecto.cambios()
+        # Códigos también de elementos ya quitados (el registro guarda su fila): si no, sus
+        # cambios salían sin decir a qué afectaban (revisión 07-11-2026).
+        codigos = {}
+        for c in cambios:
+            if c["entidad"] == "elemento":
+                f = json.loads(c["despues"] or c["antes"])
+                codigos.setdefault(f["id"], f["codigo"])
+        codigos.update({e["id"]: e["codigo"] for e in self.proyecto.elementos()})
         filas = []
-        for c in self.proyecto.cambios():
+        for c in cambios:
             fila = json.loads(c["despues"] or c["antes"])
             afecta = codigos.get(fila.get("elemento_id") or fila.get("id"), "")
             if c["entidad"] == "propiedad":
@@ -1159,6 +1167,12 @@ class VentanaPrincipal(QMainWindow):
                 afecta = f"proyecto · {fila['clave']}"
             elif c["entidad"] == "pendiente":
                 afecta = afecta or "pendiente"
+            elif c["entidad"] == "plano":
+                afecta = "plano (capas y unidad)"
+            elif c["entidad"] == "geometria":
+                afecta = f"{afecta} · contorno (entidad {fila['handle']})"
+            elif c["entidad"] == "registro_calculo":
+                afecta = f"registro de cálculo · {fila['motor']}"
             filas.append([_fecha(c["fecha"]), c["autor"], c["orden"], afecta, c["campo"] or ""])
         _llenar(self.tabla_historial, filas)
 

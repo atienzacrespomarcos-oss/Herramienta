@@ -66,11 +66,16 @@ def propuestas(
     descartados: set[str],
 ) -> list[Propuesta]:
     f = factor(unidad)
-    roles = {c: "espacio" for c in capas_espacios} | {c: "obstaculo" for c in capas_obstaculos}
-    textos = [t for t in plano.textos if not capas_textos or t.capa in capas_textos]
+    # Los nombres de capa de AutoCAD no distinguen mayúsculas: una entidad puede citar «muros»
+    # y la tabla de capas llamarla «MUROS».
+    roles = {c.casefold(): "espacio" for c in capas_espacios} | {
+        c.casefold(): "obstaculo" for c in capas_obstaculos
+    }
+    de_textos = {c.casefold() for c in capas_textos}
+    textos = [t for t in plano.textos if not de_textos or t.capa.casefold() in de_textos]
     salida = []
     for c in plano.contornos:
-        rol = roles.get(c.capa)
+        rol = roles.get(c.capa.casefold())
         if rol is None or c.handle in confirmados or c.handle in descartados:
             continue
         m = c.contorno.escalado(f)

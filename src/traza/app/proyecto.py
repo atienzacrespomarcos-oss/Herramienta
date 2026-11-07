@@ -21,6 +21,7 @@ from traza.app.ordenes import (
     CambiarPlano,
     ConfirmarContorno,
     CrearPendiente,
+    DescartarPropuesta,
     FijarPropiedad,
     ImportarMedicion,
     LeerPlano,
@@ -216,22 +217,34 @@ class Proyecto:
 
     def _comprobar_bloqueo(self, d: Delta) -> None:
         """Línea roja 5: lo aprobado no se toca sin reabrirlo con una decisión escrita."""
+        afectados: list[dict | None] = []
         if d.tabla == "elemento":
-            el = d.antes
-            if el is None and d.despues is not None and d.despues["padre_id"]:
-                # Añadir un componente a un conjunto aprobado también lo modifica.
-                el = leer(self._con, "elemento", {"id": d.despues["padre_id"]})
+            afectados.append(d.antes)
+            fila = d.despues if d.antes is None else (d.antes if d.despues is None else None)
+            if fila is not None and fila["padre_id"]:
+                # Añadir un componente a un conjunto aprobado, o quitárselo, también lo
+                # modifica (revisión 07-11-2026: quitar un espacio de un nivel aprobado pasaba).
+                afectados.append(leer(self._con, "elemento", {"id": fila["padre_id"]}))
         elif d.tabla in ("propiedad", "decision"):
             fila = d.antes or d.despues
             assert fila is not None
             el = leer(self._con, "elemento", {"id": fila["elemento_id"]})
+            afectados.append(el)
+            if d.tabla == "propiedad" and el is not None and el["tipo"] == "nivel":
+                # Los espacios y obstáculos heredan la altura del nivel: cambiarla cambia la
+                # de los aprobados en silencio (revisión 07-11-2026).
+                afectados += self._filas(
+                    "SELECT * FROM elemento WHERE padre_id = ? AND estado = ?",
+                    (el["id"], str(Estado.APROBADO)),
+                )
         else:
             return
-        if el is not None and el["estado"] == Estado.APROBADO:
-            raise ElementoBloqueado(
-                f"«{el['codigo']}» está aprobado. Para cambiarlo hay que reabrirlo indicando "
-                "el motivo."
-            )
+        for el in afectados:
+            if el is not None and el["estado"] == Estado.APROBADO:
+                raise ElementoBloqueado(
+                    f"«{el['codigo']}» está aprobado. Para cambiarlo hay que reabrirlo "
+                    "indicando el motivo."
+                )
 
     def _transaccion(self, nombre, autor, obtener_deltas, orden_id: str | None = None) -> _Paso:
         orden_id = orden_id or nuevo_id()
@@ -854,6 +867,12 @@ class Proyecto:
         self.ejecutar(orden)
         return orden.id
 
+    def descartar_propuesta(self, plano_id: str, handle: str) -> None:
+        """Descarta una propuesta que existe (la orden sola no conoce el DXF)."""
+        if handle not in {x.handle for x in self.propuestas(plano_id)}:
+            raise OrdenRechazada("Ese contorno no está entre las propuestas del plano.")
+        self.ejecutar(DescartarPropuesta(plano_id, handle))
+
     def _valores(self, tipos_elemento: tuple[str, ...]) -> dict[str, dict[str, Any]]:
         marcas = ",".join("?" * len(tipos_elemento))
         valores: dict[str, dict[str, Any]] = {}
@@ -901,8 +920,17 @@ class Proyecto:
             ):
                 f[k] = propias.get(k)
             clave = "altura_libre" if tipo_elemento == "espacio" else "altura"
+            inclinada = f["altura_minima"] is not None or f["altura_maxima"] is not None
             if propias.get(clave) is not None:
                 f["altura"], f["altura_origen"] = propias[clave], "propia"
+            elif inclinada:
+                # Cubierta inclinada: no hay UNA altura; mínima y máxima van en sus columnas
+                # (revisión 07-11-2026: salía la del nivel junto a la mínima y la máxima).
+                f["altura"], f["altura_origen"] = None, "inclinada"
+            elif tipo_elemento == "obstaculo" and (f["cota_inferior"] or 0) > 0:
+                # Un obstáculo que no arranca del suelo no ocupa toda la altura del nivel:
+                # heredarla daría una cara superior por encima del techo. No consta.
+                f["altura"], f["altura_origen"] = None, None
             elif nivel.get("altura_libre") is not None:
                 f["altura"], f["altura_origen"] = nivel["altura_libre"], "del nivel"
             else:
@@ -957,6 +985,7 @@ def _codigo_libre(propuesto: str, usados: set[str]) -> str:
 
 
 def _capas_existen(plano: dxf.PlanoDxf, capas: list[str]) -> None:
-    faltan = sorted({c for c in capas if c not in plano.capas})
+    existentes = {c.casefold() for c in plano.capas}
+    faltan = sorted({c for c in capas if c.strip().casefold() not in existentes})
     if faltan:
         raise OrdenRechazada(f"El plano no tiene la capa «{faltan[0]}».")
