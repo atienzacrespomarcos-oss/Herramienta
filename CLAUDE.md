@@ -13,7 +13,7 @@ Si algo de aquí deja de ser cierto, corrígelo en el mismo cambio.
 decidir por él lo que es suyo (alcance, prioridades, aspecto); sí resolver
 sin preguntar lo puramente técnico, dejándolo escrito en un ADR o en la ficha del módulo.
 
-**Actualización del 07-11-2026 (usuario):** «Solo quiero que pares cuando tengas dudas de
+**Actualización del 07-11-2026 (usuario; prevalece sobre el párrafo anterior):** «Solo quiero que pares cuando tengas dudas de
 qué debe incorporar la herramienta, o cosas de cómo debe hacer algo. Si no, continúa con tu
 criterio». Y: «Fusiona cuando esté en verde y sigue». Por tanto: parar solo ante dudas de
 **qué** debe hacer la herramienta o **cómo** debe hacerlo para el usuario; lo demás se

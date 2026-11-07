@@ -175,7 +175,9 @@ class PaginaPlanos(QWidget):
             if d["extension"].lower() == ".dxf" and d["id"] not in leidos
         ]
 
-    def _info(self, documento: dict, elegidas: set[str] = frozenset()) -> InfoPlano:
+    def _info(
+        self, documento: dict, elegidas: frozenset[str] | set[str] = frozenset()
+    ) -> InfoPlano:
         plano = self.proyecto.plano_dxf(
             documento["id"],
             esperar=lambda f: self.v._en_segundo_plano(f, "Leyendo el plano DXF…", "Leer plano"),
@@ -227,7 +229,9 @@ class PaginaPlanos(QWidget):
 
     def accion_capas(self) -> None:
         p = self.proyecto.plano(self.plano_id())
-        doc = next(d for d in self.proyecto.documentos() if d["id"] == p["documento_id"])
+        doc = next((d for d in self.proyecto.documentos() if d["id"] == p["documento_id"]), None)
+        if doc is None:
+            raise OrdenRechazada("El DXF de este plano ya no está en el proyecto.")
         actual = DatosCapas(
             p["unidad"], p["capas_espacios"], p["capas_obstaculos"], p["capas_textos"]
         )
@@ -358,7 +362,7 @@ class PaginaPlanos(QWidget):
             self.v.preguntas.aviso("Propuestas", "Elige una propuesta de la lista.")
         return p
 
-    def _al_elegir_fila(self) -> None:
+    def _al_elegir_fila(self, centrar: bool = True) -> None:
         pestana = self.pestanas.currentWidget()
         contorno = None
         if pestana is self.tabla_propuestas:
@@ -370,7 +374,7 @@ class PaginaPlanos(QWidget):
         elif pestana is self.tabla_obstaculos:
             o = self._fila_elegida(self.tabla_obstaculos, self._obstaculos)
             contorno = o["contorno"] if o else None
-        self.visor.resaltar(contorno)
+        self.visor.resaltar(contorno, centrar=centrar)
         self.actualizar_estado(self.proyecto is not None)
 
     def _al_cambiar_plano(self) -> None:
@@ -397,6 +401,7 @@ class PaginaPlanos(QWidget):
         from traza.ui.ventana import _llenar
 
         plano_id = self.plano_id() if self.proyecto is not None else None
+        seleccion = self._seleccion()
         if plano_id is None:
             for t in (
                 self.tabla_propuestas,
@@ -406,11 +411,9 @@ class PaginaPlanos(QWidget):
                 self.tabla_longitudes,
             ):
                 _llenar(t, [])
-            _llenar(
-                self.tabla_niveles,
-                [] if self.proyecto is None else self._filas_niveles()[0],
-                None if self.proyecto is None else self._filas_niveles()[1],
-            )
+            filas, ids = ([], None) if self.proyecto is None else self._filas_niveles()
+            _llenar(self.tabla_niveles, filas, ids)
+            self._restaurar(seleccion)
             self._propuestas, self._espacios, self._obstaculos = [], [], []
             self.resumen.setText("" if self.proyecto is None else "Lee un plano DXF para empezar.")
             self.visor.vacio()
@@ -432,6 +435,7 @@ class PaginaPlanos(QWidget):
             self._propuestas, self._espacios, self._obstaculos = [], [], []
             self.resumen.setText(f"⚠ No se puede leer el plano: {exc}")
             self.visor.vacio("No se puede leer el plano")
+            self._encuadrado = None  # cuando vuelva a leerse, que se encuadre
 
     def _seleccion(self) -> dict:
         def ident(tabla):
@@ -577,7 +581,7 @@ class PaginaPlanos(QWidget):
         )
         self._encuadrado = plano_id
         self._restaurar(seleccion)
-        self._al_elegir_fila()
+        self._al_elegir_fila(centrar=False)
 
     def _filas_niveles(self) -> tuple[list[list[str]], list[str]]:
         niveles = self.proyecto.niveles()

@@ -27,6 +27,13 @@
   - el visor no pierde el zoom;
   - las capas apagadas no se dibujan;
   - las unidades del lector, las órdenes y el diálogo, atadas con un test.
+- Segunda revisión:
+  - un plano que vuelve a leerse se reencuadra;
+  - el visor vacío no queda fuera de cuadro;
+  - la selección de niveles se conserva también sin plano;
+  - refrescar no recoloca la vista;
+  - pruebas con la ventana mostrada (zoom), de las capas apagadas y de la lectura en
+    segundo plano al abrir.
 
 ### Etapa 3 · geometría DXF, bloque B (07-11-2026)
 - Esquema V4: `plano` (unidad confirmada, capas de espacios, obstáculos y nombres;

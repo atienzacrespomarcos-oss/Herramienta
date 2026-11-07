@@ -11,7 +11,7 @@ io/dxf.py): el visor no mide nada.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
@@ -42,6 +42,10 @@ class VisorPlano(QGraphicsView):
         self.scene().clear()
         self._resaltado = None
         self.resetTransform()  # tras un zoom, el texto podía quedar fuera de cuadro
+        self._por_encuadrar = False
+        # clear() no borra el rectángulo de escena fijado por dibujar(): con un plano lejos
+        # del origen, el texto en (0, 0) quedaba fuera de la vista.
+        self.scene().setSceneRect(QRectF())
         self.scene().addText(texto)
 
     def dibujar(

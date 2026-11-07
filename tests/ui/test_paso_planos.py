@@ -307,3 +307,78 @@ def test_unidades_atadas_entre_lector_ordenes_y_dialogo():
     from traza.ui.dialogos_planos import UNIDADES as UNIDADES_DIALOGO
 
     assert tuple(UNIDADES) == UNIDADES_PLANO == UNIDADES_DIALOGO
+
+
+# --- Segunda revisión del bloque C (07-11-2026) -------------------------------------------
+
+
+def test_visor_encuadra_al_mostrarse_y_conserva_el_zoom(ventana, tmp_path, qtbot):
+    v, q = ventana
+    pp = v.pagina_planos
+    _leer_nave(v, q, tmp_path)
+    v.show()
+    v.ir_a_paso("planos")
+    qtbot.waitExposed(v)
+    qtbot.waitUntil(lambda: pp.visor.transform().m11() != 1.0)
+    encuadre = pp.visor.transform().m11()
+    pp.visor.scale(2, 2)  # el usuario hace zoom
+    v.refrescar()  # cualquier acción refresca
+    assert pp.visor.transform().m11() == pytest.approx(encuadre * 2)
+
+
+def test_capas_apagadas_no_se_dibujan(ventana, tmp_path):
+    import ezdxf
+
+    v, q = ventana
+    doc = ezdxf.new("R2013")
+    doc.header["$INSUNITS"] = 6
+    doc.layers.add("ESP")
+    doc.layers.add("OCULTA").off()
+    msp = doc.modelspace()
+    msp.add_lwpolyline(
+        [(0, 0), (10, 0), (10, 10), (0, 10)], close=True, dxfattribs={"layer": "ESP"}
+    )
+    msp.add_line((1000, 1000), (1001, 1001), dxfattribs={"layer": "OCULTA"})
+    ruta = tmp_path / "con_oculta.dxf"
+    doc.saveas(ruta)
+    v.proyecto.incorporar_documento(ruta)
+    v.refrescar()
+    q.preparar("elegir", 0)
+    q.preparar("capas_plano", DatosCapas("m", ["ESP"], [], []))
+    v.pagina_planos.a_leer.trigger()
+    caja = v.pagina_planos.visor.scene().itemsBoundingRect()
+    assert caja.right() < 100  # la línea de la capa apagada (x = 1000 m) no está dibujada
+
+
+def test_al_abrir_el_proyecto_el_plano_se_lee_en_segundo_plano(ventana, tmp_path, monkeypatch):
+    v, q = ventana
+    _leer_nave(v, q, tmp_path)
+    v.proyecto._planos_dxf.clear()  # como en una sesión nueva
+    llamadas = []
+    original = v._en_segundo_plano
+
+    def espiar(funcion, *args):
+        llamadas.append(args)
+        return original(funcion, *args)
+
+    monkeypatch.setattr(v, "_en_segundo_plano", espiar)
+    v.refrescar()
+    assert llamadas and "plano DXF" in llamadas[0][0]
+
+
+def test_plano_que_vuelve_a_leerse_se_encuadra(ventana, tmp_path):
+    v, q = ventana
+    pp = v.pagina_planos
+    _leer_nave(v, q, tmp_path)
+    p = v.proyecto
+    ruta = p.ruta_documento(p.planos()[0]["documento_id"])
+    bueno = ruta.read_bytes()
+    ruta.chmod(0o644)
+    ruta.write_bytes(b"roto")
+    p._planos_dxf.clear()
+    v.refrescar()
+    assert pp._encuadrado is None
+    ruta.write_bytes(bueno)
+    p._planos_dxf.clear()
+    v.refrescar()
+    assert pp._encuadrado == p.planos()[0]["id"] and pp.tabla_propuestas.rowCount() == 6

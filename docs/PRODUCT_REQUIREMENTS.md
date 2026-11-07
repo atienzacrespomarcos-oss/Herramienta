@@ -27,7 +27,7 @@
 | Normas UNE | **No disponibles; usar fuentes públicas** | Regla de procedencia: los valores tomados de fuentes públicas que reproducen una UNE (guías técnicas del Ministerio, catálogos de fabricantes, publicaciones técnicas) se marcan **«fuente secundaria»**, con URL, fecha de consulta y edición de la norma que dicen reproducir; se contrastan con al menos dos fuentes independientes cuando existan y **las discrepancias se muestran, no se resuelven en silencio**. Una fuente secundaria nunca se presenta como texto oficial. |
 | Validación | Primero «programas de terceros»; el 06-11-2026 aclara que **no tiene ninguno instalado** y elige **ejemplos publicados** | Reglas en `TESTING_STRATEGY.md` §0.2. |
 | Nombre | **TRAZA** (06-11-2026) | Repositorio `atienzacrespomarcos-oss/Herramienta`. |
-| Entregas | **Rama + PR en borrador por bloque** (06-11-2026) | El usuario revisa y fusiona. |
+| Entregas | **Rama + PR en borrador por bloque** (06-11-2026) | Desde el 07-11-2026 Claude fusiona cuando la CI está en verde y la revisión independiente no deja nada pendiente (petición del usuario). |
 | Entregables | **«Los que yo diga»** | Generador documental por plantillas (DOCX/XLSX/DXF/LISP); el contenido de cada entregable lo defines tú cuando toque, no se presupone. |
 | Uso | **Solo tú, Windows** | Uso estrictamente personal, sin distribución: **PyMuPDF (AGPL) es aceptable** (ADR-0012 cerrado). No hace falta instalador. |
 | Tu papel | **Usar y validar** | Documentación orientada a ingeniero: cada motor tendrá una ficha de método en lenguaje técnico (no de código) para que puedas auditarlo. |
