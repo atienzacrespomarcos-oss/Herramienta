@@ -18,8 +18,12 @@ import pytest
 from openpyxl import load_workbook
 
 from traza.app.ordenes import (
+    Aprobar,
+    BorrarPropiedad,
+    CrearElemento,
     CrearNivel,
-    DescartarPropuesta,
+    CrearPendiente,
+    FijarAlturaEspacio,
     FijarPropiedad,
     OrdenRechazada,
     QuitarDePlano,
@@ -187,9 +191,9 @@ def test_espacio_sin_nombre_y_texto_que_no_esta_dentro(plano):
 def test_descartar_y_recuperar(plano):
     p, plano_id, nivel_id, _ = plano
     corbata = next(x for x in p.propuestas(plano_id) if x.autointersecante)
-    p.ejecutar(DescartarPropuesta(plano_id, corbata.handle))
+    p.descartar_propuesta(plano_id, corbata.handle)
     assert corbata.handle not in {x.handle for x in p.propuestas(plano_id)}
-    with pytest.raises(OrdenRechazada):
+    with pytest.raises(OrdenRechazada, match="no está entre las propuestas"):
         p.confirmar_contorno(plano_id, corbata.handle, nivel_id, nombre="X")
     p.ejecutar(RecuperarPropuesta(plano_id, corbata.handle))
     assert corbata.handle in {x.handle for x in p.propuestas(plano_id)}
@@ -268,25 +272,26 @@ def test_unidad_no_cambia_con_geometria_confirmada(plano):
     assert p.plano(plano_id)["unidad"] == "m"
 
 
-def test_quitar_y_deshacer(plano):
+def test_quitar_deshacer_y_rehacer(plano):
     p, plano_id, nivel_id, _ = plano
     por = _por_nombre(p.propuestas(plano_id))
-    eid = p.confirmar_contorno(plano_id, por["ALMACÉN"].handle, nivel_id, nombre="A")
+    handle = por["ALMACÉN"].handle
+    eid = p.confirmar_contorno(plano_id, handle, nivel_id, nombre="A")
     with pytest.raises(OrdenRechazada, match="tiene 1 espacio"):
         p.ejecutar(QuitarDePlano(nivel_id))
     p.ejecutar(QuitarDePlano(eid))
-    assert p.espacios() == [] and por["ALMACÉN"].handle in {
-        x.handle for x in p.propuestas(plano_id)
-    }
-    p.deshacer()
+    assert p.espacios() == [] and handle in {x.handle for x in p.propuestas(plano_id)}
+    assert p.deshacer() == "QuitarDePlano"
     assert [e["id"] for e in p.espacios()] == [eid]
-    # Deshacer la confirmación quita también la geometría y el registro de cálculo.
-    p.ejecutar(QuitarDePlano(eid))
-    p.deshacer()
-    p.deshacer()
-    p.deshacer()
-    assert p.espacios() == []
+    # Deshacer la confirmación quita la geometría y el registro de cálculo; rehacerla los
+    # repone igual (orden compuesta, con claves foráneas).
+    assert p.deshacer() == "ConfirmarContorno"
+    assert p.espacios() == [] and handle in {x.handle for x in p.propuestas(plano_id)}
     assert p._filas("SELECT count(*) AS n FROM registro_calculo")[0]["n"] == 0
+    assert p._filas("SELECT count(*) AS n FROM geometria")[0]["n"] == 0
+    assert p.rehacer() == "ConfirmarContorno"
+    [e] = p.espacios()
+    assert e["id"] == eid and e["handle"] == handle and e["superficie"] == pytest.approx(1000)
 
 
 def test_codigos_de_nivel_y_cota_negativa(proyecto):
@@ -301,3 +306,114 @@ def test_codigos_de_nivel_y_cota_negativa(proyecto):
         proyecto.ejecutar(CrearNivel("X", 0, 0))
     with pytest.raises(OrdenRechazada):
         proyecto.ejecutar(CrearNivel("  ", 0, 3))
+
+
+# --- Revisión independiente del bloque B (07-11-2026) --------------------------------------
+
+
+def test_excel_no_convierte_en_formula_ninguna_fila(plano, tmp_path):
+    p, plano_id, nivel_id, _ = plano
+    por = _por_nombre(p.propuestas(plano_id))
+    p.confirmar_contorno(plano_id, por["ALMACÉN"].handle, nivel_id, nombre="=HIPERVINCULO(1)")
+    p.confirmar_contorno(plano_id, por["OFICINAS"].handle, nivel_id, nombre="Oficinas")
+    ws = load_workbook(p.exportar_plano_excel(plano_id, tmp_path / "x.xlsx"))["Espacios"]
+    celda = ws.cell(row=2, column=2)  # no es la última fila
+    assert celda.value == "=HIPERVINCULO(1)" and celda.data_type == "s"
+
+
+def test_lo_aprobado_no_cambia_por_su_nivel_ni_se_quita(plano):
+    from traza.app.proyecto import ElementoBloqueado
+
+    p, plano_id, nivel_id, _ = plano
+    por = _por_nombre(p.propuestas(plano_id))
+    eid = p.confirmar_contorno(plano_id, por["ALMACÉN"].handle, nivel_id, nombre="A")
+    p.ejecutar(Aprobar(eid, "Medido y revisado"))
+    # Cambiar la altura del nivel cambiaría la del espacio aprobado, que la hereda.
+    with pytest.raises(ElementoBloqueado, match="ESP-001"):
+        p.ejecutar(FijarPropiedad(nivel_id, "altura_libre", 8.0, "m", Procedencia(Origen.USUARIO)))
+    with pytest.raises(OrdenRechazada, match="ESP-001» está aprobado"):
+        p.ejecutar(QuitarDePlano(eid))
+    # Nivel aprobado: no se le quitan ni se le añaden espacios.
+    otro = p.confirmar_contorno(plano_id, por["OFICINAS"].handle, nivel_id, nombre="O")
+    p.ejecutar(Aprobar(nivel_id, "Cotas del proyecto"))
+    with pytest.raises(ElementoBloqueado, match="NIV-01"):
+        p.ejecutar(QuitarDePlano(otro))
+    pilar = next(x for x in p.propuestas(plano_id) if x.rol == "obstaculo")
+    with pytest.raises(ElementoBloqueado, match="NIV-01"):
+        p.confirmar_contorno(plano_id, pilar.handle, nivel_id)
+
+
+def test_superficie_calculada_no_se_pisa_ni_se_borra(plano):
+    p, plano_id, nivel_id, _ = plano
+    eid = p.confirmar_contorno(
+        plano_id, _por_nombre(p.propuestas(plano_id))["ALMACÉN"].handle, nivel_id, nombre="A"
+    )
+    with pytest.raises(OrdenRechazada, match="resultado de cálculo"):
+        p.ejecutar(FijarPropiedad(eid, "superficie", 500, "m**2", Procedencia(Origen.USUARIO)))
+    with pytest.raises(OrdenRechazada, match="resultado de cálculo"):
+        p.ejecutar(BorrarPropiedad(eid, "perimetro"))
+
+
+def test_altura_por_modos(plano):
+    p, plano_id, nivel_id, _ = plano
+    eid = p.confirmar_contorno(
+        plano_id, _por_nombre(p.propuestas(plano_id))["ALMACÉN"].handle, nivel_id, nombre="A"
+    )
+    p.ejecutar(FijarAlturaEspacio(eid, "inclinada", minima=6.0, maxima=10.5))
+    [e] = p.espacios()
+    assert (e["altura"], e["altura_origen"], e["altura_minima"], e["altura_maxima"]) == (
+        None,
+        "inclinada",
+        6.0,
+        10.5,
+    )
+    p.ejecutar(FijarAlturaEspacio(eid, "propia", altura=7.0))
+    [e] = p.espacios()
+    assert (e["altura"], e["altura_origen"], e["altura_minima"]) == (7.0, "propia", None)
+    p.ejecutar(FijarAlturaEspacio(eid, "nivel"))
+    [e] = p.espacios()
+    assert (e["altura"], e["altura_origen"]) == (9.5, "del nivel")
+    with pytest.raises(OrdenRechazada, match="menor que la máxima"):
+        p.ejecutar(FijarAlturaEspacio(eid, "inclinada", minima=8.0, maxima=8.0))
+    with pytest.raises(OrdenRechazada, match="mayor que 0"):
+        p.ejecutar(FijarPropiedad(eid, "altura_libre", 0, "m", Procedencia(Origen.USUARIO)))
+
+
+def test_obstaculo_elevado_sin_altura_no_hereda(plano):
+    p, plano_id, nivel_id, _ = plano
+    cercha = next(x for x in p.propuestas(plano_id) if x.rol == "obstaculo")
+    p.confirmar_contorno(plano_id, cercha.handle, nivel_id, nombre="Cercha", cota_inferior=6.0)
+    [o] = p.obstaculos()
+    assert (o["altura"], o["altura_origen"], o["cota_inferior"]) == (None, None, 6.0)
+
+
+def test_tipos_de_plano_no_se_crean_por_otra_via(plano):
+    p, plano_id, nivel_id, _ = plano
+    with pytest.raises(OrdenRechazada, match="paso «Planos»"):
+        p.ejecutar(CrearElemento("espacio", "X"))
+    eid = p.confirmar_contorno(
+        plano_id, _por_nombre(p.propuestas(plano_id))["ALMACÉN"].handle, nivel_id, nombre="A"
+    )
+    with pytest.raises(OrdenRechazada, match="no cuelga"):
+        p.ejecutar(CrearElemento("equipo", "UTA-01", eid))
+
+
+def test_descartar_solo_propuestas_y_quitar_con_pendientes(plano):
+    p, plano_id, nivel_id, _ = plano
+    with pytest.raises(OrdenRechazada, match="no está entre las propuestas"):
+        p.descartar_propuesta(plano_id, "NOEXISTE")
+    eid = p.confirmar_contorno(
+        plano_id, _por_nombre(p.propuestas(plano_id))["ALMACÉN"].handle, nivel_id, nombre="A"
+    )
+    p.ejecutar(CrearPendiente("Falta la altura real del falso techo", eid))
+    with pytest.raises(OrdenRechazada, match="1 pendientes"):
+        p.ejecutar(QuitarDePlano(eid))
+
+
+def test_capas_sin_distinguir_mayusculas(proyecto, tmp_path):
+    doc_id = proyecto.incorporar_documento(_nave(tmp_path))
+    plano_id = proyecto.leer_plano(doc_id, "mm", ["a-espacios"], [], ["A-Textos"])
+    assert len([x for x in proyecto.propuestas(plano_id) if x.rol == "espacio"]) == 3
+    assert _por_nombre(proyecto.propuestas(plano_id))["ALMACÉN"]
+    with pytest.raises(OrdenRechazada, match="repetida"):
+        proyecto.cambiar_plano(plano_id, "mm", ["A-ESPACIOS", "a-espacios"], [])

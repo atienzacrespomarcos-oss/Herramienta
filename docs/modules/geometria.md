@@ -151,21 +151,35 @@ superficies ya no corresponderían al plano.
 | Valor | Origen |
 |---|---|
 | Contorno | Tabla `geometria`: en metros, con la entidad del DXF (handle y capa) de la que sale. |
-| Superficie y perímetro | **Cálculo**, con su registro: motor `geometria.contorno` 1.0.0, huella de las entradas (documento, handle, unidad, vértices), fórmula y «sin aproximaciones». Los calcula la propia orden con el núcleo: no se fía del valor que le pasen. |
+| Superficie y perímetro | **Cálculo**, con su registro: motor `geometria.contorno` 1.0.0, huella de las entradas (documento, handle, unidad, vértices), fórmula y «sin aproximaciones». Los calcula la propia orden con el núcleo a partir de los vértices, que lee `Proyecto` del DXF por su handle (la orden no relee el DXF). No se pueden pisar ni borrar a mano: un resultado de cálculo se cambia cambiando sus datos de partida. |
 | Nombre | El **texto del plano**, citado con su handle y capa, o el que escribe el usuario (origen «usuario»). |
-| Alturas | **Nivel**: cota (admite negativa, sótanos) y altura libre. **Espacio**: la hereda del nivel salvo excepción propia (altura libre, o mínima y máxima en cubierta inclinada). **Obstáculo**: cota inferior y altura; sin altura, ocupa toda la del nivel. Las consultas dicen siempre si la altura es «propia» o «del nivel». |
+| Alturas | Ninguna admite 0. **Nivel**: cota (admite negativa, sótanos) y altura libre. **Espacio**: en uno de tres modos (`FijarAlturaEspacio`): la del nivel, altura propia, o cubierta inclinada con mínima < máxima. Cambiar de modo quita los valores del anterior. **Obstáculo**: cota inferior y altura; sin altura, ocupa toda la del nivel solo si arranca del suelo; si está elevado y no consta su altura, «no consta». Las consultas dicen si la altura es «propia», «del nivel» o «inclinada». |
 
 Un contorno que **se corta a sí mismo no se confirma**: su superficie no tiene sentido.
 Hay que corregirlo en el plano.
 
-**Quitar** un espacio u obstáculo lo devuelve a las propuestas. Un nivel con espacios no se
-quita. Todo se puede deshacer.
+**Quitar** un espacio u obstáculo lo devuelve a las propuestas. Todo se puede deshacer.
+No se quitan:
+- un nivel con espacios;
+- un elemento aprobado, que primero hay que reabrir;
+- un elemento con decisiones o pendientes registrados, porque forman parte de su historia.
+  **Limitación:** un espacio que se aprobó alguna vez tiene decisiones y ya no se puede
+  quitar. Si su contorno cambia, se confirma el nuevo.
+
+**Lo aprobado no cambia por su nivel:** con un espacio u obstáculo aprobado, no se pueden
+cambiar las propiedades de su nivel, porque hereda su altura. Tampoco se pueden añadir ni
+quitar espacios de un nivel aprobado.
+
+Los nombres de capa **no distinguen mayúsculas**, como en AutoCAD.
 
 **Bloques por espacio:**
 - Se cuentan por nombre, capa y espacio según su **punto de inserción**.
 - Un bloque que cae en varios espacios (uno dentro de otro) cuenta en el más pequeño, y se
   dice cuántos hay así.
 - Los que no caen en ningún espacio salen como «Fuera de los espacios confirmados».
+- **Limitación:** se comparan con todos los espacios del plano, sin separar por nivel. Un DXF
+  con varias plantas dibujadas una encima de otra mezclaría sus bloques; dibujadas una al
+  lado de otra, no.
 
 **Longitudes por capa**, en metros y en planta.
 

@@ -10,7 +10,7 @@ declarados).
 |---|---|---|---|---|
 | — | Especificación y arquitectura | 0 | Implementada | Pendiente de aprobación formal del usuario. |
 | — | Prueba de viabilidad (ezdxf R2013 + XDATA, PySide6 sin pantalla, pint) | 0 | Implementada | Prueba desechable, fuera del producto. |
-| RF-001, 002, 003*, 006, 007, 008, 010, 011, 012 | Núcleo de proyecto sin interfaz | 1 | Implementada | `docs/modules/nucleo.md`. *RF-003 parcial: sin geometría ni conexiones (Etapas 2–3). Pasa a Validada cuando lo uses desde la interfaz (bloque 2). |
+| RF-001, 002, 003*, 006, 007, 008, 010, 011, 012 | Núcleo de proyecto sin interfaz | 1 | Implementada | `docs/modules/nucleo.md`. *RF-003 parcial: geometría de espacios y obstáculos desde DXF (Etapa 3); sin conexiones. Pasa a Validada cuando lo uses desde la interfaz (bloque 2). |
 | RF-009 | Revisiones de proyecto con nombre y comparación | 1–2 | Pendiente | |
 | — | Interfaz: ventana principal, árbol, propiedades, documentos, historial, pendientes | 1 | Implementada | `docs/modules/interfaz.md`. Pasa a Validada cuando el usuario complete el escenario de aceptación con TRAZA.exe en su Windows. |
 | — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |

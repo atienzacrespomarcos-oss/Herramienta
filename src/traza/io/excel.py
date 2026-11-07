@@ -275,9 +275,11 @@ def _hoja(wb, titulo: str, columnas: list[tuple[str, int]], filas: list[list], n
         ws.column_dimensions[get_column_letter(i)].width = ancho
     for fila in filas:
         ws.append([_texto(v) for v in fila])
+        # Fila a fila: `_sin_formulas` mira la última. Un nombre de capa o de bloque de un
+        # plano ajeno que empiece por «=» no debe ejecutarse en el Excel (revisión 07-11-2026).
+        _sin_formulas(ws)
         for col in numericas:
             ws.cell(row=ws.max_row, column=col).number_format = FORMATO_NUMERO
-    _sin_formulas(ws)
     ws.freeze_panes = "A2"
     return ws
 

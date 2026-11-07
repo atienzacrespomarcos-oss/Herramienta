@@ -23,7 +23,7 @@ from traza.core.geometria import MOTOR as MOTOR_GEOMETRIA
 from traza.core.geometria import VERSION as VERSION_GEOMETRIA
 from traza.core.geometria import Contorno, ContornoInvalido, Vertice
 from traza.core.procedencia import Origen, Procedencia
-from traza.core.tipos import Clase, tipo, validar_valor
+from traza.core.tipos import TIPOS_DE_PLANO, Clase, tipo, validar_valor
 from traza.io.pdf import pagina_citada
 from traza.persistence.filas import Delta, Fila, leer
 
@@ -79,8 +79,17 @@ class CrearElemento(Orden):
             raise OrdenRechazada("El elemento necesita un código (p. ej. UTA-01).")
         if con.execute("SELECT 1 FROM elemento WHERE codigo = ?", (codigo,)).fetchone():
             raise OrdenRechazada(f"Ya existe un elemento con el código «{codigo}».")
+        if t.nombre in TIPOS_DE_PLANO:
+            raise OrdenRechazada(
+                f"Los elementos de tipo «{t.etiqueta}» se crean desde el paso «Planos», con su "
+                "geometría."
+            )
         if self.padre_id is not None:
-            _elemento(con, self.padre_id)
+            padre = _elemento(con, self.padre_id)
+            if padre["tipo"] in TIPOS_DE_PLANO:
+                raise OrdenRechazada(
+                    "Un equipo no cuelga de un nivel, espacio u obstáculo en esta versión."
+                )
         t_ahora = ahora()
         return [
             Delta(
@@ -244,6 +253,7 @@ class FijarPropiedad(Orden):
         _comprobar_cita(con, self.procedencia)
         valor = self.valor.strip() if defn.clase is Clase.TEXTO else self.valor
         antes = leer(con, "propiedad", {"elemento_id": self.elemento_id, "clave": self.clave})
+        _no_es_calculo(antes)
         p = self.procedencia
         despues = {
             "elemento_id": self.elemento_id,
@@ -298,7 +308,19 @@ class BorrarPropiedad(Orden):
         antes = leer(con, "propiedad", {"elemento_id": self.elemento_id, "clave": self.clave})
         if antes is None:
             raise OrdenRechazada("Esa propiedad no tiene valor.")
+        _no_es_calculo(antes)
         return [Delta("propiedad", antes, None)]
+
+
+def _no_es_calculo(fila: Fila | None) -> None:
+    """Un resultado de cálculo no se pisa ni se borra a mano: dejaría el valor sin su
+    registro, o con uno que ya no lo explica (revisión 07-11-2026: la superficie de un
+    espacio, calculada de su contorno, se podía sustituir por otra cifra)."""
+    if fila is not None and fila["origen"] == Origen.CALCULO:
+        raise OrdenRechazada(
+            f"«{fila['clave']}» es un resultado de cálculo: cambia sus datos de partida (p. ej. "
+            "el contorno) y se recalcula."
+        )
 
 
 # --- Documentos y pendientes ---------------------------------------------------------
@@ -819,8 +841,11 @@ def _plano(con: sqlite3.Connection, plano_id: str) -> Fila:
 
 
 def _capas(nombres: list[str] | tuple[str, ...]) -> list[str]:
-    limpias = sorted({c for c in nombres if isinstance(c, str) and c.strip()})
-    if len(limpias) != len([c for c in nombres if isinstance(c, str) and c.strip()]):
+    if any(not isinstance(c, str) or not c.strip() for c in nombres):
+        raise OrdenRechazada("Hay una capa sin nombre.")
+    limpias = sorted(c.strip() for c in nombres)
+    # AutoCAD no distingue mayúsculas en los nombres de capa.
+    if len({c.casefold() for c in limpias}) != len(limpias):
         raise OrdenRechazada("Una capa aparece repetida.")
     return limpias
 
@@ -831,7 +856,7 @@ def _filas_plano(unidad, espacios, obstaculos, textos) -> tuple[list[str], list[
     e, o, t = _capas(espacios), _capas(obstaculos), _capas(textos)
     if not e and not o:
         raise OrdenRechazada("Elige al menos una capa de espacios o de obstáculos.")
-    comunes = set(e) & set(o)
+    comunes = {c.casefold() for c in e} & {c.casefold() for c in o}
     if comunes:
         raise OrdenRechazada(
             f"La capa «{sorted(comunes)[0]}» no puede ser a la vez de espacios y de obstáculos."
@@ -1170,7 +1195,10 @@ def _registro_contorno(sha_documento: str, plano: Fila, handle: str, contorno: C
             "(c²/8)·(θ−sen θ)/sen²(θ/2), θ = 4·atan(bulge). Perímetro: cuerdas y arcos "
             "c·(|θ|/2)/sen(|θ|/2). Exactos, sin aproximar los arcos (core/geometria.py)."
         ),
-        "fuente_bulge": "Autodesk, DXF Reference, VERTEX, código 42",
+        "fuente_bulge": (
+            "Autodesk, DXF Reference (AutoCAD 2018), LWPOLYLINE y VERTEX, código 42; "
+            "consultada el 06-11-2026 (docs/modules/geometria.md)"
+        ),
         "aproximaciones": [],
         "entradas": entradas,
         "resultados": {"superficie_m2": contorno.area, "perimetro_m": contorno.perimetro},
@@ -1197,6 +1225,11 @@ class QuitarDePlano(Orden):
         el = _elemento(con, self.elemento_id)
         if el["tipo"] not in ("nivel", "espacio", "obstaculo"):
             raise OrdenRechazada("Solo se quitan aquí niveles, espacios y obstáculos.")
+        if el["estado"] == Estado.APROBADO:
+            raise OrdenRechazada(
+                f"«{el['codigo']}» está aprobado. Para quitarlo hay que reabrirlo indicando el "
+                "motivo."
+            )
         hijos = con.execute(
             "SELECT count(*) FROM elemento WHERE padre_id = ?", (self.elemento_id,)
         ).fetchone()[0]
@@ -1204,6 +1237,15 @@ class QuitarDePlano(Orden):
             raise OrdenRechazada(
                 f"«{el['codigo']}» tiene {hijos} espacio(s) u obstáculo(s): quítalos antes."
             )
+        for tabla, que in (("decision", "decisiones registradas"), ("pendiente", "pendientes")):
+            n = con.execute(
+                f"SELECT count(*) FROM {tabla} WHERE elemento_id = ?", (self.elemento_id,)
+            ).fetchone()[0]
+            if n:
+                raise OrdenRechazada(
+                    f"«{el['codigo']}» tiene {n} {que}: forman parte de su historia y no se "
+                    "borran. Corrígelo con sus propiedades en lugar de quitarlo."
+                )
         props = [
             dict(r)
             for r in con.execute(
@@ -1215,4 +1257,56 @@ class QuitarDePlano(Orden):
         if geo is not None:
             deltas.append(Delta("geometria", geo, None))
         deltas.append(Delta("elemento", el, None))
+        return deltas
+
+
+#: Cómo se da la altura de un espacio (decisión del usuario, 06-11-2026).
+MODOS_ALTURA = {
+    "nivel": "La del nivel",
+    "propia": "Altura propia",
+    "inclinada": "Cubierta inclinada (mínima y máxima)",
+}
+
+
+@dataclass
+class FijarAlturaEspacio(Orden):
+    """Altura de un espacio en uno de tres modos, coherentes entre sí: la del nivel (sin
+    valores propios), una altura propia, o mínima y máxima (cubierta inclinada). Cambiar de
+    modo quita los valores del modo anterior: un espacio no puede tener a la vez altura
+    propia e inclinada (revisión 07-11-2026)."""
+
+    espacio_id: str
+    modo: str
+    altura: float | None = None
+    minima: float | None = None
+    maxima: float | None = None
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        el = _elemento(con, self.espacio_id)
+        if el["tipo"] != "espacio":
+            raise OrdenRechazada("La altura por modos es de los espacios.")
+        if self.modo not in MODOS_ALTURA:
+            raise OrdenRechazada(f"Modo de altura no previsto: «{self.modo}».")
+        nuevos: dict[str, float] = {}
+        if self.modo == "propia":
+            nuevos["altura_libre"] = _numero_positivo("Altura", self.altura)
+        elif self.modo == "inclinada":
+            mi = _numero_positivo("Altura mínima", self.minima)
+            ma = _numero_positivo("Altura máxima", self.maxima)
+            if mi >= ma:
+                raise OrdenRechazada(
+                    "En cubierta inclinada la altura mínima tiene que ser menor que la máxima "
+                    "(si son iguales, es una altura propia)."
+                )
+            nuevos = {"altura_minima": mi, "altura_maxima": ma}
+        usuario = Procedencia(Origen.USUARIO)
+        deltas = []
+        for clave in ("altura_libre", "altura_minima", "altura_maxima"):
+            antes = leer(con, "propiedad", {"elemento_id": self.espacio_id, "clave": clave})
+            if clave in nuevos:
+                despues = _fila_propiedad(self.espacio_id, clave, nuevos[clave], "m", usuario)
+                if antes is None or json.loads(antes["valor"]) != nuevos[clave]:
+                    deltas.append(Delta("propiedad", antes, despues))
+            elif antes is not None:
+                deltas.append(Delta("propiedad", antes, None))
         return deltas

@@ -42,6 +42,9 @@ class DefPropiedad:
     #: Potencias, caudales, tensiones o masas negativas no tienen sentido físico: un signo
     #: tecleado de más no debe pasar. Solo las magnitudes que lo admiten lo declaran.
     admite_negativo: bool = False
+    #: Una altura de 0 m no es una altura: es un dato que falta. Las que no lo admiten
+    #: lo declaran (revisión 07-11-2026: una «altura propia» de 0 dejaba de heredar).
+    admite_cero: bool = True
 
     def __post_init__(self) -> None:
         if self.clase is Clase.NUMERO and self.unidad_si is None:
@@ -83,6 +86,8 @@ def validar_valor(defn: DefPropiedad, valor: object, unidad: str | None) -> None
         raise ValorInvalido(f"«{defn.etiqueta}»: valor no finito.")
     if valor < 0 and not defn.admite_negativo:
         raise ValorInvalido(f"«{defn.etiqueta}» no admite valores negativos.")
+    if valor == 0 and not defn.admite_cero:
+        raise ValorInvalido(f"«{defn.etiqueta}» tiene que ser mayor que 0.")
     if unidad is None:
         raise ValorInvalido(f"«{defn.etiqueta}» necesita unidad (magnitud {defn.unidad_si}).")
     assert defn.unidad_si is not None
@@ -161,7 +166,12 @@ NIVEL = registrar(
                 admite_negativo=True,
             ),
             DefPropiedad(
-                "altura_libre", "Altura libre", Clase.NUMERO, "m", obligatoria_para_aprobar=True
+                "altura_libre",
+                "Altura libre",
+                Clase.NUMERO,
+                "m",
+                obligatoria_para_aprobar=True,
+                admite_cero=False,
             ),
         ),
     )
@@ -178,9 +188,27 @@ ESPACIO = registrar(
             DefPropiedad("superficie", "Superficie", Clase.NUMERO, "m**2"),
             DefPropiedad("perimetro", "Perímetro", Clase.NUMERO, "m"),
             # Excepciones a la altura del nivel (si no constan, se hereda la del nivel).
-            DefPropiedad("altura_libre", "Altura libre (si no es la del nivel)", Clase.NUMERO, "m"),
-            DefPropiedad("altura_minima", "Altura mínima (cubierta inclinada)", Clase.NUMERO, "m"),
-            DefPropiedad("altura_maxima", "Altura máxima (cubierta inclinada)", Clase.NUMERO, "m"),
+            DefPropiedad(
+                "altura_libre",
+                "Altura libre (si no es la del nivel)",
+                Clase.NUMERO,
+                "m",
+                admite_cero=False,
+            ),
+            DefPropiedad(
+                "altura_minima",
+                "Altura mínima (cubierta inclinada)",
+                Clase.NUMERO,
+                "m",
+                admite_cero=False,
+            ),
+            DefPropiedad(
+                "altura_maxima",
+                "Altura máxima (cubierta inclinada)",
+                Clase.NUMERO,
+                "m",
+                admite_cero=False,
+            ),
         ),
     )
 )
@@ -198,7 +226,13 @@ OBSTACULO = registrar(
                 "cota_inferior", "Cota inferior sobre el suelo del nivel", Clase.NUMERO, "m"
             ),
             # Si no consta, ocupa toda la altura del nivel (como un pilar).
-            DefPropiedad("altura", "Altura (si no ocupa toda la del nivel)", Clase.NUMERO, "m"),
+            DefPropiedad(
+                "altura",
+                "Altura (si no ocupa toda la del nivel)",
+                Clase.NUMERO,
+                "m",
+                admite_cero=False,
+            ),
         ),
     )
 )
