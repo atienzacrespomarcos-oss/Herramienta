@@ -31,6 +31,21 @@
   - fachadas marcadas en el visor;
   - informe en Excel (todo el detalle) y en PDF (presentable).
 - Esquema V5: `cargas_proyecto` y `cargas_espacio`. El tipo «espacio» pasa a la versión 2.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - la cubierta va donde no hay otro espacio encima, no solo en el nivel más alto (una nave
+    con oficinas en otra planta se quedaba sin cubierta);
+  - la solera se calcula con la losa entera;
+  - el aire exterior seco ya no resta carga latente;
+  - las cámaras se calculan sin aire de confort y con el calor de personas de ASHRAE
+    Refrigeration, y quedan fuera de la simultánea;
+  - salones de actos y CPD pasan a IDA 3, según el RITE;
+  - «Almacén de racks» ya no se propone como CPD;
+  - un dato roto ya no tumba la ventana, y temperaturas y altitud tienen rangos físicos;
+  - las hipótesis del informe ya no dependen del primer espacio, y el Excel incluye la
+    orientación de cada cerramiento;
+  - el visor muestra un nivel cada vez;
+  - el diálogo ya no redondea lo guardado;
+  - al quitar un espacio se avisa de que se quitan sus datos de cargas.
 
 ### Etapa 3 · geometría DXF, bloque C (07-11-2026)
 - Paso «Planos y espacios», solo en encargos con diseño. Permite:

@@ -52,7 +52,7 @@ IDA_SUPERFICIE = {2: 0.83, 3: 0.55, 4: 0.28}
 class Ventilacion:
     """Cómo se calcula el aire exterior mínimo del espacio."""
 
-    metodo: str  # persona_ida | superficie_ida | trabajador | fijo | lamina
+    metodo: str  # persona_ida | superficie_ida | trabajador | fijo | lamina | ninguna
     valor: float  # IDA (1–4), m³/h por trabajador, m³/h fijos o dm³/(s·m²) de lámina
     fuente: str
 
@@ -75,6 +75,9 @@ class Uso:
     cobertura: str = "normal"
     impulsion_renovaciones: float | None = None  # salas limpias (recirculación)
     nota: str | None = None
+    #: Calor por persona (W sensible, W latente) cuando el de confort de ASHRAE no vale (frío).
+    calor_persona_w: tuple[float, float] | None = None
+    fuente_calor_persona: str | None = None
 
     @property
     def m2_persona(self) -> float | None:
@@ -82,10 +85,14 @@ class Uso:
 
     @property
     def sensible_w(self) -> float:
+        if self.calor_persona_w is not None:
+            return self.calor_persona_w[0]
         return self.sensible_btuh * BTU_H_A_W
 
     @property
     def latente_w(self) -> float:
+        if self.calor_persona_w is not None:
+            return self.calor_persona_w[1]
         return self.latente_btuh * BTU_H_A_W
 
     @property
@@ -106,6 +113,29 @@ def _sup(n: int) -> Ventilacion:
 
 
 _TRABAJO = Ventilacion("trabajador", 50.0, "RD 486/1997, anexo III.3.d (50 m³/h por trabajador)")
+#: Cámaras: la tabla 1.4.2.4 del RITE es de calidad de aire en locales de personas, no de
+#: cámaras; las entradas de aire por puertas se cuentan aparte (revisión 07-11-2026).
+_SIN_VENTILACION = Ventilacion(
+    "ninguna",
+    0.0,
+    "Cámara frigorífica: sin aire exterior de ventilación; las infiltraciones "
+    "por apertura de puertas se añaden como proceso (ASHRAE Refrigeration, cap. 24)",
+)
+
+
+def _persona_frio(t: float) -> dict:
+    """Calor de una persona en una cámara: q = 272 − 6·t W (ASHRAE Handbook – Refrigeration,
+    cap. 24, carga de personas), tomado como sensible."""
+    return {
+        "calor_persona_w": (272.0 - 6.0 * t, 0.0),
+        "fuente_calor_persona": f"ASHRAE Refrigeration, cap. 24: 272 − 6·t = {272 - 6 * t:g} W "
+        f"por persona a {t:g} °C",
+    }
+
+
+F_DESPIECE = (
+    "Reglamento (CE) 853/2004, anexo III, sección I, cap. V: salas de despiece a 12 °C como máximo"
+)
 
 
 def _u(clave, nombre, grupo, tipo, p, s, lat, luz, eq, ti, tv, ft, vent, **kw) -> Uso:
@@ -143,7 +173,7 @@ USOS: tuple[Uso, ...] = (
        0.54, 21, 25, F_RITE_T, _ida(3)),
     _u("salon_eventos", "Salón de eventos / congresos", "Hotel",
        "Hotel/Conference Center - Conference/Meeting", 50.0, 225, 105, 1.3, 1.0, 21, 25,
-       F_RITE_T, _ida(2)),
+       F_RITE_T, _ida(3)),
     _u("gimnasio", "Gimnasio", "Hotel", "Exercise Area - Exercise Center", 30.0, 710, 1090,
        0.93, 0.54, 21, 25, F_RITE_T, _ida(3)),
     # --- Sanitario ------------------------------------------------------------------------
@@ -194,15 +224,17 @@ USOS: tuple[Uso, ...] = (
        _sup(4)),
     # --- Frío -----------------------------------------------------------------------------
     _u("camara_refrigeracion", "Cámara de refrigeración (0–4 °C)", "Frío", "Active Storage",
-       3.0, 250, 200, 0.8, 0.3, None, 2, "Producto fresco refrigerado, 0–4 °C", _sup(4),
+       3.0, 250, 200, 0.8, 0.3, None, 2, "Producto fresco refrigerado, 0–4 °C",
+       _SIN_VENTILACION, **_persona_frio(2),
        nota="La carga de producto (kg/día y su enfriamiento) se añade como proceso."),
     _u("camara_congelacion", "Cámara de congelación (−20 °C)", "Frío", "Active Storage", 3.0,
        250, 200, 0.8, 0.3, None, -20,
-       "RD 1109/1991: ultracongelados a −18 °C o menos; cámara a −20 °C", _sup(4),
+       "RD 1109/1991: ultracongelados a −18 °C o menos; cámara a −20 °C", _SIN_VENTILACION,
+       **_persona_frio(-20),
        nota="La carga de producto (kg/día y su congelación) se añade como proceso."),
     _u("sala_manipulacion", "Sala de manipulación refrigerada (12 °C)", "Frío",
        "Detailed - Manufacturing Facility", 10.0, 250, 200, 2.1, 1.0, None, 12,
-       "Sala de manipulación de alimentos refrigerada, 12 °C (práctica habitual)", _TRABAJO),
+       F_DESPIECE, _TRABAJO, **_persona_frio(12)),
     # --- Salas limpias --------------------------------------------------------------------
     _u("sala_limpia_iso8", "Sala limpia ISO 8", "Salas limpias", "Laboratory - Office", 5.0,
        250, 200, 1.4, 1.5, 21, 25, F_RITE_T, _ida(1), impulsion_renovaciones=17.5,
@@ -220,7 +252,7 @@ USOS: tuple[Uso, ...] = (
        Ventilacion("lamina", 2.5, "RITE IT 1.1.4.2.3.2: 2,5 dm³/s por m² de lámina y playa"),
        nota="Falta la carga de evaporación del vaso: se añade como proceso latente."),
     _u("centro_calculo", "Centro de cálculo / sala de servidores", "Otros",
-       "Electrical/Mechanical", 3.0, 250, 200, 1.5, 0.3, 21, 25, F_RITE_T, _sup(4),
+       "Electrical/Mechanical", 3.0, 250, 200, 1.5, 0.3, 21, 25, F_RITE_T, _ida(3),
        cobertura="alta", nota="La carga de los equipos informáticos se añade como equipo."),
 )  # fmt: skip
 
@@ -236,7 +268,8 @@ def caudal_exterior_m3h(uso: Uso, area_m2: float, personas: float) -> float:
     - trabajador: RD 486/1997 (m³/h por trabajador);
     - fijo: caudal del local (quirófano, UNE 100713);
     - lamina: RITE, piscinas, por m² de lámina y playa; se toma la superficie del espacio
-      (sin zona de espectadores).
+      (sin zona de espectadores);
+    - ninguna: cámaras frigoríficas.
     """
     v = uso.ventilacion
     if v.metodo == "persona_ida":
@@ -249,6 +282,8 @@ def caudal_exterior_m3h(uso: Uso, area_m2: float, personas: float) -> float:
         return v.valor
     if v.metodo == "lamina":
         return area_m2 * v.valor * 3.6
+    if v.metodo == "ninguna":
+        return 0.0
     raise ValueError(f"Método de ventilación no previsto: «{v.metodo}».")
 
 

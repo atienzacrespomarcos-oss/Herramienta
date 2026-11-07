@@ -83,6 +83,7 @@ class PaginaCargas(QWidget):
         caja.addWidget(division, 1)
         self._resultado: calculo_cargas.ResultadoCargas | None = None
         self._encuadrado = False
+        self._nivel_dibujado: str | None = None
 
     def _crear_acciones(self) -> None:
         m = self.v.menu_cargas
@@ -129,7 +130,11 @@ class PaginaCargas(QWidget):
             )
             return
         guardado = self.proyecto.datos_cargas_espacios().get(e["id"])
-        uso = guardado["uso"] if guardado else calculo_cargas.uso_por_nombre(e["nombre"] or "")
+        uso = (
+            guardado["uso"]
+            if guardado
+            else calculo_cargas.uso_por_nombre(e["nombre"] or e["codigo"])
+        )
         area = e["superficie"]
 
         def propuestas_de(clave: str) -> dict:
@@ -216,6 +221,10 @@ class PaginaCargas(QWidget):
                 self._resultado = self.proyecto.calcular_cargas()
             except OrdenRechazada as exc:
                 mensaje = f"⚠ {exc}"
+            except Exception as exc:  # noqa: BLE001 — un dato roto no tumba la ventana
+                # Si escapara, el resto del refresco de la ventana (historial, pendientes,
+                # menús) no llegaría a ejecutarse (revisión 07-11-2026).
+                mensaje = f"⚠ No se ha podido calcular: {type(exc).__name__}: {exc}"
         datos = self.proyecto.datos_cargas_espacios()
         filas, ids = [], []
         for e in espacios:
@@ -244,7 +253,7 @@ class PaginaCargas(QWidget):
                 clave = (
                     guardado["uso"]
                     if guardado
-                    else calculo_cargas.uso_por_nombre(e["nombre"] or "")
+                    else calculo_cargas.uso_por_nombre(e["nombre"] or e["codigo"])
                 )
                 uso = POR_CLAVE[clave].nombre if clave else "— elige —"
                 filas.append(
@@ -279,21 +288,35 @@ class PaginaCargas(QWidget):
             if r.avisos:
                 mensaje += "\n⚠ " + "\n⚠ ".join(r.avisos)
         self.resumen.setText(mensaje)
-        self._dibujar(espacios)
+        elegido_e = next((e for e in espacios if e["id"] == elegido), None)
+        self._dibujar(espacios, elegido_e["padre_id"] if elegido_e else None)
         self._al_elegir()
 
-    def _dibujar(self, espacios: list[dict]) -> None:
+    def _dibujar(self, espacios: list[dict], nivel_id: str | None = None) -> None:
+        """Un nivel cada vez (el del espacio elegido): con varias plantas superpuestas no se
+        sabía de quién era cada fachada (revisión 07-11-2026)."""
         if not espacios:
             self.visor.vacio("Sin espacios")
             self._encuadrado = False
+            self._nivel_dibujado = None
             return
+        if nivel_id is None or all(e["padre_id"] != nivel_id for e in espacios):
+            nivel_id = espacios[0]["padre_id"]
+        del_nivel = [e for e in espacios if e["padre_id"] == nivel_id]
         self.visor.dibujar(
-            [], 1.0, None, [e["contorno"] for e in espacios], [], encuadrar=not self._encuadrado
+            [], 1.0, None, [e["contorno"] for e in del_nivel], [], encuadrar=not self._encuadrado
         )
         self._encuadrado = True
+        self._nivel_dibujado = nivel_id
+        ids = {e["id"] for e in del_nivel}
         if self._resultado is not None:
             self.visor.marcar_fachadas(
-                [(t.inicio, t.fin) for c in self._resultado.espacios for t in c.tramos]
+                [
+                    (t.inicio, t.fin)
+                    for c in self._resultado.espacios
+                    if c.espacio_id in ids
+                    for t in c.tramos
+                ]
             )
 
     def _al_elegir(self) -> None:
@@ -324,6 +347,8 @@ class PaginaCargas(QWidget):
                     for d in c.datos
                 ],
             )
+        if e is not None and e["padre_id"] != self._nivel_dibujado:
+            self._dibujar(self.proyecto.espacios(), e["padre_id"])
         self.visor.resaltar(e["contorno"] if e is not None else None, centrar=False)
 
     def actualizar_estado(self, hay: bool) -> None:

@@ -1396,6 +1396,10 @@ class FijarCargasProyecto(Orden):
             raise OrdenRechazada("El mes de proyecto va de 1 a 12.")
         if self.color not in COLORES:
             raise OrdenRechazada(f"Color de cerramientos no previsto: «{self.color}».")
+        altitud = _finito("Altitud de la obra", self.altitud_obra)
+        if not -100 <= altitud <= 4000:
+            # España va del nivel del mar a 3715 m (Teide).
+            raise OrdenRechazada("La altitud de la obra tiene que estar entre −100 y 4000 m.")
         rec = _finito("Recuperador", self.recuperacion)
         if not 0 <= rec < 1:
             raise OrdenRechazada("La eficiencia del recuperador va de 0 a 1 (sin llegar a 1).")
@@ -1404,7 +1408,7 @@ class FijarCargasProyecto(Orden):
             "guia_documento_id": self.guia_documento_id,
             "estacion_pagina": int(self.estacion_pagina),
             "provincia": self.provincia,
-            "altitud_obra": _finito("Altitud de la obra", self.altitud_obra),
+            "altitud_obra": altitud,
             "tipo_construccion": self.tipo_construccion,
             "norte": _finito("Norte del plano", self.norte) % 360.0,
             "mes": int(self.mes),
@@ -1449,6 +1453,10 @@ class FijarCargasEspacio(Orden):
                 raise OrdenRechazada(f"«{etiqueta}» no admite valores negativos.")
             if clave == "huecos" and v > 1:
                 raise OrdenRechazada("Los huecos son una fracción de la fachada, de 0 a 1.")
+            if clave in ("t_invierno_c", "t_verano_c") and not -60 <= v <= 60:
+                # Un −300 °C tecleado de más rompía el cálculo de todo el proyecto (revisión
+                # 07-11-2026). −60 cubre el ultracongelado y 60 cualquier local de proceso.
+                raise OrdenRechazada(f"«{etiqueta}» tiene que estar entre −60 y 60 °C.")
             ajustes[clave] = v
         if AJUSTE_SIN_CALEFACCION in ajustes and "t_invierno_c" in ajustes:
             raise OrdenRechazada("Un espacio sin calefacción no tiene temperatura de invierno.")

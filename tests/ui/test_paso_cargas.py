@@ -170,3 +170,24 @@ def test_dialogo_espacio_real_y_vocabulario(qtbot):
     d2.campos["t_invierno_c"].setText("15")
     d2._aceptar()
     assert d2.resultado is None and "Sin calefacción" in d2.error.text()
+
+
+def test_un_fallo_del_calculo_no_tumba_la_ventana(ventana, monkeypatch):
+    v, q = ventana
+    p = v.proyecto
+    guia = next(d for d in p.documentos() if d["extension"] == ".pdf")
+    p.fijar_cargas(
+        guia_documento_id=guia["id"],
+        estacion_pagina=2,
+        provincia="Madrid",
+        altitud_obra=650,
+        tipo_construccion="cte",
+    )
+    p.estaciones(guia["id"])
+
+    def roto():
+        raise ZeroDivisionError("división por cero")
+
+    monkeypatch.setattr(p, "calcular_cargas", roto)
+    v.refrescar()  # no lanza
+    assert "No se ha podido calcular" in v.pagina_cargas.resumen.text()

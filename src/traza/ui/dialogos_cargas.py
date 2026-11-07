@@ -35,7 +35,9 @@ ESTADOS_FACHADA = ("Según el plano", "Es fachada", "No es fachada")
 
 
 def _cifra(v) -> str:
-    return "" if v is None else escribir_numero(round(float(v), 2))
+    # Sin redondear a 2 decimales: al aceptar sin tocar nada, 0,125 se guardaba como 0,12
+    # (revisión 07-11-2026). 6 decimales quitan solo el ruido de coma flotante.
+    return "" if v is None else escribir_numero(round(float(v), 6))
 
 
 class DialogoClima(QDialog):

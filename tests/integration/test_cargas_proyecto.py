@@ -17,11 +17,34 @@ from traza.app.proyecto import ElementoBloqueado
 from traza.io.clima_idae import EstacionIdae
 
 ESTACION = EstacionIdae(
-    provincia="Madrid", nombre="Ficticia", indicativo="0000", pagina=2, altitud_m=600,
-    latitud=40.4, longitud=-3.7, ts_min=-8, ts_996=-4.5, ts_99=-3, omdc=11, hum_coin=80,
-    oma=45, ts_max=41, ts_04=37, thc_04=20.5, ts_1=35.5, thc_1=20, ts_2=34, thc_2=19.5,
-    omdr=15, th_04=22, tsc_04=33, th_1=21, tsc_1=32, th_2=20.5, tsc_2=31,
-)  # fmt: skip
+    provincia="Madrid",
+    nombre="Ficticia",
+    indicativo="0000",
+    pagina=2,
+    altitud_m=600,
+    latitud=40.4,
+    longitud=-3.7,
+    ts_min=-8,
+    ts_996=-4.5,
+    ts_99=-3,
+    omdc=11,
+    hum_coin=80,
+    oma=45,
+    ts_max=41,
+    ts_04=37,
+    thc_04=20.5,
+    ts_1=35.5,
+    thc_1=20,
+    ts_2=34,
+    thc_2=19.5,
+    omdr=15,
+    th_04=22,
+    tsc_04=33,
+    th_1=21,
+    tsc_1=32,
+    th_2=20.5,
+    tsc_2=31,
+)
 
 
 def _nave(tmp_path):
@@ -45,8 +68,9 @@ def _nave(tmp_path):
 @pytest.fixture
 def nave(proyecto, tmp_path, pdf_3_paginas):
     p = proyecto
-    plano_id = p.leer_plano(p.incorporar_documento(_nave(tmp_path)), "mm", ["A-ESPACIOS"], [],
-                            ["A-TEXTOS"])  # fmt: skip
+    plano_id = p.leer_plano(
+        p.incorporar_documento(_nave(tmp_path)), "mm", ["A-ESPACIOS"], [], ["A-TEXTOS"]
+    )
     nivel = CrearNivel("Planta baja", 0.0, 8.0)
     p.ejecutar(nivel)
     ids = {}
@@ -56,9 +80,12 @@ def nave(proyecto, tmp_path, pdf_3_paginas):
     guia = p.incorporar_documento(pdf_3_paginas)
     p.lector_guia = lambda ruta: [ESTACION]
     p.fijar_cargas(
-        guia_documento_id=guia, estacion_pagina=2, provincia="Madrid", altitud_obra=650,
+        guia_documento_id=guia,
+        estacion_pagina=2,
+        provincia="Madrid",
+        altitud_obra=650,
         tipo_construccion="nave_panel",
-    )  # fmt: skip
+    )
     return p, ids, guia
 
 
@@ -113,11 +140,21 @@ def test_sin_calefaccion_y_errores(nave):
     p.fijar_cargas_espacio(ids["ALMACÉN"], "almacen", {"sin_calefaccion": True})
     assert _por_codigo(p.calcular_cargas())["ALMACÉN"].invierno.total_w == 0
     with pytest.raises(OrdenRechazada, match="no es la ficha"):
-        p.fijar_cargas(guia_documento_id=guia, estacion_pagina=3, provincia="Madrid",
-                       altitud_obra=650, tipo_construccion="cte")  # fmt: skip
+        p.fijar_cargas(
+            guia_documento_id=guia,
+            estacion_pagina=3,
+            provincia="Madrid",
+            altitud_obra=650,
+            tipo_construccion="cte",
+        )
     with pytest.raises(OrdenRechazada, match="Provincia"):
-        p.fijar_cargas(guia_documento_id=guia, estacion_pagina=2, provincia="Narnia",
-                       altitud_obra=650, tipo_construccion="cte")  # fmt: skip
+        p.fijar_cargas(
+            guia_documento_id=guia,
+            estacion_pagina=2,
+            provincia="Narnia",
+            altitud_obra=650,
+            tipo_construccion="cte",
+        )
     with pytest.raises(OrdenRechazada, match="Uso no previsto"):
         p.fijar_cargas_espacio(ids["ALMACÉN"], "iglú")
     with pytest.raises(OrdenRechazada, match="negativos"):
@@ -172,8 +209,14 @@ def test_informe_excel_y_pdf(nave, tmp_path):
     x = p.exportar_cargas_excel(tmp_path / "Cargas 2.1")
     assert x.name == "Cargas 2.1.xlsx"
     wb = load_workbook(x)
-    assert wb.sheetnames == ["Resumen", "Espacios", "Partidas", "Datos y fuentes",
-                             "Cerramientos", "Hipótesis"]  # fmt: skip
+    assert wb.sheetnames == [
+        "Resumen",
+        "Espacios",
+        "Partidas",
+        "Datos y fuentes",
+        "Cerramientos",
+        "Hipótesis",
+    ]
     esp = list(wb["Espacios"].iter_rows(min_row=2, values_only=True))
     assert {f[1] for f in esp} == {"ALMACÉN", "OFICINAS"}
     assert all(isinstance(f[8], float) and f[8] > 0 for f in esp)  # números, no texto
@@ -187,3 +230,103 @@ def test_informe_excel_y_pdf(nave, tmp_path):
         texto = "".join(pg.get_text() for pg in doc)
     assert "Cargas térmicas y ventilación" in texto and "OFICINAS" in texto
     assert "Hipótesis, método y fuentes" in texto and "ASHRAE" in texto
+
+
+def test_cubierta_por_lo_que_hay_encima_y_solera_de_la_losa_entera(
+    proyecto, tmp_path, pdf_3_paginas
+):
+    # Oficinas en una planta más alta pero al lado del almacén: el almacén conserva su
+    # cubierta (antes solo la tenía el nivel más alto) y las oficinas no tienen solera.
+    p = proyecto
+    plano_id = p.leer_plano(
+        p.incorporar_documento(_nave(tmp_path)), "mm", ["A-ESPACIOS"], [], ["A-TEXTOS"]
+    )
+    pb, p1 = CrearNivel("Planta baja", 0.0, 8.0), CrearNivel("Planta primera", 3.5, 3.0)
+    p.ejecutar(pb)
+    p.ejecutar(p1)
+    for prop in p.propuestas(plano_id):
+        nivel = pb.id if prop.nombre_sugerido.texto == "ALMACÉN" else p1.id
+        p.confirmar_contorno(plano_id, prop.handle, nivel, nombre=prop.nombre_sugerido.texto)
+    guia = p.incorporar_documento(pdf_3_paginas)
+    p.lector_guia = lambda ruta: [ESTACION]
+    p.fijar_cargas(
+        guia_documento_id=guia,
+        estacion_pagina=2,
+        provincia="Madrid",
+        altitud_obra=650,
+        tipo_construccion="nave_panel",
+    )
+    e = _por_codigo(p.calcular_cargas())
+    alm = {c.nombre: c for c in e["ALMACÉN"].cerramientos}
+    ofi = {c.nombre: c for c in e["OFICINAS"].cerramientos}
+    assert alm["Cubierta"].area_m2 == pytest.approx(1000) and "Solera" in alm
+    assert ofi["Cubierta"].area_m2 == pytest.approx(78.4) and "Solera" not in ofi
+    # Solera con la losa entera (ISO 13370): solo el almacén está en el terreno.
+    from traza.rules.cerramientos import u_solera
+
+    perimetro = sum(e["ALMACÉN"].fachadas_m.values())
+    assert alm["Solera"].u_w_m2k == pytest.approx(u_solera(1000, perimetro))
+
+
+def test_fraccion_descubierta():
+    from traza.app.cargas import _fraccion_descubierta
+    from traza.core.geometria import Contorno, Vertice
+
+    def rect(x0, y0, x1, y1):
+        return Contorno(
+            tuple(Vertice(x, y, 0) for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)))
+        )
+
+    assert _fraccion_descubierta(rect(0, 0, 10, 10), [rect(0, 0, 10, 5)]) == pytest.approx(0.5)
+    assert _fraccion_descubierta(rect(0, 0, 10, 10), [rect(20, 20, 30, 30)]) == 1.0
+
+
+def test_simultanea_sin_camaras_y_espacios_que_no_se_pueden_calcular(nave):
+    from traza.app.cargas import calcular
+
+    p, ids, _ = nave
+    p.fijar_cargas_espacio(ids["OFICINAS"], "camara_congelacion")
+    r = p.calcular_cargas()
+    alm = _por_codigo(r)["ALMACÉN"]
+    assert r.verano_simultaneo_w == pytest.approx(max(alm.verano.perfil_w))
+    cam = _por_codigo(r)["OFICINAS"]
+    assert cam.aire_exterior_m3h == 0
+    # Un uso que ya no está en el catálogo no rompe el cálculo: se avisa.
+    r = calcular(
+        p.cargas_config(),
+        ESTACION,
+        p.espacios(),
+        p.niveles(),
+        {ids["OFICINAS"]: {"uso": "borrado", "ajustes": {}, "fachadas": {}}},
+    )
+    assert len(r.espacios) == 1 and "ya no está en el catálogo" in r.avisos[0]
+
+
+def test_rangos_fisicos_y_notas_del_informe(nave, tmp_path):
+    from openpyxl import load_workbook
+
+    p, ids, guia = nave
+    with pytest.raises(OrdenRechazada, match="entre −60 y 60"):
+        p.fijar_cargas_espacio(ids["ALMACÉN"], "almacen", {"t_verano_c": -300})
+    with pytest.raises(OrdenRechazada, match="altitud"):
+        p.fijar_cargas(
+            guia_documento_id=guia,
+            estacion_pagina=2,
+            provincia="Madrid",
+            altitud_obra=45_000,
+            tipo_construccion="cte",
+        )
+    # Primer espacio sin calefacción: las hipótesis siguen siendo las del método.
+    p.fijar_cargas_espacio(ids["ALMACÉN"], "camara_refrigeracion")
+    wb = load_workbook(p.exportar_cargas_excel(tmp_path / "c"))
+    hipotesis = [f[0] for f in wb["Hipótesis"].iter_rows(min_row=2, values_only=True)]
+    assert any("Sin descontar ganancias" in h for h in hipotesis)
+    assert not any("Espacio sin calefacción" in h for h in hipotesis)
+    cerr = list(wb["Cerramientos"].iter_rows(min_row=1, values_only=True))
+    assert cerr[0][7].startswith("Azimut")
+    fachada_s = next(f for f in cerr[1:] if f[2] == "Fachada S")
+    assert fachada_s[7] == 180
+
+
+def test_racks_es_almacen():
+    assert uso_por_nombre("Almacén de racks") == "almacen"

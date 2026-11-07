@@ -49,6 +49,8 @@ NOTAS_VERANO = (
     "seguridad, sobre todo en cerramientos pesados).",
     "Horas solares; humedad absoluta exterior constante durante el día.",
     "Sin carga por el terreno en verano.",
+    "Si el aire exterior es más seco que el interior, no se descuenta su efecto "
+    "deshumectante (del lado de la seguridad).",
 )
 
 
@@ -220,7 +222,9 @@ def _verano_hora(espacio: Espacio, clima: Clima, hora: int) -> tuple[Partida, ..
     sumar("Equipos", espacio.equipos_w)
     sumar("Proceso", espacio.proceso_sensible_w, espacio.proceso_latente_w)
     w_i = ps.humedad_especifica_relativa(ti, espacio.hr_verano, p)
-    dw = clima.verano_w - w_i
+    # Aire exterior más seco que el interior: no se descuenta su efecto deshumectante (del
+    # lado de la seguridad; restaba el latente de las personas, revisión 07-11-2026).
+    dw = max(clima.verano_w - w_i, 0.0)
     for concepto, caudal, eta in (
         ("Ventilación", espacio.aire_exterior_m3h, espacio.recuperacion),
         ("Infiltración", espacio.infiltracion_m3h, 0.0),

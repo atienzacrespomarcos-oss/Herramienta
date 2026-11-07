@@ -76,7 +76,9 @@ class ResultadoCargas:
 
 # --- Uso propuesto por el nombre del espacio ------------------------------------------
 # Se recorre en orden y compara por «contiene»: lo específico antes que lo general, o el
-# término largo queda inalcanzable («cámara de congelación» antes que «cámara»).
+# término largo queda inalcanzable («cámara de congelación» antes que «cámara»). Sin
+# palabras ambiguas en logística: «rack» o «cuadro» daban «Almacén de racks» → CPD
+# (revisión 07-11-2026).
 PALABRAS_USO = (
     ("quirofano", "quirofano"),
     ("reanimacion", "reanimacion"),
@@ -92,10 +94,8 @@ PALABRAS_USO = (
     ("manipulacion", "sala_manipulacion"),
     ("cpd", "centro_calculo"),
     ("servidores", "centro_calculo"),
-    ("rack", "centro_calculo"),
     ("sala tecnica", "sala_tecnica"),
     ("instalaciones", "sala_tecnica"),
-    ("cuadro", "sala_tecnica"),
     ("compresores", "sala_maquinas"),
     ("sala de maquinas", "sala_maquinas"),
     ("despacho", "despacho"),
@@ -176,17 +176,19 @@ def calcular(
     por id, con `ajustes` y `fachadas` ya decodificados."""
     zona = tc.zona_climatica(config["provincia"], config["altitud_obra"])
     tipo = config["tipo_construccion"]
-    envolvente = tc.envolvente(tipo, zona)
-    mes = config["mes"]
-    alfa = cg.ALFA_HO[config["color"]]
-    condiciones = {
-        c: motor_clima.condiciones(_datos_estacion(estacion), c, config["altitud_obra"])
-        for c in motor_clima.COBERTURAS
-    }
-    cotas = [n["cota"] for n in niveles if n["cota"] is not None]
+    contexto = _Contexto(
+        config,
+        tc.envolvente(tipo, zona),
+        zona,
+        tipo,
+        cg.ALFA_HO[config["color"]],
+        {
+            c: motor_clima.condiciones(_datos_estacion(estacion), c, config["altitud_obra"])
+            for c in motor_clima.COBERTURAS
+        },
+        estacion,
+    )
     nivel_cota = {n["id"]: n["cota"] for n in niveles}
-    cota_alta, cota_baja = (max(cotas), min(cotas)) if cotas else (None, None)
-
     avisos: list[str] = []
     por_nivel: dict[str, list[env.Planta]] = {}
     for e in espacios:
@@ -197,7 +199,8 @@ def calcular(
     for plantas in por_nivel.values():
         automaticas.update(env.tramos(plantas, config["norte"]))
 
-    resultados = []
+    # 1.ª pasada: lo que cada espacio necesita y lo que impide calcularlo (con aviso).
+    validos: list[_Candidato] = []
     for e in espacios:
         nombre = e["nombre"] or e["codigo"]
         fila = datos_espacios.get(e["id"])
@@ -205,44 +208,76 @@ def calcular(
             clave_uso, uso_origen = fila["uso"], USUARIO
         else:
             clave_uso, uso_origen = uso_por_nombre(nombre), PROPUESTA
-        if clave_uso is None:
-            avisos.append(f"{e['codigo']} «{nombre}»: sin uso; elige uno para calcularlo.")
-            continue
+        motivo = None
         altura = e["altura"]
         if altura is None and e["altura_minima"] is not None and e["altura_maxima"] is not None:
             altura = (e["altura_minima"] + e["altura_maxima"]) / 2
-        if altura is None:
-            avisos.append(f"{e['codigo']} «{nombre}»: sin altura; ponla en el paso Planos.")
+        cota = nivel_cota.get(e["padre_id"])
+        if clave_uso is None:
+            motivo = "sin uso; elige uno para calcularlo"
+        elif clave_uso not in catalogo.POR_CLAVE:
+            motivo = f"uso «{clave_uso}» que ya no está en el catálogo; elige otro"
+        elif not e["superficie"] or e["superficie"] <= 0:
+            motivo = "sin superficie; revisa su contorno en el paso Planos"
+        elif altura is None:
+            motivo = "sin altura; ponla en el paso Planos"
+        elif cota is None:
+            motivo = "su nivel no tiene cota; ponla en el paso Planos"
+        if motivo:
+            avisos.append(f"{e['codigo']} «{nombre}»: {motivo}.")
             continue
-        uso = catalogo.POR_CLAVE[clave_uso]
-        ajustes = fila["ajustes"] if fila else {}
         correcciones = fila["fachadas"] if fila else {}
-        resultados.append(
-            _espacio(
+        # «Es fachada» toma todos los lados del sector (como si no tuviera vecinos); «no
+        # es fachada» los quita.
+        solo = env.tramos([env.Planta(e["id"], tuple(e["contorno"].aplanado()))], config["norte"])
+        tramos = [t for t in automaticas[e["id"]] if t.sector not in correcciones]
+        tramos += [t for t in solo[e["id"]] if correcciones.get(t.sector)]
+        techo = cota + (e["altura_maxima"] or altura)
+        validos.append(
+            _Candidato(
                 e,
                 nombre,
-                uso,
+                catalogo.POR_CLAVE[clave_uso],
                 uso_origen,
                 altura,
-                ajustes,
-                correcciones,
-                automaticas[e["id"]],
-                config,
-                envolvente,
-                zona,
-                tipo,
-                alfa,
-                condiciones,
-                mes,
-                estacion,
-                nivel_cota.get(e["padre_id"]),
-                cota_alta,
-                cota_baja,
+                cota,
+                techo,
+                fila["ajustes"] if fila else {},
+                tuple(tramos),
             )
         )
+
+    # Solera: los espacios de la cota más baja. Su U, con la losa entera (UNE-EN ISO 13370:
+    # B' = A/(0,5·P) de toda la planta en contacto con el terreno, no de cada local).
+    cota_baja = min((c.cota for c in validos), default=None)
+    en_terreno = [c for c in validos if c.cota == cota_baja]
+    if contexto.envolvente.u_terreno is not None:
+        u_terreno = contexto.envolvente.u_terreno
+    else:
+        area_losa = sum(c.e["superficie"] for c in en_terreno)
+        perimetro = sum(t.largo for c in en_terreno for t in c.tramos)
+        u_terreno = tc.u_solera(area_losa, perimetro) if area_losa and perimetro else 0.0
+
+    resultados = []
+    for c in validos:
+        encima = [
+            o.e["contorno"]
+            for o in validos
+            if o is not c
+            and (
+                o.cota >= c.techo - TOLERANCIA_FORJADO_M
+                or (o.cota < c.cota and o.techo > c.techo + TOLERANCIA_FORJADO_M)
+            )
+        ]
+        cubierta = c.e["superficie"] * _fraccion_descubierta(c.e["contorno"], encima)
+        solera = u_terreno if c.cota == cota_baja else None
+        resultados.append(_espacio(c, contexto, cubierta, solera))
+
+    # Simultánea de la climatización: sin las cámaras (su frío es otra instalación).
+    climatizados = [r for r in resultados if r.uso.grupo not in GRUPOS_FUERA_SIMULTANEA]
     hora, total = 0, 0.0
-    if resultados:
-        suma = [sum(r.verano.perfil_w[k] for r in resultados) for k in range(24)]
+    if climatizados:
+        suma = [sum(r.verano.perfil_w[k] for r in climatizados) for k in range(24)]
         k = max(range(24), key=lambda i: suma[i])
         hora, total = k + 1, suma[k]
     return ResultadoCargas(
@@ -251,14 +286,76 @@ def calcular(
         config["provincia"],
         config["altitud_obra"],
         tipo,
-        envolvente,
-        mes,
-        condiciones,
+        contexto.envolvente,
+        config["mes"],
+        contexto.condiciones,
         tuple(resultados),
         hora,
         total,
         tuple(avisos),
     )
+
+
+#: Un espacio de un nivel cuya cota está a menos de esto del techo de otro lo cubre (forjado).
+TOLERANCIA_FORJADO_M = 0.5
+#: Fuera de la simultánea de climatización: las cámaras tienen su propia instalación de frío.
+GRUPOS_FUERA_SIMULTANEA = ("Frío",)
+#: Rejilla para medir qué parte de la planta queda bajo otro espacio (aproximación declarada).
+REJILLA = 30
+
+
+@dataclass(frozen=True)
+class _Contexto:
+    config: dict[str, Any]
+    envolvente: tc.Envolvente
+    zona: str
+    tipo: str
+    alfa: float
+    condiciones: dict[str, motor_clima.CondicionesProyecto]
+    estacion: EstacionIdae
+
+
+@dataclass(frozen=True)
+class _Candidato:
+    e: dict[str, Any]
+    nombre: str
+    uso: catalogo.Uso
+    uso_origen: str
+    altura: float
+    cota: float
+    techo: float
+    ajustes: dict[str, Any]
+    tramos: tuple[env.Tramo, ...]
+
+
+def _fraccion_descubierta(contorno, encima: list) -> float:
+    """Fracción de la planta sin otro espacio encima, por muestreo en una rejilla de
+    REJILLA × REJILLA puntos (aproximación declarada en el informe)."""
+    pts = contorno.aplanado()
+    x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
+    y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
+    candidatos = []
+    for o in encima:
+        q = o.aplanado()
+        if not (
+            max(p[0] for p in q) < x0
+            or min(p[0] for p in q) > x1
+            or max(p[1] for p in q) < y0
+            or min(p[1] for p in q) > y1
+        ):
+            candidatos.append(o)
+    if not candidatos:
+        return 1.0
+    dentro = cubiertos = 0
+    for i in range(REJILLA):
+        x = x0 + (i + 0.5) * (x1 - x0) / REJILLA
+        for j in range(REJILLA):
+            y = y0 + (j + 0.5) * (y1 - y0) / REJILLA
+            if contorno.contiene(x, y):
+                dentro += 1
+                if any(o.contiene(x, y) for o in candidatos):
+                    cubiertos += 1
+    return 1.0 - cubiertos / dentro if dentro else 1.0
 
 
 def _dato(concepto, propuesto, fuente, unidad, ajustes, clave):
@@ -274,7 +371,9 @@ def propuestas(uso: catalogo.Uso, area_m2: float, personas: float | None = None)
     fuente). Las claves son las de `ordenes.AJUSTES_CARGAS` (lo comprueba una prueba). El
     aire exterior se propone con `personas` si el usuario ha cambiado la ocupación."""
     ocupacion = round(uso.personas_100m2 * area_m2 / 100, 1)
-    f_personas = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 Btu/h = 0,29307 W"
+    f_personas = uso.fuente_calor_persona or (
+        f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 Btu/h = 0,29307 W"
+    )
     f_dens = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 W/ft² = 10,764 W/m²"
     sin_proceso = "Sin proceso salvo que se indique"
     wwr, f_wwr = catalogo.huecos(uso)
@@ -301,26 +400,12 @@ def propuestas(uso: catalogo.Uso, area_m2: float, personas: float | None = None)
 
 
 def _espacio(
-    e,
-    nombre,
-    uso,
-    uso_origen,
-    altura,
-    ajustes,
-    correcciones,
-    automaticas,
-    config,
-    envolvente,
-    zona,
-    tipo,
-    alfa,
-    condiciones,
-    mes,
-    estacion,
-    cota,
-    cota_alta,
-    cota_baja,
+    c: _Candidato, ctx: _Contexto, area_cubierta: float, u_solera: float | None
 ) -> CargaEspacio:
+    e, nombre, uso, uso_origen, altura = c.e, c.nombre, c.uso, c.uso_origen, c.altura
+    ajustes, cota, tramos = c.ajustes, c.cota, list(c.tramos)
+    config, envolvente, zona, tipo, alfa = ctx.config, ctx.envolvente, ctx.zona, ctx.tipo, ctx.alfa
+    condiciones, estacion, mes = ctx.condiciones, ctx.estacion, ctx.config["mes"]
     area = e["superficie"]
     volumen = area * altura
     datos: list[Dato] = [
@@ -351,12 +436,6 @@ def _espacio(
     t_inv, t_ver, aire = v["t_invierno_c"], v["t_verano_c"], v["aire_exterior_m3h"]
     frac_huecos = v["huecos"]
 
-    # Fachadas: automáticas del plano, corregidas por sector por el usuario.
-    # «Es fachada» toma todos los lados del sector (como si no tuviera vecinos); «no es
-    # fachada» los quita.
-    solo = env.tramos([env.Planta(e["id"], tuple(e["contorno"].aplanado()))], config["norte"])
-    tramos = [t for t in automaticas if t.sector not in correcciones]
-    tramos += [t for t in solo[e["id"]] if correcciones.get(t.sector)]
     fachadas = env.longitudes(tramos)
 
     cerr: list[cg.Cerramiento] = []
@@ -386,29 +465,21 @@ def _espacio(
             )
         area_opaca += bruta - huecos
         area_huecos += huecos
-    if cota is not None and cota == cota_alta:
+    if area_cubierta > 1e-6:
         cerr.append(
             cg.Cerramiento(
                 "Cubierta",
                 "opaco",
-                area,
+                area_cubierta,
                 envolvente.u_cubierta,
                 azimut=0,
                 inclinacion=0,
                 alfa_ho=alfa,
             )
         )
-        area_opaca += area
-    if cota is not None and cota == cota_baja:
-        perimetro_expuesto = sum(fachadas.values())
-        if envolvente.u_terreno is not None:
-            u_suelo = envolvente.u_terreno
-        elif perimetro_expuesto > 0:
-            u_suelo = tc.u_solera(area, perimetro_expuesto)
-        else:
-            u_suelo = 0.0
-        if u_suelo > 0:
-            cerr.append(cg.Cerramiento("Solera", "terreno", area, u_suelo, inclinacion=180))
+        area_opaca += area_cubierta
+    if u_solera:
+        cerr.append(cg.Cerramiento("Solera", "terreno", area, u_solera, inclinacion=180))
 
     letra = tc.letra_invierno(zona)
     co = cg.CO_OPACO["nuevo" if tipo in ("cte", "nave_panel") else "existente"]
@@ -416,7 +487,7 @@ def _espacio(
     infil = 0.0
     if area_opaca + area_huecos > 0:
         n50 = cg.n50(volumen, area_opaca, area_huecos, co, ch)
-        infil = cg.infiltracion_m3h(volumen, n50, len(fachadas), (cota or 0) + altura / 2)
+        infil = cg.infiltracion_m3h(volumen, n50, len(fachadas), cota + altura / 2)
     datos.append(
         Dato(
             "Infiltración",

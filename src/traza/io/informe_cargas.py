@@ -15,6 +15,7 @@ import pymupdf
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
+from traza.engines.cargas import NOTAS_INVIERNO, NOTAS_VERANO
 from traza.io.excel import FORMATO_NUMERO, _hoja
 from traza.rules.cerramientos import TIPOS
 
@@ -183,7 +184,19 @@ def exportar_excel(destino: Path, proyecto: str, r: Any) -> Path:
         numericas=(4,),
     )
     cerr = [
-        [x.codigo, x.nombre, c.nombre, c.clase, c.area_m2, c.u_w_m2k, c.factor_solar or None]
+        [
+            x.codigo,
+            x.nombre,
+            c.nombre,
+            c.clase,
+            c.area_m2,
+            c.u_w_m2k,
+            c.factor_solar or None,
+            # Orientación solo en fachadas y huecos: lo que el usuario revisa (revisión
+            # 07-11-2026); cubierta y solera no la tienen.
+            c.azimut if c.clase in ("opaco", "hueco") and c.inclinacion == 90 else None,
+            c.inclinacion if c.clase != "terreno" else None,
+        ]
         for x in r.espacios
         for c in x.cerramientos
     ]
@@ -198,9 +211,11 @@ def exportar_excel(destino: Path, proyecto: str, r: Any) -> Path:
             ("Superficie (m²)", 14),
             ("U (W/m²K)", 12),
             ("Factor solar", 12),
+            ("Azimut (° desde el norte)", 14),
+            ("Inclinación (°)", 12),
         ],
         cerr,
-        numericas=(5, 6, 7),
+        numericas=(5, 6, 7, 8, 9),
     )
     _hoja(wb, "Hipótesis", [("Hipótesis, método y avisos", 140)], [[t] for t in hipotesis(r)])
     for ws in wb.worksheets:
@@ -232,9 +247,15 @@ def hipotesis(r: Any) -> list[str]:
         "cielo despejado de ASHRAE y temperatura sol-aire en opacos; hora punta = la de mayor "
         "carga total de cada espacio.",
     ]
-    if r.espacios:
-        lineas += [f"Invierno: {n}" for n in r.espacios[0].invierno.notas]
-        lineas += [f"Verano: {n}" for n in r.espacios[0].verano.notas]
+    # Las notas del motor, no las del primer espacio: si era una cámara sin calefacción,
+    # el informe decía «Invierno: espacio sin calefacción» (revisión 07-11-2026).
+    lineas += [f"Invierno: {n}" for n in NOTAS_INVIERNO]
+    lineas += [f"Verano: {n}" for n in NOTAS_VERANO]
+    lineas += [
+        "Cubierta: la parte de la planta sin otro espacio encima (rejilla de 30 × 30 puntos); "
+        "solera: los espacios de la cota más baja, con la U de la losa entera (ISO 13370).",
+        "Refrigeración simultánea: sin las cámaras frigoríficas (instalación de frío aparte).",
+    ]
     lineas += [f"Aviso: {a}" for a in r.avisos]
     return lineas
 

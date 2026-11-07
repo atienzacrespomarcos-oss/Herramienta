@@ -172,6 +172,20 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
     cap. 1. La humedad interior de verano es el 50 % (RITE 45–60 %).
   - Declarado en las notas del resultado: régimen permanente, sin inercia. Es del lado de
     la seguridad, sobre todo en cerramientos pesados; en naves ligeras apenas se aparta.
+- **Aire exterior más seco que el interior** (clima seco de interior peninsular): no se
+  descuenta su efecto deshumectante; el latente de ventilación no baja de 0.
+- **Cámaras frigoríficas**:
+  - sin aire exterior de ventilación (la tabla del RITE es de locales para personas); las
+    entradas de aire por puertas se meten como proceso;
+  - personas con q = 272 − 6·t W, de ASHRAE Handbook – Refrigeration, cap. 24, recogida
+    en apuntes universitarios
+    (<https://uomus.edu.iq/img/lectures21/MUCLecture_2022_8182410.pdf>);
+  - fuera de la refrigeración simultánea de climatización, porque su frío es otra
+    instalación.
+- **Sala de manipulación a 12 °C**: Reglamento (CE) 853/2004, anexo III, sección I,
+  cap. V (salas de despiece).
+- **RITE IT 1.1.4.2.2** (revisado contra el BOE): salones de actos y salas de ordenadores
+  son **IDA 3**.
 - **Recuperador**: eficiencia sensible sobre la ventilación (RITE IT 1.2.4.5.2 lo exige
   con más de 0,5 m³/s de extracción).
 - **Infiltración**:
@@ -207,7 +221,12 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
     lado paralelo de otro espacio del mismo nivel;
   - las orientaciones se agrupan en 8 sectores de 45°, con el norte del plano indicado
     una vez;
-  - la cubierta va en la planta más alta y la solera en la más baja;
+  - **cubierta**: la parte de la planta de cada espacio sin otro espacio encima, medida
+    con una rejilla de 30 × 30 puntos. Cuenta como «encima» un espacio cuya cota está a
+    menos de 0,5 m de su techo, o uno más bajo cuyo volumen lo envuelve (un altillo dentro
+    de una nave);
+  - **solera**: los espacios de la cota más baja, con la U de la losa entera (ISO 13370,
+    B' de toda la planta en contacto con el terreno, no de cada local);
   - la superficie de fachada es la longitud por la altura del espacio, con los huecos
     según el % del uso.
 - **Color de los cerramientos**: por defecto oscuro (α/h_o = 0,052, el máximo de ASHRAE).

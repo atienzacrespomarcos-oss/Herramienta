@@ -59,13 +59,17 @@ CLIMA = cg.Clima(
 
 def _local(**kw):
     base = dict(
-        nombre="Local", area_m2=100, volumen_m3=300, t_invierno_c=21, t_verano_c=25,
+        nombre="Local",
+        area_m2=100,
+        volumen_m3=300,
+        t_invierno_c=21,
+        t_verano_c=25,
         cerramientos=(
             cg.Cerramiento("Muro sur", "opaco", 30, 0.5),
             cg.Cerramiento("Ventana sur", "hueco", 6, 2.8, factor_solar=0.6),
             cg.Cerramiento("Solera", "terreno", 100, 0.2),
         ),
-    )  # fmt: skip
+    )
     base.update(kw)
     return cg.Espacio(**base)
 
@@ -107,9 +111,14 @@ def test_perfil_de_temperatura_exterior():
 
 def test_verano_cargas_internas_y_ventilacion():
     e = _local(
-        cerramientos=(), personas=10, sensible_persona_w=73.3, latente_persona_w=58.6,
-        iluminacion_w=1000, equipos_w=500, aire_exterior_m3h=450,
-    )  # fmt: skip
+        cerramientos=(),
+        personas=10,
+        sensible_persona_w=73.3,
+        latente_persona_w=58.6,
+        iluminacion_w=1000,
+        equipos_w=500,
+        aire_exterior_m3h=450,
+    )
     r = cg.verano(e, CLIMA)
     assert r.hora_solar == 14 and r.t_exterior_c == 36  # la hora más calurosa
     d = {p.concepto: p for p in r.partidas}
@@ -144,8 +153,9 @@ def test_hora_punta_por_orientacion_y_simultaneidad():
 
 
 def test_particion_con_local_no_acondicionado_y_errores():
-    p = cg.Cerramiento("Al almacén", "interior", 20, 1.0, t_contigua_invierno_c=10,
-                       t_contigua_verano_c=30)  # fmt: skip
+    p = cg.Cerramiento(
+        "Al almacén", "interior", 20, 1.0, t_contigua_invierno_c=10, t_contigua_verano_c=30
+    )
     r = cg.invierno(_local(cerramientos=(p,)), CLIMA)
     assert r.partidas[0].sensible_w == pytest.approx(20 * 11)
     with pytest.raises(ValueError):
@@ -172,3 +182,14 @@ def test_caudal_exterior_por_uso():
     assert caudal_exterior_m3h(POR_CLAVE["aseos"], 100, 0) == pytest.approx(198)
     assert caudal_exterior_m3h(POR_CLAVE["quirofano"], 40, 6) == 1200
     assert caudal_exterior_m3h(POR_CLAVE["piscina"], 300, 30) == pytest.approx(2700)
+
+
+def test_aire_exterior_seco_no_resta_latente():
+    # w exterior 0,006 < w interior (25 °C, 50 %): sin crédito deshumectante.
+    seco = cg.Clima(
+        latitud=40, presion_pa=P, invierno_ts_c=-4, verano_ts_c=36, verano_w=0.006, oscilacion_c=14
+    )
+    r = cg.verano(_local(cerramientos=(), aire_exterior_m3h=1000, infiltracion_m3h=100), seco)
+    d = {p.concepto: p for p in r.partidas}
+    assert d["Ventilación"].latente_w == 0 and d["Infiltración"].latente_w == 0
+    assert any("deshumectante" in n for n in r.notas)

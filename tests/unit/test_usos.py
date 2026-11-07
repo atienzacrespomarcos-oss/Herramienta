@@ -9,9 +9,16 @@ from __future__ import annotations
 import pytest
 
 from traza.engines.clima import COBERTURAS
-from traza.rules.usos import GRUPOS, IDA_PERSONA, IDA_SUPERFICIE, POR_CLAVE, USOS
+from traza.rules.usos import (
+    GRUPOS,
+    IDA_PERSONA,
+    IDA_SUPERFICIE,
+    POR_CLAVE,
+    USOS,
+    caudal_exterior_m3h,
+)
 
-METODOS = {"persona_ida", "superficie_ida", "trabajador", "fijo", "lamina"}
+METODOS = {"persona_ida", "superficie_ida", "trabajador", "fijo", "lamina", "ninguna"}
 
 
 def test_claves_unicas_y_grupos():
@@ -67,3 +74,17 @@ def test_criterios_normativos_por_uso():
     # RITE IT 1.1.4.1.2.3: aire de piscina con un máximo de 30 °C.
     assert POR_CLAVE["piscina"].t_verano <= 30
     assert POR_CLAVE["sala_limpia_iso7"].impulsion_renovaciones == pytest.approx(45)
+
+
+def test_frio_y_clasificacion_ida_del_rite():
+    # Cámaras: sin aire exterior de confort y calor de personas de ASHRAE Refrigeration
+    # (272 − 6·t W), no el de oficina (revisión 07-11-2026).
+    camara = POR_CLAVE["camara_congelacion"]
+    assert caudal_exterior_m3h(camara, 500, 2) == 0
+    assert camara.sensible_w == pytest.approx(272 + 120) and camara.latente_w == 0
+    assert "272" in camara.fuente_calor_persona
+    assert POR_CLAVE["camara_refrigeracion"].sensible_w == pytest.approx(260)
+    assert "853/2004" in POR_CLAVE["sala_manipulacion"].fuente_temperaturas
+    # RITE IT 1.1.4.2.2: salones de actos y salas de ordenadores, IDA 3.
+    assert POR_CLAVE["salon_eventos"].ventilacion.valor == 3
+    assert POR_CLAVE["centro_calculo"].ventilacion.valor == 3
