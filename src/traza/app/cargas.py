@@ -22,21 +22,6 @@ from traza.rules import usos as catalogo
 #: Origen de cada dato del informe.
 PROPUESTA, USUARIO, PLANO, CALCULO = "propuesta", "usuario", "plano", "cálculo"
 
-MESES = (
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
-)
-
 
 @dataclass(frozen=True)
 class Dato:
@@ -60,6 +45,7 @@ class CargaEspacio:
     volumen_m3: float
     datos: tuple[Dato, ...]
     fachadas_m: dict[str, float]  # sector → longitud de fachada (tras las correcciones)
+    tramos: tuple[env.Tramo, ...]  # los mismos, dibujables (m, coordenadas del plano)
     cerramientos: tuple[cg.Cerramiento, ...]
     aire_exterior_m3h: float
     infiltracion_m3h: float
@@ -207,9 +193,9 @@ def calcular(
         por_nivel.setdefault(e["padre_id"], []).append(
             env.Planta(e["id"], tuple(e["contorno"].aplanado()))
         )
-    automaticas: dict[str, dict[str, float]] = {}
+    automaticas: dict[str, list[env.Tramo]] = {}
     for plantas in por_nivel.values():
-        automaticas.update(env.fachadas(plantas, config["norte"]))
+        automaticas.update(env.tramos(plantas, config["norte"]))
 
     resultados = []
     for e in espacios:
@@ -283,6 +269,37 @@ def _dato(concepto, propuesto, fuente, unidad, ajustes, clave):
     return Dato(concepto, propuesto, unidad, PROPUESTA, fuente), propuesto
 
 
+def propuestas(uso: catalogo.Uso, area_m2: float, personas: float | None = None):
+    """Lo propuesto para un uso y una superficie: clave de ajuste → (concepto, valor, unidad,
+    fuente). Las claves son las de `ordenes.AJUSTES_CARGAS` (lo comprueba una prueba). El
+    aire exterior se propone con `personas` si el usuario ha cambiado la ocupación."""
+    ocupacion = round(uso.personas_100m2 * area_m2 / 100, 1)
+    f_personas = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 Btu/h = 0,29307 W"
+    f_dens = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 W/ft² = 10,764 W/m²"
+    sin_proceso = "Sin proceso salvo que se indique"
+    wwr, f_wwr = catalogo.huecos(uso)
+    f_inv = uso.fuente_temperaturas if uso.t_invierno is not None else "Sin calefacción"
+    aire = catalogo.caudal_exterior_m3h(uso, area_m2, ocupacion if personas is None else personas)
+    return {
+        "personas": (
+            "Ocupación",
+            ocupacion,
+            "personas",
+            f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}): {uso.personas_100m2:g} personas/100 m²",
+        ),
+        "sensible_persona_w": ("Calor sensible por persona", uso.sensible_w, "W", f_personas),
+        "latente_persona_w": ("Calor latente por persona", uso.latente_w, "W", f_personas),
+        "iluminacion_w_m2": ("Iluminación", uso.iluminacion_w_m2, "W/m²", f_dens),
+        "equipos_w_m2": ("Equipos", uso.equipos_w_m2, "W/m²", f_dens),
+        "proceso_sensible_w": ("Proceso, sensible", 0.0, "W", sin_proceso),
+        "proceso_latente_w": ("Proceso, latente", 0.0, "W", sin_proceso),
+        "t_invierno_c": ("Temperatura de invierno", uso.t_invierno, "°C", f_inv),
+        "t_verano_c": ("Temperatura de verano", uso.t_verano, "°C", uso.fuente_temperaturas),
+        "aire_exterior_m3h": ("Aire exterior", aire, "m³/h", uso.ventilacion.fuente),
+        "huecos": ("Huecos en fachada", wwr, "fracción", f_wwr),
+    }
+
+
 def _espacio(
     e,
     nombre,
@@ -318,63 +335,29 @@ def _espacio(
         ),
     ]
 
-    def anotar(concepto, propuesto, fuente, unidad, clave):
-        d, v = _dato(concepto, propuesto, fuente, unidad, ajustes, clave)
+    personas_propuestas = propuestas(uso, area)["personas"][1]
+    props = propuestas(uso, area, ajustes.get("personas", personas_propuestas))
+    v: dict[str, Any] = {}
+    for clave, (concepto, valor, unidad, fuente) in props.items():
+        if clave == "t_invierno_c" and ajustes.get("sin_calefaccion"):
+            datos.append(Dato(concepto, None, unidad, USUARIO, "Sin calefacción"))
+            v[clave] = None
+            continue
+        d, v[clave] = _dato(concepto, valor, fuente, unidad, ajustes, clave)
         datos.append(d)
-        return v
-
-    personas = anotar(
-        "Ocupación",
-        round(uso.personas_100m2 * area / 100, 1),
-        f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}): {uso.personas_100m2:g} personas/100 m²",
-        "personas",
-        "personas",
-    )
-    f_personas = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 Btu/h = 0,29307 W"
-    sens = anotar(
-        "Calor sensible por persona", uso.sensible_w, f_personas, "W", "sensible_persona_w"
-    )
-    lat = anotar("Calor latente por persona", uso.latente_w, f_personas, "W", "latente_persona_w")
-    f_dens = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 W/ft² = 10,764 W/m²"
-    luz = anotar("Iluminación", uso.iluminacion_w_m2, f_dens, "W/m²", "iluminacion_w_m2")
-    equipos = anotar("Equipos", uso.equipos_w_m2, f_dens, "W/m²", "equipos_w_m2")
-    proc_s = anotar(
-        "Proceso, sensible", 0.0, "Sin proceso salvo que se indique", "W", "proceso_sensible_w"
-    )
-    proc_l = anotar(
-        "Proceso, latente", 0.0, "Sin proceso salvo que se indique", "W", "proceso_latente_w"
-    )
-    if ajustes.get("sin_calefaccion"):
-        t_inv = None
-        datos.append(Dato("Temperatura de invierno", None, "°C", USUARIO, "Sin calefacción"))
-    else:
-        propuesta = uso.t_invierno
-        fuente = uso.fuente_temperaturas if propuesta is not None else "Sin calefacción"
-        t_inv = anotar("Temperatura de invierno", propuesta, fuente, "°C", "t_invierno_c")
-    t_ver = anotar(
-        "Temperatura de verano", uso.t_verano, uso.fuente_temperaturas, "°C", "t_verano_c"
-    )
-    aire = anotar(
-        "Aire exterior",
-        catalogo.caudal_exterior_m3h(uso, area, personas),
-        uso.ventilacion.fuente,
-        "m³/h",
-        "aire_exterior_m3h",
-    )
-    wwr, f_wwr = catalogo.huecos(uso)
-    frac_huecos = anotar("Huecos en fachada", wwr, f_wwr, "fracción", "huecos")
+    personas, sens, lat = v["personas"], v["sensible_persona_w"], v["latente_persona_w"]
+    luz, equipos = v["iluminacion_w_m2"], v["equipos_w_m2"]
+    proc_s, proc_l = v["proceso_sensible_w"], v["proceso_latente_w"]
+    t_inv, t_ver, aire = v["t_invierno_c"], v["t_verano_c"], v["aire_exterior_m3h"]
+    frac_huecos = v["huecos"]
 
     # Fachadas: automáticas del plano, corregidas por sector por el usuario.
-    bruto = env.fachadas([env.Planta(e["id"], tuple(e["contorno"].aplanado()))], config["norte"])[
-        e["id"]
-    ]
-    fachadas = dict(automaticas)
-    for s, es_fachada in correcciones.items():
-        if es_fachada:
-            fachadas[s] = bruto.get(s, 0.0)
-        else:
-            fachadas.pop(s, None)
-    fachadas = {s: v for s, v in fachadas.items() if v > 0}
+    # «Es fachada» toma todos los lados del sector (como si no tuviera vecinos); «no es
+    # fachada» los quita.
+    solo = env.tramos([env.Planta(e["id"], tuple(e["contorno"].aplanado()))], config["norte"])
+    tramos = [t for t in automaticas if t.sector not in correcciones]
+    tramos += [t for t in solo[e["id"]] if correcciones.get(t.sector)]
+    fachadas = env.longitudes(tramos)
 
     cerr: list[cg.Cerramiento] = []
     area_opaca = area_huecos = 0.0
@@ -496,6 +479,7 @@ def _espacio(
         volumen,
         tuple(datos),
         fachadas,
+        tuple(tramos),
         tuple(cerr),
         aire,
         infil,

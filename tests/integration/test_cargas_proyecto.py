@@ -161,3 +161,29 @@ def test_ninguna_palabra_queda_tapada_por_una_anterior():
     for i, (palabra, _) in enumerate(PALABRAS_USO):
         for anterior, _ in PALABRAS_USO[:i]:
             assert anterior not in palabra, f"«{anterior}» tapa a «{palabra}»"
+
+
+def test_informe_excel_y_pdf(nave, tmp_path):
+    import pymupdf
+    from openpyxl import load_workbook
+
+    p, ids, _ = nave
+    p.fijar_cargas_espacio(ids["OFICINAS"], "despacho", {"personas": 4})
+    x = p.exportar_cargas_excel(tmp_path / "Cargas 2.1")
+    assert x.name == "Cargas 2.1.xlsx"
+    wb = load_workbook(x)
+    assert wb.sheetnames == ["Resumen", "Espacios", "Partidas", "Datos y fuentes",
+                             "Cerramientos", "Hipótesis"]  # fmt: skip
+    esp = list(wb["Espacios"].iter_rows(min_row=2, values_only=True))
+    assert {f[1] for f in esp} == {"ALMACÉN", "OFICINAS"}
+    assert all(isinstance(f[8], float) and f[8] > 0 for f in esp)  # números, no texto
+    fuentes = list(wb["Datos y fuentes"].iter_rows(min_row=2, values_only=True))
+    assert ("OFICINAS", "Ocupación", 4, "usuario") in {(f[1], f[2], f[3], f[5]) for f in fuentes}
+    resumen = {f[0]: f[1] for f in wb["Resumen"].iter_rows(min_row=2, values_only=True)}
+    assert resumen["Zona climática (CTE DB HE, Anejo B)"] == "D3"
+    assert "p. 2" in resumen["Fuente del clima"]
+    pdf = p.exportar_cargas_pdf(tmp_path / "Cargas")
+    with pymupdf.open(pdf) as doc:
+        texto = "".join(pg.get_text() for pg in doc)
+    assert "Cargas térmicas y ventilación" in texto and "OFICINAS" in texto
+    assert "Hipótesis, método y fuentes" in texto and "ASHRAE" in texto

@@ -53,32 +53,48 @@ def _se_tocan(a, b) -> bool:
     return not (a[2] < b[0] or b[2] < a[0] or a[3] < b[1] or b[3] < a[1])
 
 
-def _cubierto(intervalos: list[tuple[float, float]]) -> float:
-    total, fin = 0.0, -math.inf
+def _descubiertos(intervalos: list[tuple[float, float]], largo: float):
+    """Tramos de [0, largo] que no cubre ningún intervalo."""
+    libres, inicio = [], 0.0
     for a, b in sorted(intervalos):
-        if b <= fin:
-            continue
-        total += b - max(a, fin)
-        fin = b
-    return total
+        if a > inicio + 1e-6:
+            libres.append((inicio, a))
+        inicio = max(inicio, b)
+    if largo > inicio + 1e-6:
+        libres.append((inicio, largo))
+    return libres
 
 
-def fachadas(
+Punto = tuple[float, float]
+
+
+@dataclass(frozen=True)
+class Tramo:
+    sector: str
+    inicio: Punto
+    fin: Punto
+
+    @property
+    def largo(self) -> float:
+        return math.hypot(self.fin[0] - self.inicio[0], self.fin[1] - self.inicio[1])
+
+
+def tramos(
     espacios: list[Planta], norte: float = 0.0, tolerancia: float = TOLERANCIA_MURO_M
-) -> dict[str, dict[str, float]]:
-    """Longitud de fachada (m) por sector de cada espacio de UN nivel.
+) -> dict[str, list[Tramo]]:
+    """Tramos de fachada de cada espacio de UN nivel (para medirlos y dibujarlos).
 
     `norte`: dirección del norte en el dibujo, en grados desde el eje Y (arriba) en sentido
     horario (0 si el norte está arriba).
     """
     cajas = {e.id: _caja(e.puntos, tolerancia) for e in espacios}
-    resultado: dict[str, dict[str, float]] = {}
+    resultado: dict[str, list[Tramo]] = {}
     for e in espacios:
         pts = e.puntos
         antihorario = _area_con_signo(pts) > 0
         vecinos = [o for o in espacios if o.id != e.id and _se_tocan(cajas[e.id], cajas[o.id])]
         lados_vecinos = [lado for o in vecinos for lado in _lados(o.puntos)]
-        por_sector: dict[str, float] = {}
+        propios: list[Tramo] = []
         for p, q in _lados(pts):
             dx, dy = q[0] - p[0], q[1] - p[1]
             largo = math.hypot(dx, dy)
@@ -101,10 +117,24 @@ def fachadas(
                 lo, hi = max(min(ta, tb), 0.0), min(max(ta, tb), largo)
                 if hi > lo:
                     intervalos.append((lo, hi))
-            expuesto = largo - _cubierto(intervalos)
-            if expuesto > 1e-6:
-                azimut = math.degrees(math.atan2(nx, ny)) - norte
-                s = sector(azimut)
-                por_sector[s] = por_sector.get(s, 0.0) + expuesto
-        resultado[e.id] = por_sector
+            s = sector(math.degrees(math.atan2(nx, ny)) - norte)
+            for lo, hi in _descubiertos(intervalos, largo):
+                propios.append(
+                    Tramo(s, (p[0] + ux * lo, p[1] + uy * lo), (p[0] + ux * hi, p[1] + uy * hi))
+                )
+        resultado[e.id] = propios
     return resultado
+
+
+def longitudes(lista: list[Tramo]) -> dict[str, float]:
+    por_sector: dict[str, float] = {}
+    for t in lista:
+        por_sector[t.sector] = por_sector.get(t.sector, 0.0) + t.largo
+    return por_sector
+
+
+def fachadas(
+    espacios: list[Planta], norte: float = 0.0, tolerancia: float = TOLERANCIA_MURO_M
+) -> dict[str, dict[str, float]]:
+    """Longitud de fachada (m) por sector de cada espacio de UN nivel."""
+    return {k: longitudes(v) for k, v in tramos(espacios, norte, tolerancia).items()}

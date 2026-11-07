@@ -38,7 +38,7 @@ from traza.app.ordenes import (
 from traza.core.estados import Estado
 from traza.core.geometria import Contorno, Vertice
 from traza.core.procedencia import Origen, Procedencia
-from traza.io import bc3, bc3_modificar, clima_idae, dxf
+from traza.io import bc3, bc3_modificar, clima_idae, dxf, informe_cargas
 from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
 from traza.io.excel import exportar_modificado, exportar_partidas, exportar_plano
@@ -993,11 +993,18 @@ class Proyecto:
 
     # --- Cargas y ventilación ----------------------------------------------------------
 
-    def estaciones(self, documento_id: str) -> list[clima_idae.EstacionIdae]:
-        """Estaciones de la guía del IDAE incorporada como documento (se lee una vez)."""
+    def estaciones(
+        self, documento_id: str, esperar: Callable[[Callable], Any] | None = None
+    ) -> list[clima_idae.EstacionIdae]:
+        """Estaciones de la guía del IDAE incorporada como documento (se lee una vez por
+        sesión). `esperar`: como en `plano_dxf`, para leer el PDF en otro hilo."""
         if documento_id not in self._guias:
+            ruta = self.ruta_documento(documento_id)
+            if ruta.suffix.lower() != ".pdf":
+                raise OrdenRechazada("La guía del IDAE es un PDF.")
+            esperar = esperar or (lambda f: f())
             try:
-                self._guias[documento_id] = self.lector_guia(self.ruta_documento(documento_id))
+                self._guias[documento_id] = esperar(lambda: self.lector_guia(ruta))
             except clima_idae.GuiaNoReconocida as exc:
                 raise OrdenRechazada(str(exc)) from exc
             if not self._guias[documento_id]:
@@ -1007,6 +1014,10 @@ class Proyecto:
                     "climáticas exteriores de proyecto»."
                 )
         return self._guias[documento_id]
+
+    def guia_leida(self, documento_id: str) -> bool:
+        """Si la guía ya se ha leído en esta sesión (leerla tarda unos segundos)."""
+        return documento_id in self._guias
 
     def estacion(self, documento_id: str, pagina: int) -> clima_idae.EstacionIdae:
         for e in self.estaciones(documento_id):
@@ -1057,6 +1068,12 @@ class Proyecto:
             self.niveles(),
             self.datos_cargas_espacios(),
         )
+
+    def exportar_cargas_excel(self, destino: Path) -> Path:
+        return informe_cargas.exportar_excel(Path(destino), self.nombre, self.calcular_cargas())
+
+    def exportar_cargas_pdf(self, destino: Path) -> Path:
+        return informe_cargas.exportar_pdf(Path(destino), self.nombre, self.calcular_cargas())
 
 
 def _codigo_libre(propuesto: str, usados: set[str]) -> str:

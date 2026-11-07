@@ -1,6 +1,6 @@
 # Módulo: cargas térmicas y ventilación (Etapa 4)
 
-Estado: **en desarrollo** (4.A datos de partida).
+Estado: **implementada** (pendiente de validar con la guía real y un proyecto del usuario).
 
 ## Decisiones del usuario (07-11-2026)
 
@@ -13,6 +13,10 @@ Estado: **en desarrollo** (4.A datos de partida).
 | Cerramientos | «Nunca me dan esos datos. **Presupón los típicos** dependiendo del tipo de construcción». |
 | Ocupación, iluminación, equipos, temperaturas, ventilación | **Propuesta por uso** con tablas publicadas; el usuario cambia lo que quiera. |
 | Fuentes | «Busca y fíate de lo que encuentres»: sin etiquetas de «no verificado» (ADR-0015). |
+| Ocupación | **ASHRAE, densidades de diseño** (para cargas y ventilación). |
+| Huecos en fachada | «Haz lo que recomiendes, pero la herramienta es completa; no gastar mucho tiempo»: **% propuesto por uso** (ASHRAE 90.1), cambiable por espacio. |
+| Fachadas | **Automático y reviso**: salen del plano, se ven en rojo en el visor y se corrigen por orientación. |
+| Informe | **Excel + PDF**. |
 
 ## Fuentes y criterios adoptados
 
@@ -186,7 +190,42 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
   - caudal fijo en quirófano;
   - 2,5 dm³/s·m² de lámina en piscinas, tomando la superficie del espacio.
 
-## Pendiente de esta etapa
-- 4.C Proyecto: ubicación con la guía del IDAE, uso y tipo de construcción por espacio,
-  cerramientos a partir de la geometría del plano, paso «Cargas y ventilación» e informe.
-- 4.C Paso «Cargas y ventilación» en la ventana, con su informe.
+### En el proyecto (`app/cargas.py`, paso «Cargas y ventilación»)
+- **Qué se guarda** (esquema V5): el clima y la obra (`cargas_proyecto`) y, por espacio, el
+  uso, lo que el usuario cambia y sus correcciones de fachada (`cargas_espacio`).
+  - Lo propuesto no se guarda: sale del catálogo con su fuente cada vez que se calcula.
+  - Así, una mejora del catálogo llega a todos los proyectos, y lo que el usuario fijó no
+    cambia.
+  - El cálculo es determinista a partir de lo guardado; los resultados se recalculan al
+    abrir el paso y no se almacenan como propiedades. Los pasos siguientes (redes,
+    equipos) llamarán a `Proyecto.calcular_cargas()`.
+- **Uso propuesto por el nombre** del espacio, con palabras clave en `PALABRAS_USO`:
+  - lo específico va antes que lo general, y una prueba lo vigila;
+  - sin coincidencia, el espacio sale «sin uso» y no se calcula hasta elegirlo.
+- **Fachadas** (`engines/envolvente.py`):
+  - un lado es fachada si no tiene enfrente, a menos de 0,6 m (un grueso de muro), un
+    lado paralelo de otro espacio del mismo nivel;
+  - las orientaciones se agrupan en 8 sectores de 45°, con el norte del plano indicado
+    una vez;
+  - la cubierta va en la planta más alta y la solera en la más baja;
+  - la superficie de fachada es la longitud por la altura del espacio, con los huecos
+    según el % del uso.
+- **Color de los cerramientos**: por defecto oscuro (α/h_o = 0,052, el máximo de ASHRAE).
+  El exterior estándar del panel de cubierta de catálogo es **rojo teja (RAL 8004)**, un
+  color medio-oscuro: cara exterior rojo teja y cara interior blanca en Perfimur, y
+  «rojo/blanco» en los paneles de tres grecas de Obramat. El usuario elige «claro» si lo es.
+- **Permeabilidad de ventanas** supuesta por tipo de construcción:
+  - en obra nueva, la clase que exige el CTE;
+  - en nave de panel, clase 2;
+  - en chapa y edificio antiguo, clase 1.
+- **Coeficiente de caudal de la parte opaca** (Co) del CTE: «nuevo» en CTE y en panel;
+  «existente» en el resto.
+- **Informe**:
+  - Excel con las hojas Resumen, Espacios, Partidas, Datos y fuentes, Cerramientos e
+    Hipótesis;
+  - PDF con los datos de partida, las cargas por espacio, el desglose de verano y las
+    hipótesis con sus fuentes.
+
+## Pendiente
+- Validar con la guía del IDAE real y un proyecto del usuario.
+- Cargas de producto en cámaras y de evaporación en piscinas: hoy se meten como proceso.
