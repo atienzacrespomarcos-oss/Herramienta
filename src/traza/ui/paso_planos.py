@@ -319,6 +319,10 @@ class PaginaPlanos(QWidget):
         vuelve = (
             "Su contorno vuelve a las propuestas. " if pestana is not self.tabla_niveles else ""
         )
+        if el is not None and el["id"] in self.proyecto.datos_cargas_espacios():
+            # Al confirmarlo otra vez es otro espacio: se pierden su uso y sus datos de
+            # cargas (revisión 07-11-2026). Se avisa antes.
+            vuelve += "También se quitan su uso y sus datos de cargas. "
         if el is not None and self.v.preguntas.confirmar(
             "Quitar",
             f"Se quita «{el['codigo']} {el.get('nombre') or ''}». {vuelve}Se puede "

@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 06-11-2026 (Etapa 1, bloque 2).
+Última actualización: 07-11-2026 (Etapa 4, cargas y ventilación).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -16,7 +16,7 @@ declarados).
 | — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |
 | RF-020, 021 | Gestión documental y vínculo dato ↔ documento | 1 | Implementada | PDF con comprobación de página citada; XLSX/DXF se incorporan pero su cita (hoja/celda) aún no se comprueba. |
 | RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 3 | Implementada | `docs/modules/geometria.md`. Implementada con planos de prueba: lector DXF y geometría exacta (3.A), niveles, espacios y obstáculos con procedencia, propuestas confirmadas, bloques por espacio, longitudes por capa y Excel (3.B), y paso «Planos y espacios» con visor 2D (3.C). Falta validarla con un DXF real del usuario. |
-| RF-101, 102 | Cargas térmicas y caudales de ventilación | 3.1 | Pendiente | |
+| RF-101, 102 | Cargas térmicas y caudales de ventilación | 4 | Implementada | `docs/modules/cargas.md`. Clima de la guía del IDAE del usuario, 39 usos con fuentes, cerramientos típicos por tipo de construcción, fachadas automáticas del plano, invierno y verano por componentes en hora punta, aire exterior por uso, infiltración; paso «Cargas y ventilación» con informe Excel y PDF. Probado con casos calculados a mano y una estación inventada: falta validarlo con la guía real y un proyecto del usuario. |
 | RF-100 | Redes de aire | 3.2 | Pendiente | |
 | — | Ventilación y extracción industrial | 3.3 | Pendiente | |
 | — | Rooftop | 3.4 | Pendiente | |

@@ -436,6 +436,26 @@ class Preguntas:
         d = DialogoAltura(self.v, espacio)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    # --- Cargas y ventilación ----------------------------------------------------------
+
+    def clima_obra(self, guias: list[dict], cargar, actual: dict | None):
+        from traza.ui.dialogos_cargas import DialogoClima
+
+        d = DialogoClima(self.v, guias, cargar, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def cargas_espacio(self, espacio: str, uso: str, ajustes, fachadas, propuestas_de):
+        from traza.ui.dialogos_cargas import DialogoEspacioCargas
+
+        d = DialogoEspacioCargas(self.v, espacio, uso, ajustes, fachadas, propuestas_de)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def destino_pdf(self, sugerido: Path) -> Path | None:
+        ruta, _ = QFileDialog.getSaveFileName(
+            self.v, "Exportar informe PDF", str(sugerido), "PDF (*.pdf)"
+        )
+        return Path(ruta) if ruta else None
+
     def confirmar(self, titulo: str, texto: str) -> bool:
         return QMessageBox.question(self.v, titulo, texto) == QMessageBox.Yes
 

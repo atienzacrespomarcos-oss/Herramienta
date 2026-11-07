@@ -182,7 +182,9 @@ ESPACIO = registrar(
         nombre="espacio",
         etiqueta="Espacio",
         disciplina=Disciplina.GENERAL,
-        version=1,
+        # v2 (07-11-2026, migración V5): el espacio tiene uso y datos de cargas
+        # (tabla cargas_espacio); sus propiedades no cambian.
+        version=2,
         propiedades=(
             DefPropiedad("nombre", "Nombre", Clase.TEXTO, obligatoria_para_aprobar=True),
             DefPropiedad("superficie", "Superficie", Clase.NUMERO, "m**2"),

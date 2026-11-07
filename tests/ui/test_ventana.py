@@ -104,6 +104,17 @@ class PreguntasPreparadas:
     def altura_espacio(self, espacio):
         return self._siguiente("altura_espacio")
 
+    def clima_obra(self, guias, cargar, actual):
+        r = self._siguiente("clima_obra")
+        return r(guias, cargar, actual) if callable(r) else r
+
+    def cargas_espacio(self, espacio, uso, ajustes, fachadas, propuestas_de):
+        r = self._siguiente("cargas_espacio")
+        return r(espacio, uso, ajustes, fachadas, propuestas_de) if callable(r) else r
+
+    def destino_pdf(self, sugerido):
+        return self._siguiente("destino_pdf")
+
 
 @pytest.fixture
 def ventana(qtbot):

@@ -21,6 +21,7 @@ COLOR_TRAZO = QColor(140, 140, 140)
 COLOR_ESPACIO = QColor(52, 120, 200)
 COLOR_OBSTACULO = QColor(150, 90, 40)
 COLOR_PROPUESTA = QColor(230, 126, 34)
+COLOR_FACHADA = QColor(200, 40, 40)
 
 
 def _poligono(c: Contorno) -> QPolygonF:
@@ -122,3 +123,15 @@ class VisorPlano(QGraphicsView):
     def wheelEvent(self, evento) -> None:  # noqa: N802 (nombre de Qt)
         f = 1.25 if evento.angleDelta().y() > 0 else 0.8
         self.scale(f, f)
+
+    def marcar_fachadas(self, tramos: list[tuple[tuple[float, float], tuple[float, float]]]):
+        """Tramos de fachada (m) en rojo y gruesos, encima de los contornos (paso Cargas)."""
+        pluma = QPen(COLOR_FACHADA)
+        pluma.setCosmetic(True)
+        pluma.setWidth(4)
+        camino = QPainterPath()
+        for (x0, y0), (x1, y1) in tramos:
+            camino.moveTo(x0, -y0)
+            camino.lineTo(x1, -y1)
+        # Por encima del resaltado del espacio elegido, que si no las tapa.
+        self.scene().addPath(camino, pluma).setZValue(10)

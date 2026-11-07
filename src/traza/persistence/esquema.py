@@ -220,5 +220,36 @@ CREATE TABLE geometria (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4)
+# V5 (07-11-2026): cargas y ventilación (docs/modules/cargas.md).
+# - `cargas_proyecto` (una sola fila): de dónde sale el clima (la guía del IDAE incorporada
+#   como documento y la página de su estación), la obra (provincia, altitud) y las
+#   hipótesis de conjunto (tipo de construcción, norte del plano, mes, color, recuperador).
+# - `cargas_espacio`: el uso de cada espacio, lo que el usuario cambia de la propuesta de
+#   su uso (`ajustes`) y sus correcciones de fachada por sector (`fachadas`).
+# Lo propuesto no se guarda: sale del catálogo con su fuente cada vez que se calcula.
+V5 = """
+CREATE TABLE cargas_proyecto (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    guia_documento_id TEXT NOT NULL REFERENCES documento(id),
+    estacion_pagina INTEGER NOT NULL CHECK (estacion_pagina >= 1),
+    provincia TEXT NOT NULL CHECK (length(trim(provincia)) > 0),
+    altitud_obra REAL NOT NULL,
+    tipo_construccion TEXT NOT NULL,
+    norte REAL NOT NULL,
+    mes INTEGER NOT NULL CHECK (mes BETWEEN 1 AND 12),
+    color TEXT NOT NULL CHECK (color IN ('claro', 'oscuro')),
+    recuperacion REAL NOT NULL CHECK (recuperacion >= 0 AND recuperacion < 1)
+);
+
+CREATE TABLE cargas_espacio (
+    elemento_id TEXT PRIMARY KEY REFERENCES elemento(id),
+    uso TEXT NOT NULL CHECK (length(trim(uso)) > 0),
+    ajustes TEXT NOT NULL,
+    fachadas TEXT NOT NULL
+);
+
+UPDATE elemento SET tipo_version = 2 WHERE tipo = 'espacio';
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5)
 VERSION_ACTUAL = len(MIGRACIONES)

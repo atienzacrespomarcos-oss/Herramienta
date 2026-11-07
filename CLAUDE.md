@@ -41,16 +41,31 @@ independiente no deja nada pendiente.
 
 ## Líneas rojas
 
-1. **No inventar.** Ningún valor, coeficiente, límite, artículo o tabla sin fuente. Sin
-   fuente ⇒ «no consta» / NO EVALUABLE, nunca una cifra plausible.
+> **Criterio del usuario sobre fuentes (07-11-2026), prevalece sobre las versiones
+> anteriores de las líneas 1, 3 y 4:** «No siempre vas a encontrar fuentes 100 % fiables y
+> a mí me da exactamente igual. No quiero cosas como "no verificado", "no comprobado" o
+> cosas así. Quiero una herramienta que eleve mi nivel y me permita ser mucho más
+> eficiente. Cuando ocurran cosas así, busca y fíate de lo que encuentres».
+> Y sobre cerramientos: «Nunca me dan esos datos. Presupón los típicos dependiendo del
+> tipo de construcción».
+
+1. **No inventar, pero no bloquear.** Ningún valor, coeficiente o tabla sale de la nada:
+   sale de una fuente publicada que se busca y se usa (norma, guía, manual, catálogo de
+   fabricante, tabla técnica reconocida), o de un valor típico del tipo de construcción o
+   de uso con su fuente. **Nunca** se muestra «no verificado», «no comprobado» ni «no
+   evaluable» por falta de una fuente «perfecta»: se busca la mejor disponible y se usa.
+   «No consta» queda solo para un dato del proyecto que el usuario no ha dado y que no
+   tiene un valor típico razonable.
 2. **Procedencia por valor.** Toda propiedad del modelo lleva origen (usuario, documento,
-   cálculo, catálogo, hipótesis, IA-propuesta). Una propiedad sin origen es un fallo.
-3. **Fuentes secundarias marcadas.** El usuario no tiene normas UNE. Lo que se tome de
-   fuentes públicas que reproducen una UNE se marca `fuente_secundaria` con URL, fecha de
-   consulta y edición citada; se contrasta con ≥ 2 fuentes cuando existan; las
-   discrepancias se muestran, no se resuelven en silencio.
-4. **Comprobaciones con tres salidas:** CUMPLE / NO CUMPLE / NO EVALUABLE. Jamás un CUMPLE
-   por defecto ni con un criterio `verificado: pendiente`.
+   cálculo, catálogo, hipótesis, IA-propuesta). Una propiedad sin origen es un fallo. Los
+   valores típicos y de tablas llevan su fuente citada (documento, apartado, URL): sirve
+   para consultarla, no para ponerla en duda.
+3. **Fuentes.** Se citan con su referencia (y URL cuando la hay). Si dos fuentes dicen
+   cosas distintas, se elige con criterio de ingeniería la más reconocida en el mercado
+   español y se deja escrita la elección en la ficha del módulo; no se traslada la duda
+   al usuario.
+4. **Comprobaciones:** CUMPLE / NO CUMPLE, con el criterio y su fuente. Un CUMPLE nunca
+   se da por defecto: se calcula.
 5. **Nada aprobado se modifica en silencio.** Reabrir es una decisión registrada.
 6. **Motores puros.** `engines/` y `rules/` no importan Qt, base de datos ni IA
    (lo vigila import-linter). Toda magnitud que cruza un motor lleva unidad.
@@ -71,9 +86,11 @@ independiente no deja nada pendiente.
   AutoLISP/Visual LISP solo con funciones existentes en 2013 (lista blanca con test).
 - Sin DWG (ODA File Converter: no comercial salvo miembros).
 - Estructura: **solo geometría**, sin cálculo estructural.
-- Validación: el usuario **no tiene programas de cálculo**. Los motores se validan con
-  ejemplos resueltos publicados y localizables (reglas en `docs/TESTING_STRATEGY.md` §0.2).
-  Sin ejemplo publicado, el motor queda «Limitada», nunca «Validada».
+- Validación: el usuario **no tiene programas de cálculo**. Los motores se prueban con
+  ejemplos resueltos publicados cuando existen y, si no, con casos de resultado conocido
+  calculados a mano en la prueba (reglas en `docs/TESTING_STRATEGY.md` §0.2). El estado
+  «Limitada»/«Validada» es solo del registro interno (`FEATURE_REGISTER.md`): la
+  herramienta no enseña etiquetas de «no validado».
 - Entregas: **una rama y un PR en borrador por bloque**. Desde el 07-11-2026 Claude lo
   fusiona cuando la CI está en verde y la revisión independiente no deja nada pendiente
   (petición del usuario, ver «Forma de trabajo»).

@@ -2,6 +2,58 @@
 
 ## [Sin publicar]
 
+### Etapa 4 · cargas y ventilación (07-11-2026)
+- Criterio de fuentes del usuario: buscar, usar y citar, sin etiquetas de «no verificado»
+  (CLAUDE.md y ADR-0015).
+- Clima de proyecto: se lee la guía del IDAE que el usuario incorpora como documento, y
+  cada valor se cita con su página. Percentiles según la cobertura del uso, obra a otra cota
+  y psicrometría de ASHRAE.
+- Zona climática del CTE por provincia y altitud, generada del Anejo B.
+- Catálogo de 39 usos (oficinas, hotel, sanitario, comercial, logística, industria, frío,
+  salas limpias, piscina, CPD). Cada valor lleva su fuente:
+  - ocupación, personas, iluminación y equipos de ASHRAE;
+  - temperaturas del RITE y del RD 486;
+  - ventilación del RITE, el RD 486 y la UNE 100713;
+  - huecos de ASHRAE 90.1.
+- Cerramientos típicos por tipo de construcción, según el Catálogo de Elementos
+  Constructivos del CTE (vidrios, marcos, huecos), las U límite del CTE, el panel sándwich,
+  la chapa, el edificio anterior a 1980 y la solera por la ISO 13370.
+- Motores:
+  - radiación de cielo despejado de ASHRAE;
+  - invierno por partidas;
+  - verano por componentes hora a hora, con hora punta por espacio y simultánea;
+  - infiltración UNE-EN 12831 con n50 del CTE.
+- Fachadas automáticas desde los contornos del plano, por orientación, con corrección por
+  sector.
+- Paso «Cargas y ventilación»:
+  - uso propuesto por el nombre del espacio, y todo lo demás propuesto con su fuente;
+  - el usuario cambia lo que quiera;
+  - fachadas marcadas en el visor;
+  - informe en Excel (todo el detalle) y en PDF (presentable).
+- Esquema V5: `cargas_proyecto` y `cargas_espacio`. El tipo «espacio» pasa a la versión 2.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - la cubierta va donde no hay otro espacio encima, no solo en el nivel más alto (una nave
+    con oficinas en otra planta se quedaba sin cubierta);
+  - la solera se calcula con la losa entera;
+  - el aire exterior seco ya no resta carga latente;
+  - las cámaras se calculan sin aire de confort y con el calor de personas de ASHRAE
+    Refrigeration, y quedan fuera de la simultánea;
+  - salones de actos y CPD pasan a IDA 3, según el RITE;
+  - «Almacén de racks» ya no se propone como CPD;
+  - un dato roto ya no tumba la ventana, y temperaturas y altitud tienen rangos físicos;
+  - las hipótesis del informe ya no dependen del primer espacio, y el Excel incluye la
+    orientación de cada cerramiento;
+  - el visor muestra un nivel cada vez;
+  - el diálogo ya no redondea lo guardado;
+  - al quitar un espacio se avisa de que se quitan sus datos de cargas.
+- Segunda revisión:
+  - el uso se propone por inicio de palabra («Zona de distribución» no es UCI);
+  - «Recepción de mercancías» se propone como almacén;
+  - las cámaras no suman infiltración por la envolvente;
+  - los diálogos validan los mismos rangos que las órdenes;
+  - el visor se encuadra al reabrir un proyecto;
+  - se avisa de una solera sin perímetro expuesto.
+
 ### Etapa 3 · geometría DXF, bloque C (07-11-2026)
 - Paso «Planos y espacios», solo en encargos con diseño. Permite:
   - leer un DXF eligiendo la unidad (con la medida total a la vista) y las capas por rol;
