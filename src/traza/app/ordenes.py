@@ -1239,6 +1239,14 @@ class QuitarDePlano(Orden):
             raise OrdenRechazada(
                 f"«{el['codigo']}» tiene {hijos} espacio(s) u obstáculo(s): quítalos antes."
             )
+        redes = con.execute(
+            "SELECT nombre FROM red_aire WHERE nivel_id = ?", (self.elemento_id,)
+        ).fetchall()
+        if redes:
+            raise OrdenRechazada(
+                f"«{el['codigo']}» lo usa la red de aire «{redes[0][0]}»: bórrala o cámbiala "
+                "de nivel antes."
+            )
         for tabla, que in (("decision", "decisiones registradas"), ("pendiente", "pendientes")):
             n = con.execute(
                 f"SELECT count(*) FROM {tabla} WHERE elemento_id = ?", (self.elemento_id,)
@@ -1480,3 +1488,93 @@ class FijarCargasEspacio(Orden):
         if antes == despues:
             raise OrdenRechazada("No hay cambios en los datos de cargas del espacio.")
         return [Delta("cargas_espacio", antes, despues)]
+
+
+# --- Redes de aire (Etapa 5, docs/modules/redes_aire.md) -------------------------------
+
+TIPOS_RED = {"impulsion": "Impulsión", "retorno": "Retorno", "extraccion": "Extracción"}
+FORMAS_CONDUCTO = ("rectangular", "circular")
+
+
+@dataclass
+class DefinirRed(Orden):
+    """Crea una red de aire o cambia la que tiene `id`. La capa y los bloques los comprueba
+    Proyecto contra el DXF antes (la orden no lee ficheros)."""
+
+    titulo: str  # «titulo» y no «nombre» (ver CrearNivel)
+    tipo: str
+    plano_id: str
+    capa_ejes: str
+    bloques_terminales: list[str]
+    bloque_equipo: str | None = None
+    nivel_id: str | None = None
+    climatizacion: bool = True
+    friccion_objetivo: float = 0.8
+    alto_maximo: float | None = 0.4
+    forma: str = "rectangular"
+    salto_impulsion: float = 10.0
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        titulo = self.titulo.strip()
+        if not titulo:
+            raise OrdenRechazada("La red necesita un nombre (p. ej. «Impulsión UTA-1»).")
+        if self.tipo not in TIPOS_RED:
+            raise OrdenRechazada(f"Tipo de red no previsto: «{self.tipo}».")
+        _plano(con, self.plano_id)
+        if self.nivel_id is not None and _elemento(con, self.nivel_id)["tipo"] != "nivel":
+            raise OrdenRechazada("La red se asocia a un nivel.")
+        if not self.capa_ejes.strip():
+            raise OrdenRechazada("Elige la capa de los ejes de conductos.")
+        bloques = sorted({b.strip() for b in self.bloques_terminales if b and b.strip()})
+        if not bloques:
+            raise OrdenRechazada("Elige al menos un bloque de difusor o rejilla.")
+        if self.forma not in FORMAS_CONDUCTO:
+            raise OrdenRechazada(f"Forma de conducto no prevista: «{self.forma}».")
+        r = _finito("Pérdida de carga objetivo", self.friccion_objetivo)
+        if not 0.1 <= r <= 5:
+            raise OrdenRechazada("La pérdida de carga objetivo va de 0,1 a 5 Pa/m.")
+        alto = None
+        if self.alto_maximo is not None:
+            alto = _finito("Alto máximo", self.alto_maximo)
+            if not 0.1 <= alto <= 3:
+                raise OrdenRechazada("El alto máximo del conducto va de 0,1 a 3 m.")
+        salto = _finito("Salto térmico de impulsión", self.salto_impulsion)
+        if not 3 <= salto <= 20:
+            raise OrdenRechazada("El salto térmico de impulsión va de 3 a 20 K.")
+        otra = con.execute(
+            "SELECT id FROM red_aire WHERE nombre = ? AND id <> ?", (titulo, self.id)
+        ).fetchone()
+        if otra:
+            raise OrdenRechazada(f"Ya hay una red llamada «{titulo}».")
+        antes = leer(con, "red_aire", {"id": self.id})
+        despues = {
+            "id": self.id,
+            "nombre": titulo,
+            "tipo": self.tipo,
+            "plano_id": self.plano_id,
+            "nivel_id": self.nivel_id,
+            "capa_ejes": self.capa_ejes.strip(),
+            "bloques_terminales": json.dumps(bloques, ensure_ascii=False),
+            "bloque_equipo": (self.bloque_equipo or "").strip() or None,
+            "climatizacion": 1 if self.climatizacion else 0,
+            "friccion_objetivo": r,
+            "alto_maximo": alto,
+            "forma": self.forma,
+            "salto_impulsion": salto,
+            "creado": antes["creado"] if antes else ahora(),
+        }
+        if antes == despues:
+            raise OrdenRechazada("No hay cambios en la red.")
+        return [Delta("red_aire", antes, despues)]
+
+
+@dataclass
+class BorrarRed(Orden):
+    red_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "red_aire", {"id": self.red_id})
+        if antes is None:
+            raise OrdenRechazada("Esa red no existe.")
+        return [Delta("red_aire", antes, None)]

@@ -251,5 +251,28 @@ CREATE TABLE cargas_espacio (
 UPDATE elemento SET tipo_version = 2 WHERE tipo = 'espacio';
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5)
+# V6 (07-11-2026): redes de aire (docs/modules/redes_aire.md). Cómo se lee una red del DXF
+# (capa de ejes, bloques de terminales y de equipo) y sus criterios de dimensionado. Los
+# tramos y resultados se calculan del dibujo cada vez: no se guardan.
+V6 = """
+CREATE TABLE red_aire (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
+    tipo TEXT NOT NULL CHECK (tipo IN ('impulsion', 'retorno', 'extraccion')),
+    plano_id TEXT NOT NULL REFERENCES plano(id),
+    nivel_id TEXT REFERENCES elemento(id),
+    capa_ejes TEXT NOT NULL CHECK (length(trim(capa_ejes)) > 0),
+    bloques_terminales TEXT NOT NULL,
+    bloque_equipo TEXT,
+    climatizacion INTEGER NOT NULL CHECK (climatizacion IN (0, 1)),
+    friccion_objetivo REAL NOT NULL CHECK (friccion_objetivo > 0),
+    alto_maximo REAL CHECK (alto_maximo IS NULL OR alto_maximo > 0),
+    forma TEXT NOT NULL CHECK (forma IN ('rectangular', 'circular')),
+    salto_impulsion REAL NOT NULL CHECK (salto_impulsion > 0),
+    creado TEXT NOT NULL,
+    UNIQUE (nombre)
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6)
 VERSION_ACTUAL = len(MIGRACIONES)

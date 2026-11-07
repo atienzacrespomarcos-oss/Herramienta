@@ -53,7 +53,9 @@ def test_recorrido_completo(ventana, tmp_path):
     pc = v.pagina_cargas
     v.ir_a_paso("cargas")
     assert "Falta el clima" in pc.resumen.text()
-    assert _celdas(pc.tabla_espacios, 3) == ["Almacén / logística (picking)", "Oficina abierta"]
+    assert _celdas(pc.tabla_espacios, 2) == ["Almacén / logística (picking)", "Oficina abierta"]
+    # Uso propuesto por el nombre: en gris hasta confirmarlo.
+    assert "Propuesto" in pc.tabla_espacios.item(0, 2).toolTip()
 
     def elegir_clima(guias, cargar, actual):
         [e] = cargar(guias[0]["id"])
@@ -67,8 +69,8 @@ def test_recorrido_completo(ventana, tmp_path):
 
     q.preparar("clima_obra", elegir_clima)
     pc.a_clima.trigger()
-    assert "zona D3" in pc.resumen.text() and "simultánea" in pc.resumen.text()
-    assert all(float(t.replace(",", ".")) > 0 for t in _celdas(pc.tabla_espacios, 8))
+    assert "Zona D3" in pc.resumen.text() and "simultánea" in pc.resumen.text()
+    assert all(float(t.replace(",", ".")) > 0 for t in _celdas(pc.tabla_espacios, 5))
     assert pc.a_excel.isEnabled()
 
     pc.tabla_espacios.setCurrentCell(1, 0)
@@ -81,8 +83,10 @@ def test_recorrido_completo(ventana, tmp_path):
 
     q.preparar("cargas_espacio", cambiar)
     pc.a_espacio.trigger()
-    assert _celdas(pc.tabla_espacios, 4)[1] == "tuyo"
-    assert "O 8" in _celdas(pc.tabla_espacios, 12)[1]
+    assert _celdas(pc.tabla_espacios, 2)[1] == "Despacho"
+    assert not pc.tabla_espacios.item(1, 2).toolTip()  # elegido: ya no es propuesta
+    pc.tabla_espacios.setCurrentCell(1, 0)
+    assert "O 8" in pc.detalle.text() and "3 personas" in pc.detalle.text()
 
     q.preparar("destino_excel", tmp_path / "cargas.xlsx")
     pc.a_excel.trigger()
@@ -108,7 +112,7 @@ def test_guia_sin_leer_pide_calcular(ventana):
     v.refrescar()
     assert "Pulsa «Calcular»" in v.pagina_cargas.resumen.text()
     v.pagina_cargas.a_calcular.trigger()
-    assert "zona D3" in v.pagina_cargas.resumen.text()
+    assert "Zona D3" in v.pagina_cargas.resumen.text()
 
 
 def test_paso_solo_en_encargos_con_diseno(ventana):

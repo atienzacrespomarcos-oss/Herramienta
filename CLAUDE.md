@@ -19,11 +19,19 @@ criterio». Y: «Fusiona cuando esté en verde y sigue». Por tanto: parar solo 
 **qué** debe hacer la herramienta o **cómo** debe hacerlo para el usuario; lo demás se
 resuelve y se documenta. Los PR se fusionan cuando la CI está en verde y la revisión
 independiente no deja nada pendiente.
+Y (07-11-2026, ante preguntas sobre el caudal de los difusores): «Creo que estás hilando
+demasiado fino». Preguntar solo decisiones de alcance o de forma de trabajar; los detalles
+de método (fuentes de un dato, hipótesis por defecto, formatos) se deciden con criterio y
+se documentan en la ficha del módulo.
 
 ## Lo que el usuario quiere de la herramienta (06-11-2026)
 
 - **Muy intuitiva y a medida**: solo lo que usa. Nada de pantallas o funciones «por si
   acaso». Antes de añadir algo, comprobar que responde a una necesidad que él ha dicho.
+- **Presentación limpia** (07-11-2026): «Herramienta profesional y completa no quiere decir
+  herramienta recargada. Una presentación limpia es clave». En pantalla, lo que decide
+  (resultado y unidades); el detalle completo, en una pestaña aparte o en el Excel. Tablas
+  con pocas columnas, textos de resumen cortos.
 - Organizada en **pasos del proyecto**, adaptados al **tipo de encargo** (diseño +
   presupuesto + instalación / presupuesto + instalación / solo instalación). **Solo se ven
   los pasos que funcionan.**

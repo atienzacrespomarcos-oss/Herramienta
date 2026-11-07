@@ -405,7 +405,12 @@ def _polilinea(plano, capa, e, tipo, vs: list[Vertice], cerrada: bool, cota: flo
     if len(vs) < 2:
         return
     capa.longitud += longitud_polilinea(vs, cerrada)
-    plano.trazos.append((capa.nombre, aplanar(vs, cerrada, _flecha(vs))))
+    puntos = aplanar(vs, cerrada, _flecha(vs))
+    if cerrada and puntos:
+        # El trazo de una polilínea cerrada vuelve al primer punto: sin él se perdía el
+        # lado de cierre (en el visor y en los ejes de conductos; revisión 07-11-2026).
+        puntos = [*puntos, puntos[0]]
+    plano.trazos.append((capa.nombre, puntos))
     marcada = cerrada
     vuelve = (vs[0].x, vs[0].y) == (vs[-1].x, vs[-1].y)
     # Con 3 vértices (A, B, A) solo encierra algo si tiene arcos.

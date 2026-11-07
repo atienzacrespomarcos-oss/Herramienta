@@ -44,30 +44,34 @@ class PaginaCargas(QWidget):
 
         self.resumen = QLabel()
         self.resumen.setWordWrap(True)
+        # Presentación limpia (usuario, 07-11-2026): en la tabla, lo que decide; el detalle
+        # del espacio (nivel, personas, hora punta, fachadas, partidas) en su pestaña.
         self.tabla_espacios = _tabla(
             [
                 "Código",
                 "Espacio",
-                "Nivel",
                 "Uso",
-                "Uso de",
                 "m²",
-                "Personas",
-                "Calef. kW",
-                "Refrig. kW",
+                "Calefacción (kW)",
+                "Refrigeración (kW)",
                 "W/m²",
-                "Hora punta",
-                "Aire ext. m³/h",
-                "Fachadas (m)",
+                "Aire exterior (m³/h)",
             ]
         )
         self.tabla_partidas = _tabla(["Estación", "Concepto", "Sensible (W)", "Latente (W)"])
         self.tabla_datos = _tabla(["Dato", "Valor", "Unidad", "Origen", "Fuente"])
         self.tabla_espacios.itemSelectionChanged.connect(self._al_elegir)
+        self.detalle = QLabel()
+        self.detalle.setWordWrap(True)
+        desglose = QWidget()
+        caja_desglose = QVBoxLayout(desglose)
+        caja_desglose.setContentsMargins(0, 4, 0, 0)
+        caja_desglose.addWidget(self.detalle)
+        caja_desglose.addWidget(self.tabla_partidas, 1)
         self.pestanas = QTabWidget()
         self.pestanas.addTab(self.tabla_espacios, "Espacios")
-        self.pestanas.addTab(self.tabla_partidas, "Desglose del espacio")
-        self.pestanas.addTab(self.tabla_datos, "Datos y fuentes del espacio")
+        self.pestanas.addTab(desglose, "Desglose del espacio")
+        self.pestanas.addTab(self.tabla_datos, "Datos y fuentes")
         self.visor = VisorPlano()
         self._crear_acciones()
         division = QSplitter(Qt.Horizontal)
@@ -229,26 +233,21 @@ class PaginaCargas(QWidget):
                 # menús) no llegaría a ejecutarse (revisión 07-11-2026).
                 mensaje = f"⚠ No se ha podido calcular: {type(exc).__name__}: {exc}"
         datos = self.proyecto.datos_cargas_espacios()
-        filas, ids = [], []
+        filas, ids, propuestos = [], [], []
         for e in espacios:
             c = self._carga(e["id"])
             if c is not None:
-                fachadas = " · ".join(f"{s} {_n(v, 0)}" for s, v in c.fachadas_m.items())
+                propuesto = c.uso_origen == calculo_cargas.PROPUESTA
                 filas.append(
                     [
                         e["codigo"],
                         c.nombre,
-                        c.nivel,
                         c.uso.nombre,
-                        ORIGEN[c.uso_origen],
                         _n(c.superficie_m2),
-                        _n(next(d.valor for d in c.datos if d.concepto == "Ocupación")),
                         _n(c.invierno.total_w / 1000, 2),
                         _n(c.verano.total_w / 1000, 2),
                         _n(c.verano.total_w / c.superficie_m2, 0),
-                        str(c.verano.hora_solar),
                         _n(c.aire_exterior_m3h, 0),
-                        fachadas,
                     ]
                 )
             else:
@@ -258,35 +257,32 @@ class PaginaCargas(QWidget):
                     if guardado
                     else calculo_cargas.uso_por_nombre(e["nombre"] or e["codigo"])
                 )
+                propuesto = not guardado
                 uso = POR_CLAVE[clave].nombre if clave else "— elige —"
                 filas.append(
-                    [
-                        e["codigo"],
-                        e["nombre"] or "",
-                        e["nivel_nombre"] or "",
-                        uso,
-                        "tuyo" if guardado else "propuesto",
-                        _n(e["superficie"]),
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                    ]
+                    [e["codigo"], e["nombre"] or "", uso, _n(e["superficie"]), "", "", "", ""]
                 )
+            propuestos.append(propuesto)
             ids.append(e["id"])
         _llenar(self.tabla_espacios, filas, ids)
+        for fila, propuesto in enumerate(propuestos):
+            item = self.tabla_espacios.item(fila, 2)
+            if propuesto and item is not None:
+                # Uso propuesto por el nombre: en gris, hasta que el usuario lo confirme.
+                item.setForeground(Qt.gray)
+                item.setToolTip("Propuesto por el nombre: confírmalo en «Datos del espacio…».")
         if elegido in ids:
             self.tabla_espacios.setCurrentCell(ids.index(elegido), 0)
         r = self._resultado
         if r is not None:
             mensaje = (
-                f"{r.estacion.nombre} ({r.estacion.provincia}) · obra en {r.provincia}, "
-                f"{_n(r.altitud_obra_m, 0)} m · zona {r.zona} · calefacción "
-                f"{_n(r.invierno_total_w / 1000)} kW · refrigeración simultánea "
-                f"{_n(r.verano_simultaneo_w / 1000)} kW (hora solar {r.hora_simultanea})"
+                f"Zona {r.zona} · calefacción {_n(r.invierno_total_w / 1000)} kW · "
+                f"refrigeración {_n(r.verano_simultaneo_w / 1000)} kW (simultánea, "
+                f"{r.hora_simultanea} h solar)"
+            )
+            self.resumen.setToolTip(
+                f"Clima: {r.estacion.nombre} ({r.estacion.provincia}), guía del IDAE p. "
+                f"{r.estacion.pagina}. Obra en {r.provincia} a {_n(r.altitud_obra_m, 0)} m."
             )
             if r.avisos:
                 mensaje += "\n⚠ " + "\n⚠ ".join(r.avisos)
@@ -330,7 +326,15 @@ class PaginaCargas(QWidget):
         if c is None:
             _llenar(self.tabla_partidas, [])
             _llenar(self.tabla_datos, [])
+            self.detalle.clear()
         else:
+            personas = next(d.valor for d in c.datos if d.concepto == "Ocupación")
+            fachadas = " · ".join(f"{s} {_n(v, 0)}" for s, v in c.fachadas_m.items()) or "ninguna"
+            self.detalle.setText(
+                f"{c.nivel} · {_n(personas)} personas · punta de verano a las "
+                f"{c.verano.hora_solar} h solar ({_n(c.verano.t_exterior_c)} °C) · fachadas "
+                f"(m): {fachadas}"
+            )
             partidas = [
                 [estacion, p.concepto, _n(p.sensible_w, 0), _n(p.latente_w, 0)]
                 for estacion, res in (("Invierno", c.invierno), ("Verano", c.verano))

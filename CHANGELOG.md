@@ -2,6 +2,46 @@
 
 ## [Sin publicar]
 
+### Etapa 5 · redes de aire (07-11-2026)
+- Paso «Redes de aire» para impulsión, retorno y extracción. Cada red se define por la capa
+  de ejes que dibuja el usuario en AutoCAD, sus bloques de difusores o rejillas y el
+  bloque del equipo.
+- Los ejes del DXF se leen como un árbol de tramos: uniones, derivaciones en T, codos
+  (también los dibujados como arco), terminales en los extremos o sobre el conducto, y
+  detección de anillos y de ramas sin caudal.
+- Caudales:
+  - salen de las cargas del espacio: la impulsión es lo que pide la carga sensible con un
+    salto de 10 K, o el aire exterior si es mayor; el retorno es la impulsión menos el aire
+    exterior; la extracción es el aire exterior;
+  - se reparten entre los terminales del espacio;
+  - el atributo CAUDAL del bloque manda.
+- Dimensionado por pérdida de carga constante (0,8 Pa/m por defecto) con velocidad máxima
+  por tipo de tramo (10 / 7,5 / 4 m/s, manual Climaver):
+  - rectangulares de 50 mm con relación ≤ 4 y alto máximo;
+  - circulares de la UNE-EN 1506.
+- Rozamiento por Colebrook, comprobado con el ejemplo resuelto del manual Climaver.
+- Accesorios con los coeficientes del manual Climaver (ASHRAE), con una errata corregida.
+- Camino crítico, presión a disipar en cada terminal, SFP exigida por el RITE y rendimiento
+  mínimo del motoventilador.
+- Listado Excel con tramos, accesorios, terminales, medición e hipótesis.
+- Esquema V6: `red_aire`. Un nivel que usa una red no se quita.
+- CLAUDE.md: se preguntan menos detalles finos de método; se deciden y se documentan.
+- La topología se lee con una rejilla espacial: 2000 segmentos pasan de 97 s a 0,2 s.
+- Presentación limpia en Cargas y Redes, según el criterio del usuario: pocas columnas y el
+  detalle en pestañas o en el Excel.
+- Revisión independiente, con todos los fallos corregidos y cada uno con su prueba:
+  - un espacio con caudal sin terminales en la red se avisa, y el caudal total cuenta solo
+    los terminales conectados;
+  - dos terminales en el mismo punto cuentan los dos;
+  - las polilíneas cerradas conservan su lado de cierre;
+  - con varios equipos iguales se toma el más cercano a los ejes;
+  - el alto «sin límite» ya no se queda en 1 m;
+  - la relación a/b de los codos usa el ancho como lado en el plano del giro;
+  - el paso recto se decide solo entre ramas con caudal;
+  - el equipo se engancha al punto de eje más cercano;
+  - la impulsión sale de la carga del local, sin la del aire exterior;
+  - se quita el código de accesorios que no se usaba.
+
 ### Etapa 4 · cargas y ventilación (07-11-2026)
 - Criterio de fuentes del usuario: buscar, usar y citar, sin etiquetas de «no verificado»
   (CLAUDE.md y ADR-0015).
