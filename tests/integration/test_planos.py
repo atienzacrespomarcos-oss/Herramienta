@@ -417,3 +417,50 @@ def test_capas_sin_distinguir_mayusculas(proyecto, tmp_path):
     assert _por_nombre(proyecto.propuestas(plano_id))["ALMACÉN"]
     with pytest.raises(OrdenRechazada, match="repetida"):
         proyecto.cambiar_plano(plano_id, "mm", ["A-ESPACIOS", "a-espacios"], [])
+
+
+# --- Segunda revisión del bloque B (07-11-2026) -------------------------------------------
+
+
+def test_altura_repetida_hace_suya_la_propuesta_de_ia(plano):
+    p, plano_id, nivel_id, _ = plano
+    eid = p.confirmar_contorno(
+        plano_id, _por_nombre(p.propuestas(plano_id))["ALMACÉN"].handle, nivel_id, nombre="A"
+    )
+    ia = Procedencia(Origen.IA_PROPUESTA, nota="leída de la memoria")
+    p.ejecutar(FijarPropiedad(eid, "altura_libre", 7.0, "m", ia), autor="ia")
+    p.ejecutar(FijarAlturaEspacio(eid, "propia", altura=7.0))
+    altura = {x["clave"]: x for x in p.propiedades(eid)}["altura_libre"]
+    assert altura["origen"] == "usuario" and altura["confirmado"] == 1
+    with pytest.raises(OrdenRechazada, match="no cambia nada"):
+        p.ejecutar(FijarAlturaEspacio(eid, "propia", altura=7.0))
+    p.ejecutar(FijarAlturaEspacio(eid, "nivel"))
+    with pytest.raises(OrdenRechazada, match="no cambia nada"):
+        p.ejecutar(FijarAlturaEspacio(eid, "nivel"))
+
+
+def test_altura_de_espacio_aprobado_y_mensaje_del_nivel(plano):
+    from traza.app.proyecto import ElementoBloqueado
+
+    p, plano_id, nivel_id, _ = plano
+    eid = p.confirmar_contorno(
+        plano_id, _por_nombre(p.propuestas(plano_id))["ALMACÉN"].handle, nivel_id, nombre="A"
+    )
+    p.ejecutar(Aprobar(eid, "Revisado"))
+    with pytest.raises(ElementoBloqueado, match="ESP-001"):
+        p.ejecutar(FijarAlturaEspacio(eid, "propia", altura=5.0))
+    with pytest.raises(
+        ElementoBloqueado, match="nivel «NIV-01» tiene elementos aprobados .*ESP-001"
+    ):
+        p.ejecutar(FijarPropiedad(nivel_id, "nombre", "Nave", None, Procedencia(Origen.USUARIO)))
+
+
+def test_capas_guardadas_con_el_nombre_del_dxf(proyecto, tmp_path):
+    doc_id = proyecto.incorporar_documento(_nave(tmp_path))
+    plano_id = proyecto.leer_plano(doc_id, "mm", ["a-espacios"], ["e-pilares"], ["a-textos"])
+    pl = proyecto.plano(plano_id)
+    assert (pl["capas_espacios"], pl["capas_obstaculos"], pl["capas_textos"]) == (
+        ["A-ESPACIOS"],
+        ["E-PILARES"],
+        ["A-TEXTOS"],
+    )

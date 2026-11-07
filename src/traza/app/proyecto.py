@@ -231,12 +231,19 @@ class Proyecto:
             el = leer(self._con, "elemento", {"id": fila["elemento_id"]})
             afectados.append(el)
             if d.tabla == "propiedad" and el is not None and el["tipo"] == "nivel":
-                # Los espacios y obstáculos heredan la altura del nivel: cambiarla cambia la
-                # de los aprobados en silencio (revisión 07-11-2026).
-                afectados += self._filas(
-                    "SELECT * FROM elemento WHERE padre_id = ? AND estado = ?",
+                # Los espacios y obstáculos heredan la altura del nivel (y su nombre y cota
+                # salen con ellos): cambiarlo cambia los aprobados en silencio (revisión
+                # 07-11-2026).
+                aprobados = self._filas(
+                    "SELECT codigo FROM elemento WHERE padre_id = ? AND estado = ?",
                     (el["id"], str(Estado.APROBADO)),
                 )
+                if aprobados:
+                    raise ElementoBloqueado(
+                        f"El nivel «{el['codigo']}» tiene elementos aprobados que dependen de "
+                        f"él ({', '.join(a['codigo'] for a in aprobados)}): reábrelos antes "
+                        "de cambiarlo."
+                    )
         else:
             return
         for el in afectados:
@@ -758,9 +765,9 @@ class Proyecto:
         orden = LeerPlano(
             documento_id,
             unidad,
-            list(capas_espacios),
-            list(capas_obstaculos),
-            list(capas_textos or []),
+            _nombres_del_dxf(plano, capas_espacios),
+            _nombres_del_dxf(plano, capas_obstaculos),
+            _nombres_del_dxf(plano, capas_textos),
             dxf.LECTOR,
             dxf.VERSION,
         )
@@ -776,17 +783,15 @@ class Proyecto:
         capas_textos: list[str] | None = None,
     ) -> None:
         fila = self.plano(plano_id)
-        _capas_existen(
-            self.plano_dxf(fila["documento_id"]),
-            [*capas_espacios, *capas_obstaculos, *(capas_textos or [])],
-        )
+        dibujo = self.plano_dxf(fila["documento_id"])
+        _capas_existen(dibujo, [*capas_espacios, *capas_obstaculos, *(capas_textos or [])])
         self.ejecutar(
             CambiarPlano(
                 plano_id,
                 unidad,
-                list(capas_espacios),
-                list(capas_obstaculos),
-                list(capas_textos or []),
+                _nombres_del_dxf(dibujo, capas_espacios),
+                _nombres_del_dxf(dibujo, capas_obstaculos),
+                _nombres_del_dxf(dibujo, capas_textos),
             )
         )
 
@@ -989,3 +994,10 @@ def _capas_existen(plano: dxf.PlanoDxf, capas: list[str]) -> None:
     faltan = sorted({c for c in capas if c.strip().casefold() not in existentes})
     if faltan:
         raise OrdenRechazada(f"El plano no tiene la capa «{faltan[0]}».")
+
+
+def _nombres_del_dxf(plano: dxf.PlanoDxf, capas: list[str] | None) -> list[str]:
+    """Las capas con el nombre que tienen en el DXF (el usuario puede escribirlas con otras
+    mayúsculas): así el Excel y la pantalla dicen lo mismo que el plano."""
+    reales = {c.casefold(): c for c in plano.capas}
+    return [reales.get(c.strip().casefold(), c) for c in (capas or [])]

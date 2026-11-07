@@ -1300,12 +1300,26 @@ class FijarAlturaEspacio(Orden):
                 )
             nuevos = {"altura_minima": mi, "altura_maxima": ma}
         usuario = Procedencia(Origen.USUARIO)
+        definicion = tipo("espacio")
         deltas = []
         for clave in ("altura_libre", "altura_minima", "altura_maxima"):
             antes = leer(con, "propiedad", {"elemento_id": self.espacio_id, "clave": clave})
             if clave in nuevos:
+                try:
+                    validar_valor(definicion.propiedad(clave), nuevos[clave], "m")
+                except ValueError as exc:
+                    raise OrdenRechazada(str(exc)) from None
                 despues = _fila_propiedad(self.espacio_id, clave, nuevos[clave], "m", usuario)
-                if antes is None or json.loads(antes["valor"]) != nuevos[clave]:
+                # Se omite solo si ya es el mismo valor, del usuario y confirmado: repetir el
+                # valor de una propuesta de la IA la hace suya (revisión 07-11-2026).
+                igual = (
+                    antes is not None
+                    and json.loads(antes["valor"]) == nuevos[clave]
+                    and antes["origen"] == Origen.USUARIO
+                    and antes["confirmado"] == 1
+                    and antes["unidad"] == "m"
+                )
+                if not igual:
                     deltas.append(Delta("propiedad", antes, despues))
             elif antes is not None:
                 deltas.append(Delta("propiedad", antes, None))

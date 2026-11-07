@@ -331,3 +331,15 @@ def test_segmento_circular_abierto_de_tres_puntos_con_arco_al_volver(tmp_path):
     p = leer_dxf(_guardar(doc, tmp_path))
     [c] = p.contornos
     assert c.contorno.area == pytest.approx(math.pi / 2)
+
+
+def test_capa_citada_con_otras_mayusculas_es_la_misma(tmp_path):
+    # AutoCAD no distingue mayúsculas en las capas: la longitud no se parte en dos capas.
+    doc, msp = _nuevo(6)
+    doc.layers.add("MUROS")
+    msp.add_line((0, 0), (3, 0), dxfattribs={"layer": "MUROS"})
+    linea = msp.add_line((0, 0), (0, 4))
+    linea.dxf.layer = "muros"
+    p = leer_dxf(_guardar(doc, tmp_path))
+    assert p.capas["MUROS"].longitud == pytest.approx(7)
+    assert "muros" not in p.capas
