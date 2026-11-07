@@ -226,3 +226,27 @@ USOS: tuple[Uso, ...] = (
 
 POR_CLAVE = {u.clave: u for u in USOS}
 GRUPOS = tuple(dict.fromkeys(u.grupo for u in USOS))
+
+
+def caudal_exterior_m3h(uso: Uso, area_m2: float, personas: float) -> float:
+    """Aire exterior mínimo del espacio (m³/h) según el método de ventilación de su uso.
+
+    - persona_ida: RITE tabla 1.4.2.1 (dm³/s por persona);
+    - superficie_ida: RITE tabla 1.4.2.4 (dm³/s·m²);
+    - trabajador: RD 486/1997 (m³/h por trabajador);
+    - fijo: caudal del local (quirófano, UNE 100713);
+    - lamina: RITE, piscinas, por m² de lámina y playa; se toma la superficie del espacio
+      (sin zona de espectadores).
+    """
+    v = uso.ventilacion
+    if v.metodo == "persona_ida":
+        return personas * IDA_PERSONA[int(v.valor)] * 3.6
+    if v.metodo == "superficie_ida":
+        return area_m2 * IDA_SUPERFICIE[int(v.valor)] * 3.6
+    if v.metodo == "trabajador":
+        return personas * v.valor
+    if v.metodo == "fijo":
+        return v.valor
+    if v.metodo == "lamina":
+        return area_m2 * v.valor * 3.6
+    raise ValueError(f"Método de ventilación no previsto: «{v.metodo}».")

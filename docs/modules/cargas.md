@@ -143,6 +143,50 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
 - **Zona climática a partir de la guía del IDAE**: los nombres de provincia de la guía se
   traducen a los del CTE (Vizcaya → Bizkaia, Baleares → Illes Balears…).
 
+### Método de cálculo (`engines/solar.py`, `engines/cargas.py`)
+- **Invierno**: transmisión U·A·ΔT, ventilación e infiltración; sin descontar ganancias.
+  La solera se calcula con la temperatura exterior de proyecto, del lado de la seguridad.
+- **Verano**: por componentes, hora a hora (horas solares 1–24) del día 21 del mes de
+  proyecto, por defecto julio. La **hora punta** de cada espacio es la de mayor carga
+  total; la del edificio sale de la suma simultánea.
+  - Temperatura exterior: T(h) = T_max − f(h)·OMDR.
+    - f(h) son las fracciones de ASHRAE 2009, cap. 14, tabla 6, tal como las incorpora
+      EnergyPlus (`WeatherManager.cc`, «DefaultTempRangeMult»).
+    - OMDR es la oscilación media diaria de la guía del IDAE.
+  - Radiación: cielo despejado de ASHRAE, I_DN = A·exp(−B/sen β), con A, B y C el día 21
+    de cada mes.
+    - La tabla se contrastó con la serie ajustada de EnergyPlus: diferencias de menos del
+      0,2 %.
+    - Geometría solar de Duffie y Beckman; difusa isótropa; reflectancia del suelo 0,2.
+    - Comprobación a mano: 40° N, 21 de julio, mediodía, horizontal ≈ 939 W/m².
+  - Opacos: temperatura sol-aire de ASHRAE.
+    - α/h_o = 0,026 m²K/W en superficie clara y 0,052 en oscura (por defecto).
+    - ε·ΔR/h_o = 3,9 K en cubiertas y 0 en fachadas.
+  - Huecos: conducción U·A·ΔT más radiación A·F_H·F_S·I.
+  - Personas, iluminación, equipos y proceso: instantáneos.
+  - Aire exterior: sensible m·c_p·ΔT y latente m·h_fg·ΔW, con el aire húmedo de ASHRAE,
+    cap. 1. La humedad interior de verano es el 50 % (RITE 45–60 %).
+  - Declarado en las notas del resultado: régimen permanente, sin inercia. Es del lado de
+    la seguridad, sobre todo en cerramientos pesados; en naves ligeras apenas se aparta.
+- **Recuperador**: eficiencia sensible sobre la ventilación (RITE IT 1.2.4.5.2 lo exige
+  con más de 0,5 m³/s de extracción).
+- **Infiltración**:
+  - n50 = 0,629·(Co·Ao + Ch·Ah)/V, según el CTE DB HE, Anejo H.
+    - Co = 16 m³/h·m² en edificio nuevo y 29 en existente.
+    - Ch según la clase de ventana (UNE-EN 12207): 50 / 27 / 9 / 3. El CTE exige clase 2
+      en las zonas α, A y B y clase 3 en las C, D y E.
+  - V_inf = 2·V·n50·e·ε, según la UNE-EN 12831, anexo D, tomada de AixLib (documentación
+    DIN 12831) y de la ayuda de DesignBuilder.
+    - e, con protección moderada: 0,02 con una fachada expuesta y 0,03 con más de una.
+    - ε: 1,0 hasta 10 m de altura, 1,2 hasta 30 m y 1,5 por encima.
+- **Aire exterior por uso** (`usos.caudal_exterior_m3h`):
+  - por persona según el IDA;
+  - por superficie según el IDA;
+  - 50 m³/h por trabajador (RD 486);
+  - caudal fijo en quirófano;
+  - 2,5 dm³/s·m² de lámina en piscinas, tomando la superficie del espacio.
+
 ## Pendiente de esta etapa
-- 4.B Motores de cargas de invierno y verano y de ventilación.
+- 4.C Proyecto: ubicación con la guía del IDAE, uso y tipo de construcción por espacio,
+  cerramientos a partir de la geometría del plano, paso «Cargas y ventilación» e informe.
 - 4.C Paso «Cargas y ventilación» en la ventana, con su informe.
