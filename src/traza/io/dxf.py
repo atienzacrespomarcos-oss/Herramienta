@@ -186,10 +186,15 @@ def leer_dxf(ruta: Path) -> PlanoDxf:
             capa.dxf.name, visible=capa.is_on() and not capa.is_frozen()
         )
 
+    # Los nombres de capa de AutoCAD no distinguen mayúsculas: una entidad que cita «muros»
+    # es de la capa «MUROS» de la tabla. Sin esto, la misma capa salía partida en dos
+    # (revisión 07-11-2026).
+    por_nombre = {n.casefold(): n for n in plano.capas}
     cuenta = _Cuenta()
     for e in doc.modelspace():
         tipo = e.dxftype()
-        nombre_capa = e.dxf.get("layer", "0")
+        citada = e.dxf.get("layer", "0")
+        nombre_capa = por_nombre.setdefault(citada.casefold(), citada)
         capa = plano.capas.setdefault(nombre_capa, CapaDxf(nombre_capa))
         capa.entidades[tipo] += 1
         if tipo not in _LEIDAS:

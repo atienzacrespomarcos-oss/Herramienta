@@ -24,6 +24,9 @@
   - descartar solo lo que es una propuesta;
   - capas sin distinguir mayúsculas;
   - el historial muestra los elementos quitados.
+- Segunda revisión: repetir una altura propuesta por la IA la hace del usuario; una misma
+  capa con otras mayúsculas ya no sale partida; las capas se guardan con el nombre del DXF;
+  el bloqueo de un nivel dice qué elementos aprobados dependen de él.
 
 ### Etapa 3 · geometría DXF, bloque A (06-11-2026)
 - Lector DXF (ezdxf). Hace inventario del espacio modelo:
