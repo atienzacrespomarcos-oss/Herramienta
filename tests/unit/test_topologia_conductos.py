@@ -100,7 +100,7 @@ def test_dibujo_grande_en_poco_tiempo():
     # rejilla espacial tardaba 97 s; ahora, décimas. Margen amplio para la CI de Windows.
     import time
 
-    pl = [[(0.0, 0.0), (1203.0, 0.0)]]
+    pl = [[(0.0, 0.0), (1200.0, 0.0)]]  # hasta el último ramal: sin cola muerta
     terminales = []
     for i in range(400):
         x = 3.0 + 3.0 * i
@@ -109,4 +109,6 @@ def test_dibujo_grande_en_poco_tiempo():
     inicio = time.perf_counter()
     top = leer(pl, terminales, equipo=(0.0, 0.0))
     assert time.perf_counter() - inicio < 10
-    assert len(top.tramos) == 800 and not top.avisos
+    # 399 derivaciones con dos hijos (798 tramos) más el tramo del equipo; el último ramal
+    # sale del extremo del tronco: es un codo, no una derivación.
+    assert len(top.tramos) == 799 and not top.avisos
