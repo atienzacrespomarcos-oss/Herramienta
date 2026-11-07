@@ -302,7 +302,7 @@ class DialogoContorno(QDialog):
             self.error.setText("Crea antes un nivel (planta baja…).")
             return
         handle = self.nombre.currentData()
-        propio = self.propio.text().strip() if handle is None else None
+        propio = (self.propio.text().strip() or None) if handle is None else None
         if self.es_espacio and handle is None and not propio:
             self.error.setText("El espacio necesita un nombre: el del plano o uno tuyo.")
             return

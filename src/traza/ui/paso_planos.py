@@ -48,15 +48,35 @@ class PaginaPlanos(QWidget):
         from traza.ui.ventana import _barra, _tabla  # mismas tablas y barras que el resto
 
         self.selector = QComboBox()
-        self.selector.currentIndexChanged.connect(lambda _i: self.v._proteger("Plano", self._al_cambiar_plano))
+        self.selector.currentIndexChanged.connect(
+            lambda _i: self.v._proteger("Plano", self._al_cambiar_plano)
+        )
         self.resumen = QLabel()
         self.resumen.setWordWrap(True)
-        self.tabla_propuestas = _tabla(["Tipo", "Capa", "Superficie (m²)", "Nombre del plano", "Revisar"])
+        self.tabla_propuestas = _tabla(
+            ["Tipo", "Capa", "Superficie (m²)", "Nombre del plano", "Revisar"]
+        )
         self.tabla_espacios = _tabla(
-            ["Código", "Nombre", "Nivel", "Superficie (m²)", "Perímetro (m)", "Altura (m)", "Altura de"]
+            [
+                "Código",
+                "Nombre",
+                "Nivel",
+                "Superficie (m²)",
+                "Perímetro (m)",
+                "Altura (m)",
+                "Altura de",
+            ]
         )
         self.tabla_obstaculos = _tabla(
-            ["Código", "Nombre", "Nivel", "Superficie (m²)", "Cota inferior (m)", "Altura (m)", "Altura de"]
+            [
+                "Código",
+                "Nombre",
+                "Nivel",
+                "Superficie (m²)",
+                "Cota inferior (m)",
+                "Altura (m)",
+                "Altura de",
+            ]
         )
         self.tabla_niveles = _tabla(["Código", "Nombre", "Cota (m)", "Altura libre (m)"])
         self.tabla_bloques = _tabla(["Bloque", "Capa", "Espacio", "Cantidad"])
@@ -114,7 +134,7 @@ class PaginaPlanos(QWidget):
     # --- Acciones ----------------------------------------------------------------------
 
     def _crear_acciones(self) -> None:
-        m = self.v.menuBar().addMenu("&Planos")
+        m = self.v.menu_planos
         a = self.v._accion
         self.a_leer = a(m, "Leer plano DXF…", self.accion_leer)
         self.a_capas = a(m, "Capas y unidad…", self.accion_capas)
@@ -143,9 +163,7 @@ class PaginaPlanos(QWidget):
     def _info(self, documento: dict) -> InfoPlano:
         plano = self.proyecto.plano_dxf(
             documento["id"],
-            esperar=lambda f: self.v._en_segundo_plano(
-                f, "Leyendo el plano DXF…", "Leer plano"
-            ),
+            esperar=lambda f: self.v._en_segundo_plano(f, "Leyendo el plano DXF…", "Leer plano"),
         )
         contornos = Counter(c.capa for c in plano.contornos)
         textos = Counter(t.capa for t in plano.textos)
@@ -195,7 +213,9 @@ class PaginaPlanos(QWidget):
     def accion_capas(self) -> None:
         p = self.proyecto.plano(self.plano_id())
         doc = next(d for d in self.proyecto.documentos() if d["id"] == p["documento_id"])
-        actual = DatosCapas(p["unidad"], p["capas_espacios"], p["capas_obstaculos"], p["capas_textos"])
+        actual = DatosCapas(
+            p["unidad"], p["capas_espacios"], p["capas_obstaculos"], p["capas_textos"]
+        )
         datos = self.v.preguntas.capas_plano(self._info(doc), actual)
         if datos is not None:
             self.proyecto.cambiar_plano(
@@ -360,9 +380,12 @@ class PaginaPlanos(QWidget):
         plano_id = self.plano_id() if self.proyecto is not None else None
         if plano_id is None:
             for t in (
-                self.tabla_propuestas, self.tabla_espacios, self.tabla_obstaculos,
-                self.tabla_bloques, self.tabla_longitudes,
-            ):  # fmt: skip
+                self.tabla_propuestas,
+                self.tabla_espacios,
+                self.tabla_obstaculos,
+                self.tabla_bloques,
+                self.tabla_longitudes,
+            ):
                 _llenar(t, [])
             _llenar(
                 self.tabla_niveles,
@@ -370,9 +393,7 @@ class PaginaPlanos(QWidget):
                 None if self.proyecto is None else self._filas_niveles()[1],
             )
             self._propuestas, self._espacios, self._obstaculos = [], [], []
-            self.resumen.setText(
-                "" if self.proyecto is None else "Lee un plano DXF para empezar."
-            )
+            self.resumen.setText("" if self.proyecto is None else "Lee un plano DXF para empezar.")
             self.visor.vacio()
             return
         p = self.proyecto.plano(plano_id)
@@ -407,21 +428,35 @@ class PaginaPlanos(QWidget):
         _llenar(
             self.tabla_espacios,
             [
-                [e["codigo"], e["nombre"] or NO_CONSTA, e["nivel_nombre"] or "", _m(e["superficie"]),
-                 _m(e["perimetro"]), self._altura(e), e["altura_origen"] or ""]
+                [
+                    e["codigo"],
+                    e["nombre"] or NO_CONSTA,
+                    e["nivel_nombre"] or "",
+                    _m(e["superficie"]),
+                    _m(e["perimetro"]),
+                    self._altura(e),
+                    e["altura_origen"] or "",
+                ]
                 for e in self._espacios
             ],
             [e["id"] for e in self._espacios],
-        )  # fmt: skip
+        )
         _llenar(
             self.tabla_obstaculos,
             [
-                [o["codigo"], o["nombre"] or "", o["nivel_nombre"] or "", _m(o["superficie"], 3),
-                 _m(o["cota_inferior"]), self._altura(o), o["altura_origen"] or ""]
+                [
+                    o["codigo"],
+                    o["nombre"] or "",
+                    o["nivel_nombre"] or "",
+                    _m(o["superficie"], 3),
+                    _m(o["cota_inferior"]),
+                    self._altura(o),
+                    o["altura_origen"] or "",
+                ]
                 for o in self._obstaculos
             ],
             [o["id"] for o in self._obstaculos],
-        )  # fmt: skip
+        )
         filas, ids = self._filas_niveles()
         _llenar(self.tabla_niveles, filas, ids)
         bloques = self.proyecto.bloques_por_espacio(plano_id)
@@ -445,9 +480,12 @@ class PaginaPlanos(QWidget):
             f"{', '.join(p['capas_textos']) or 'todas'}. Pendientes de revisar: {n_espacios} "
             f"espacio(s) y {n_obstaculos} obstáculo(s). Confirmados: {len(self._espacios)} "
             f"espacio(s), {_m(superficie)} m²."
-            + (f" ⚠ {len(plano.avisos)} aviso(s) de lectura (ver Excel, hoja Información)."
-               if plano.avisos else "")
-        )  # fmt: skip
+            + (
+                f" ⚠ {len(plano.avisos)} aviso(s) de lectura (ver Excel, hoja Información)."
+                if plano.avisos
+                else ""
+            )
+        )
         self.visor.dibujar(
             plano.trazos,
             f,
@@ -459,7 +497,10 @@ class PaginaPlanos(QWidget):
     def _filas_niveles(self) -> tuple[list[list[str]], list[str]]:
         niveles = self.proyecto.niveles()
         return (
-            [[n["codigo"], n["nombre"] or "", _m(n["cota"]), _m(n["altura_libre"])] for n in niveles],
+            [
+                [n["codigo"], n["nombre"] or "", _m(n["cota"]), _m(n["altura_libre"])]
+                for n in niveles
+            ],
             [n["id"] for n in niveles],
         )
 
@@ -476,7 +517,9 @@ class PaginaPlanos(QWidget):
         for a in (self.a_capas, self.a_exportar, self.a_recuperar):
             a.setEnabled(plano)
         pestana = self.pestanas.currentWidget()
-        hay_prop = plano and pestana is self.tabla_propuestas and self.tabla_propuestas.currentRow() >= 0
+        hay_prop = (
+            plano and pestana is self.tabla_propuestas and self.tabla_propuestas.currentRow() >= 0
+        )
         self.a_confirmar.setEnabled(hay_prop)
         self.a_descartar.setEnabled(hay_prop)
         self.a_altura.setEnabled(

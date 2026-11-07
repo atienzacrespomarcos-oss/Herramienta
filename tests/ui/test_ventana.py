@@ -22,6 +22,9 @@ class PreguntasPreparadas:
     def __init__(self) -> None:
         self.respuestas: dict[str, deque] = {}
         self.avisos: list[str] = []
+        #: Títulos de los avisos: un error inesperado se reconoce por «Error en …», que va en
+        #: el título (el texto empieza por el tipo de excepción, p. ej. «AttributeError»).
+        self.titulos: list[str] = []
         self.informaciones: list[str] = []
 
     def preparar(self, metodo: str, *valores) -> None:
@@ -58,6 +61,7 @@ class PreguntasPreparadas:
         return self._siguiente("confirmar")
 
     def aviso(self, titulo, texto):
+        self.titulos.append(titulo)
         self.avisos.append(texto)
 
     def informacion(self, titulo, texto):
@@ -85,6 +89,20 @@ class PreguntasPreparadas:
 
     def destino_bc3(self, sugerido):
         return self._siguiente("destino_bc3")
+
+    def capas_plano(self, info, actual=None):
+        r = self._siguiente("capas_plano")
+        return r(info) if callable(r) else r
+
+    def nuevo_nivel(self):
+        return self._siguiente("nuevo_nivel")
+
+    def confirmar_contorno(self, propuesta, niveles):
+        r = self._siguiente("confirmar_contorno")
+        return r(propuesta, niveles) if callable(r) else r
+
+    def altura_espacio(self, espacio):
+        return self._siguiente("altura_espacio")
 
 
 @pytest.fixture
@@ -146,7 +164,14 @@ def test_todas_las_acciones_se_ejecutan_sin_error(qtbot, tmp_path, pdf_3_paginas
                 v.abrir(tmp_path / "N.traza")
                 v.seleccionar(o.id)
         assert ejecutadas == len(acciones) - 1
-        assert not [x for x in q.avisos if x.startswith("Error")], q.avisos
+        # Por el título: antes se miraba el texto, que empieza por el tipo de excepción
+        # («AttributeError…») y no por «Error», y un fallo así pasaba (revisión 07-11-2026).
+        errores = [
+            f"{ti}: {tx}"
+            for ti, tx in zip(q.titulos, q.avisos, strict=True)
+            if ti.startswith("Error")
+        ]
+        assert not errores, errores
     finally:
         if v.proyecto is not None:
             v.proyecto.cerrar()
@@ -651,7 +676,7 @@ def test_modificado_completo_desde_la_interfaz(ventana, tmp_path):
     assert v.tabla_modificados.rowCount() == 0
     v.a_deshacer.trigger()
     assert v.tabla_modificados.rowCount() == 1
-    assert [a for a in q.avisos if a.startswith("Error")] == []
+    assert [t for t in q.titulos if t.startswith("Error")] == [], q.avisos
 
 
 def test_dialogo_de_cambio_exige_justificacion_y_numero_valido(qtbot):

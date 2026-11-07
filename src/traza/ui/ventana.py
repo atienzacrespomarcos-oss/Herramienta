@@ -119,9 +119,12 @@ EXTENSIONES_ABRIBLES = {
 
 TODOS = frozenset(ENCARGOS)
 #: Pasos del proyecto: (clave, texto, encargos en que se muestra). Solo pasos que funcionan;
-#: los de cálculo y planos se añadirán, solo para «diseño», cuando estén construidos.
+#: los de cálculo se añadirán, solo para «diseño», cuando estén construidos. «Planos y
+#: espacios» solo en encargos con diseño: en presupuesto o instalación no hay que sacar
+#: espacios del plano (decisión del usuario sobre pasos por encargo, 06-11-2026).
 PASOS = [
     ("documentacion", "Documentación", TODOS),
+    ("planos", "Planos y espacios", frozenset({"diseno"})),
     ("mediciones", "Mediciones y ofertas", TODOS),
     ("modificados", "Modificados", TODOS),
     ("equipos", "Equipos", TODOS),
@@ -368,7 +371,17 @@ class VentanaPrincipal(QMainWindow):
 
         self.paginas = QStackedWidget()
         self.paginas.addWidget(bienvenida)
-        self._pagina = {"documentacion": doc, "mediciones": med, "modificados": mo, "equipos": eq}
+        # Paso Planos y espacios: módulo propio (ui/paso_planos.py).
+        from traza.ui.paso_planos import PaginaPlanos
+
+        self.pagina_planos = PaginaPlanos(self)
+        self._pagina = {
+            "documentacion": doc,
+            "planos": self.pagina_planos,
+            "mediciones": med,
+            "modificados": mo,
+            "equipos": eq,
+        }
         for p in self._pagina.values():
             self.paginas.addWidget(p)
 
@@ -538,6 +551,9 @@ class VentanaPrincipal(QMainWindow):
             m, "Borrar modificado", self.accion_borrar_modificado
         )
 
+        # Menú del paso Planos: lo llena ui/paso_planos.PaginaPlanos.
+        self.menu_planos = mb.addMenu("&Planos")
+
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
         self.a_encargo = self._accion(m, "Tipo de encargo…", self.accion_encargo)
@@ -560,6 +576,8 @@ class VentanaPrincipal(QMainWindow):
 
     def _actualizar_estado(self) -> None:
         hay = self.proyecto is not None
+        if hasattr(self, "pagina_planos"):  # durante la construcción aún no existe
+            self.pagina_planos.actualizar_estado(hay)
         el = self.elemento_seleccionado() if hay else None
         aprobado = el is not None and el["estado"] == Estado.APROBADO
         for a in (
@@ -612,6 +630,7 @@ class VentanaPrincipal(QMainWindow):
         self._refrescar_documentos()
         self._refrescar_mediciones()
         self._refrescar_modificados()
+        self.pagina_planos.refrescar()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()
