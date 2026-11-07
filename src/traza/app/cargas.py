@@ -1,0 +1,505 @@
+"""Cargas y ventilación de los espacios del proyecto (Etapa 4, docs/modules/cargas.md).
+
+Junta el clima (guía del IDAE del usuario), la geometría confirmada (contornos, alturas,
+niveles), el uso de cada espacio y los cerramientos típicos del tipo de construcción, y
+llama a los motores. Lo propuesto se calcula cada vez desde el catálogo con su fuente; lo
+que el usuario cambia manda. Cada dato del resultado dice de dónde sale (línea roja 2).
+"""
+
+from __future__ import annotations
+
+import unicodedata
+from dataclasses import dataclass, field
+from typing import Any
+
+from traza.engines import cargas as cg
+from traza.engines import clima as motor_clima
+from traza.engines import envolvente as env
+from traza.io.clima_idae import EstacionIdae
+from traza.rules import cerramientos as tc
+from traza.rules import usos as catalogo
+
+#: Origen de cada dato del informe.
+PROPUESTA, USUARIO, PLANO, CALCULO = "propuesta", "usuario", "plano", "cálculo"
+
+MESES = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+
+
+@dataclass(frozen=True)
+class Dato:
+    concepto: str
+    valor: Any
+    unidad: str
+    origen: str
+    fuente: str
+
+
+@dataclass(frozen=True)
+class CargaEspacio:
+    espacio_id: str
+    codigo: str
+    nombre: str
+    nivel: str
+    uso: catalogo.Uso
+    uso_origen: str  # usuario | propuesta (por el nombre del espacio)
+    superficie_m2: float
+    altura_m: float
+    volumen_m3: float
+    datos: tuple[Dato, ...]
+    fachadas_m: dict[str, float]  # sector → longitud de fachada (tras las correcciones)
+    cerramientos: tuple[cg.Cerramiento, ...]
+    aire_exterior_m3h: float
+    infiltracion_m3h: float
+    impulsion_m3h: float | None
+    invierno: cg.Resultado
+    verano: cg.Resultado
+
+
+@dataclass(frozen=True)
+class ResultadoCargas:
+    estacion: EstacionIdae
+    zona: str
+    provincia: str
+    altitud_obra_m: float
+    tipo_construccion: str
+    envolvente: tc.Envolvente
+    mes: int
+    condiciones: dict[str, motor_clima.CondicionesProyecto]
+    espacios: tuple[CargaEspacio, ...]
+    hora_simultanea: int
+    verano_simultaneo_w: float
+    avisos: tuple[str, ...] = field(default=())
+
+    @property
+    def invierno_total_w(self) -> float:
+        return sum(e.invierno.total_w for e in self.espacios)
+
+
+# --- Uso propuesto por el nombre del espacio ------------------------------------------
+# Se recorre en orden y compara por «contiene»: lo específico antes que lo general, o el
+# término largo queda inalcanzable («cámara de congelación» antes que «cámara»).
+PALABRAS_USO = (
+    ("quirofano", "quirofano"),
+    ("reanimacion", "reanimacion"),
+    ("uci", "reanimacion"),
+    ("hospitalizacion", "habitacion_hospital"),
+    ("consulta", "consulta"),
+    ("laboratorio", "laboratorio"),
+    ("sala limpia", "sala_limpia_iso8"),
+    ("sala blanca", "sala_limpia_iso8"),
+    ("congelacion", "camara_congelacion"),
+    ("congelado", "camara_congelacion"),
+    ("camara", "camara_refrigeracion"),
+    ("manipulacion", "sala_manipulacion"),
+    ("cpd", "centro_calculo"),
+    ("servidores", "centro_calculo"),
+    ("rack", "centro_calculo"),
+    ("sala tecnica", "sala_tecnica"),
+    ("instalaciones", "sala_tecnica"),
+    ("cuadro", "sala_tecnica"),
+    ("compresores", "sala_maquinas"),
+    ("sala de maquinas", "sala_maquinas"),
+    ("despacho", "despacho"),
+    ("reunion", "reuniones"),
+    ("juntas", "reuniones"),
+    ("formacion", "reuniones"),
+    ("oficina", "oficina_abierta"),
+    ("administracion", "oficina_abierta"),
+    ("recepcion", "vestibulo"),
+    ("vestibulo", "vestibulo"),
+    ("hall", "vestibulo"),
+    ("pasillo", "pasillo"),
+    ("distribuidor", "pasillo"),
+    ("vestuario", "vestuarios"),
+    ("aseo", "aseos"),
+    ("bano", "aseos"),
+    ("wc", "aseos"),
+    ("comedor", "comedor"),
+    ("cocina", "cocina"),
+    ("restaurante", "restaurante_hotel"),
+    ("habitacion", "habitacion_hotel"),
+    ("gimnasio", "gimnasio"),
+    ("piscina", "piscina"),
+    ("salon", "salon_eventos"),
+    ("supermercado", "supermercado"),
+    ("sala de ventas", "supermercado"),
+    ("tienda", "tienda"),
+    ("produccion", "produccion_nave_alta"),
+    ("fabricacion", "produccion_nave_alta"),
+    ("montaje", "produccion_precision"),
+    ("taller", "produccion_nave_baja"),
+    ("almacen", "almacen"),
+    ("muelle", "almacen"),
+    ("expedicion", "almacen"),
+    ("logistica", "almacen"),
+)
+
+
+def _normalizar(texto: str) -> str:
+    sin_tildes = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return " ".join(sin_tildes.casefold().split())
+
+
+def uso_por_nombre(nombre: str) -> str | None:
+    n = _normalizar(nombre)
+    for palabra, clave in PALABRAS_USO:
+        if palabra in n:
+            return clave
+    return None
+
+
+# --- Cálculo ----------------------------------------------------------------------------
+
+
+def _datos_estacion(e: EstacionIdae) -> motor_clima.DatosEstacion:
+    return motor_clima.DatosEstacion(
+        e.altitud_m, e.ts_996, e.ts_99, e.hum_coin, e.ts_04, e.thc_04, e.ts_1, e.thc_1
+    )
+
+
+def _clase_ventana(tipo: str, letra: str) -> int:
+    """Clase de permeabilidad de las ventanas (UNE-EN 12207) supuesta por tipo: la que
+    exige el CTE (tabla 3.1.3.a-HE1) en obra nueva; clase 2 en naves de panel; clase 1
+    (la peor) en chapa y edificios antiguos."""
+    if tipo == "cte":
+        return 3 if letra in ("C", "D", "E") else 2
+    return 2 if tipo == "nave_panel" else 1
+
+
+def calcular(
+    config: dict[str, Any],
+    estacion: EstacionIdae,
+    espacios: list[dict[str, Any]],
+    niveles: list[dict[str, Any]],
+    datos_espacios: dict[str, dict[str, Any]],
+) -> ResultadoCargas:
+    """`espacios`: los de Proyecto.espacios(); `datos_espacios`: filas de cargas_espacio
+    por id, con `ajustes` y `fachadas` ya decodificados."""
+    zona = tc.zona_climatica(config["provincia"], config["altitud_obra"])
+    tipo = config["tipo_construccion"]
+    envolvente = tc.envolvente(tipo, zona)
+    mes = config["mes"]
+    alfa = cg.ALFA_HO[config["color"]]
+    condiciones = {
+        c: motor_clima.condiciones(_datos_estacion(estacion), c, config["altitud_obra"])
+        for c in motor_clima.COBERTURAS
+    }
+    cotas = [n["cota"] for n in niveles if n["cota"] is not None]
+    nivel_cota = {n["id"]: n["cota"] for n in niveles}
+    cota_alta, cota_baja = (max(cotas), min(cotas)) if cotas else (None, None)
+
+    avisos: list[str] = []
+    por_nivel: dict[str, list[env.Planta]] = {}
+    for e in espacios:
+        por_nivel.setdefault(e["padre_id"], []).append(
+            env.Planta(e["id"], tuple(e["contorno"].aplanado()))
+        )
+    automaticas: dict[str, dict[str, float]] = {}
+    for plantas in por_nivel.values():
+        automaticas.update(env.fachadas(plantas, config["norte"]))
+
+    resultados = []
+    for e in espacios:
+        nombre = e["nombre"] or e["codigo"]
+        fila = datos_espacios.get(e["id"])
+        if fila is not None:
+            clave_uso, uso_origen = fila["uso"], USUARIO
+        else:
+            clave_uso, uso_origen = uso_por_nombre(nombre), PROPUESTA
+        if clave_uso is None:
+            avisos.append(f"{e['codigo']} «{nombre}»: sin uso; elige uno para calcularlo.")
+            continue
+        altura = e["altura"]
+        if altura is None and e["altura_minima"] is not None and e["altura_maxima"] is not None:
+            altura = (e["altura_minima"] + e["altura_maxima"]) / 2
+        if altura is None:
+            avisos.append(f"{e['codigo']} «{nombre}»: sin altura; ponla en el paso Planos.")
+            continue
+        uso = catalogo.POR_CLAVE[clave_uso]
+        ajustes = fila["ajustes"] if fila else {}
+        correcciones = fila["fachadas"] if fila else {}
+        resultados.append(
+            _espacio(
+                e,
+                nombre,
+                uso,
+                uso_origen,
+                altura,
+                ajustes,
+                correcciones,
+                automaticas[e["id"]],
+                config,
+                envolvente,
+                zona,
+                tipo,
+                alfa,
+                condiciones,
+                mes,
+                estacion,
+                nivel_cota.get(e["padre_id"]),
+                cota_alta,
+                cota_baja,
+            )
+        )
+    hora, total = 0, 0.0
+    if resultados:
+        suma = [sum(r.verano.perfil_w[k] for r in resultados) for k in range(24)]
+        k = max(range(24), key=lambda i: suma[i])
+        hora, total = k + 1, suma[k]
+    return ResultadoCargas(
+        estacion,
+        zona,
+        config["provincia"],
+        config["altitud_obra"],
+        tipo,
+        envolvente,
+        mes,
+        condiciones,
+        tuple(resultados),
+        hora,
+        total,
+        tuple(avisos),
+    )
+
+
+def _dato(concepto, propuesto, fuente, unidad, ajustes, clave):
+    if clave in ajustes:
+        return Dato(concepto, ajustes[clave], unidad, USUARIO, "Cambiado por el usuario"), ajustes[
+            clave
+        ]
+    return Dato(concepto, propuesto, unidad, PROPUESTA, fuente), propuesto
+
+
+def _espacio(
+    e,
+    nombre,
+    uso,
+    uso_origen,
+    altura,
+    ajustes,
+    correcciones,
+    automaticas,
+    config,
+    envolvente,
+    zona,
+    tipo,
+    alfa,
+    condiciones,
+    mes,
+    estacion,
+    cota,
+    cota_alta,
+    cota_baja,
+) -> CargaEspacio:
+    area = e["superficie"]
+    volumen = area * altura
+    datos: list[Dato] = [
+        Dato("Superficie", area, "m²", PLANO, "Contorno confirmado del plano"),
+        Dato("Altura", altura, "m", PLANO, f"Altura {e['altura_origen'] or 'media'}"),
+        Dato(
+            "Uso",
+            uso.nombre,
+            "",
+            uso_origen,
+            "Elegido por el usuario" if uso_origen == USUARIO else "Propuesto por el nombre",
+        ),
+    ]
+
+    def anotar(concepto, propuesto, fuente, unidad, clave):
+        d, v = _dato(concepto, propuesto, fuente, unidad, ajustes, clave)
+        datos.append(d)
+        return v
+
+    personas = anotar(
+        "Ocupación",
+        round(uso.personas_100m2 * area / 100, 1),
+        f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}): {uso.personas_100m2:g} personas/100 m²",
+        "personas",
+        "personas",
+    )
+    f_personas = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 Btu/h = 0,29307 W"
+    sens = anotar(
+        "Calor sensible por persona", uso.sensible_w, f_personas, "W", "sensible_persona_w"
+    )
+    lat = anotar("Calor latente por persona", uso.latente_w, f_personas, "W", "latente_persona_w")
+    f_dens = f"{catalogo.F_ASHRAE} ({uso.tipo_ashrae}); 1 W/ft² = 10,764 W/m²"
+    luz = anotar("Iluminación", uso.iluminacion_w_m2, f_dens, "W/m²", "iluminacion_w_m2")
+    equipos = anotar("Equipos", uso.equipos_w_m2, f_dens, "W/m²", "equipos_w_m2")
+    proc_s = anotar(
+        "Proceso, sensible", 0.0, "Sin proceso salvo que se indique", "W", "proceso_sensible_w"
+    )
+    proc_l = anotar(
+        "Proceso, latente", 0.0, "Sin proceso salvo que se indique", "W", "proceso_latente_w"
+    )
+    if ajustes.get("sin_calefaccion"):
+        t_inv = None
+        datos.append(Dato("Temperatura de invierno", None, "°C", USUARIO, "Sin calefacción"))
+    else:
+        propuesta = uso.t_invierno
+        fuente = uso.fuente_temperaturas if propuesta is not None else "Sin calefacción"
+        t_inv = anotar("Temperatura de invierno", propuesta, fuente, "°C", "t_invierno_c")
+    t_ver = anotar(
+        "Temperatura de verano", uso.t_verano, uso.fuente_temperaturas, "°C", "t_verano_c"
+    )
+    aire = anotar(
+        "Aire exterior",
+        catalogo.caudal_exterior_m3h(uso, area, personas),
+        uso.ventilacion.fuente,
+        "m³/h",
+        "aire_exterior_m3h",
+    )
+    wwr, f_wwr = catalogo.huecos(uso)
+    frac_huecos = anotar("Huecos en fachada", wwr, f_wwr, "fracción", "huecos")
+
+    # Fachadas: automáticas del plano, corregidas por sector por el usuario.
+    bruto = env.fachadas([env.Planta(e["id"], tuple(e["contorno"].aplanado()))], config["norte"])[
+        e["id"]
+    ]
+    fachadas = dict(automaticas)
+    for s, es_fachada in correcciones.items():
+        if es_fachada:
+            fachadas[s] = bruto.get(s, 0.0)
+        else:
+            fachadas.pop(s, None)
+    fachadas = {s: v for s, v in fachadas.items() if v > 0}
+
+    cerr: list[cg.Cerramiento] = []
+    area_opaca = area_huecos = 0.0
+    for s in env.SECTORES:
+        largo = fachadas.get(s)
+        if not largo:
+            continue
+        bruta = largo * altura
+        huecos = bruta * frac_huecos
+        az = env.AZIMUT_SECTOR[s]
+        cerr.append(
+            cg.Cerramiento(
+                f"Fachada {s}", "opaco", bruta - huecos, envolvente.u_muro, azimut=az, alfa_ho=alfa
+            )
+        )
+        if huecos > 0:
+            cerr.append(
+                cg.Cerramiento(
+                    f"Huecos {s}",
+                    "hueco",
+                    huecos,
+                    envolvente.hueco.u,
+                    azimut=az,
+                    factor_solar=envolvente.hueco.factor_solar,
+                )
+            )
+        area_opaca += bruta - huecos
+        area_huecos += huecos
+    if cota is not None and cota == cota_alta:
+        cerr.append(
+            cg.Cerramiento(
+                "Cubierta",
+                "opaco",
+                area,
+                envolvente.u_cubierta,
+                azimut=0,
+                inclinacion=0,
+                alfa_ho=alfa,
+            )
+        )
+        area_opaca += area
+    if cota is not None and cota == cota_baja:
+        perimetro_expuesto = sum(fachadas.values())
+        if envolvente.u_terreno is not None:
+            u_suelo = envolvente.u_terreno
+        elif perimetro_expuesto > 0:
+            u_suelo = tc.u_solera(area, perimetro_expuesto)
+        else:
+            u_suelo = 0.0
+        if u_suelo > 0:
+            cerr.append(cg.Cerramiento("Solera", "terreno", area, u_suelo, inclinacion=180))
+
+    letra = tc.letra_invierno(zona)
+    co = cg.CO_OPACO["nuevo" if tipo in ("cte", "nave_panel") else "existente"]
+    ch = cg.CH_CLASE[_clase_ventana(tipo, letra)]
+    infil = 0.0
+    if area_opaca + area_huecos > 0:
+        n50 = cg.n50(volumen, area_opaca, area_huecos, co, ch)
+        infil = cg.infiltracion_m3h(volumen, n50, len(fachadas), (cota or 0) + altura / 2)
+    datos.append(
+        Dato(
+            "Infiltración",
+            infil,
+            "m³/h",
+            CALCULO,
+            f"UNE-EN 12831 con n50 del CTE DB HE, Anejo H (Co {co:g}, Ch {ch:g})",
+        )
+    )
+    impulsion = None
+    if uso.impulsion_renovaciones:
+        impulsion = uso.impulsion_renovaciones * volumen
+        datos.append(
+            Dato(
+                "Impulsión (sala limpia)",
+                impulsion,
+                "m³/h",
+                PROPUESTA,
+                f"{uso.impulsion_renovaciones:g} renovaciones/h ({uso.nota})",
+            )
+        )
+
+    cond = condiciones[uso.cobertura]
+    clima = cg.Clima(
+        latitud=estacion.latitud,
+        presion_pa=cond.presion_pa,
+        invierno_ts_c=cond.invierno_ts,
+        verano_ts_c=cond.verano_ts,
+        verano_w=cond.verano_w,
+        oscilacion_c=estacion.omdr,
+        mes=mes,
+    )
+    espacio = cg.Espacio(
+        nombre=nombre,
+        area_m2=area,
+        volumen_m3=volumen,
+        t_invierno_c=t_inv,
+        t_verano_c=t_ver,
+        personas=personas,
+        sensible_persona_w=sens,
+        latente_persona_w=lat,
+        iluminacion_w=luz * area,
+        equipos_w=equipos * area,
+        proceso_sensible_w=proc_s,
+        proceso_latente_w=proc_l,
+        aire_exterior_m3h=aire,
+        infiltracion_m3h=infil,
+        recuperacion=config["recuperacion"],
+        cerramientos=tuple(cerr),
+    )
+    return CargaEspacio(
+        e["id"],
+        e["codigo"],
+        nombre,
+        e["nivel_nombre"] or "",
+        uso,
+        uso_origen,
+        area,
+        altura,
+        volumen,
+        tuple(datos),
+        fachadas,
+        tuple(cerr),
+        aire,
+        infil,
+        impulsion,
+        cg.invierno(espacio, clima),
+        cg.verano(espacio, clima),
+    )

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from traza.ai import claude_code
+from traza.app import cargas as calculo_cargas
 from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
 from traza.app import planos as calculo_planos
@@ -22,6 +23,8 @@ from traza.app.ordenes import (
     ConfirmarContorno,
     CrearPendiente,
     DescartarPropuesta,
+    FijarCargasEspacio,
+    FijarCargasProyecto,
     FijarPropiedad,
     ImportarMedicion,
     LeerPlano,
@@ -35,7 +38,7 @@ from traza.app.ordenes import (
 from traza.core.estados import Estado
 from traza.core.geometria import Contorno, Vertice
 from traza.core.procedencia import Origen, Procedencia
-from traza.io import bc3, bc3_modificar, dxf
+from traza.io import bc3, bc3_modificar, clima_idae, dxf
 from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
 from traza.io.excel import exportar_modificado, exportar_partidas, exportar_plano
@@ -67,6 +70,9 @@ class Proyecto:
         self._rehacer: list[_Paso] = []
         #: DXF ya leídos en esta sesión (el documento no cambia).
         self._planos_dxf: dict[str, dxf.PlanoDxf] = {}
+        #: Lector de la guía del IDAE (las pruebas lo sustituyen: la guía no se reproduce).
+        self.lector_guia = clima_idae.leer_guia
+        self._guias: dict[str, list[clima_idae.EstacionIdae]] = {}
 
     # --- Ciclo de vida -----------------------------------------------------------------
 
@@ -225,7 +231,7 @@ class Proyecto:
                 # Añadir un componente a un conjunto aprobado, o quitárselo, también lo
                 # modifica (revisión 07-11-2026: quitar un espacio de un nivel aprobado pasaba).
                 afectados.append(leer(self._con, "elemento", {"id": fila["padre_id"]}))
-        elif d.tabla in ("propiedad", "decision"):
+        elif d.tabla in ("propiedad", "decision", "cargas_espacio"):
             fila = d.antes or d.despues
             assert fila is not None
             el = leer(self._con, "elemento", {"id": fila["elemento_id"]})
@@ -983,6 +989,73 @@ class Proyecto:
             self.bloques_por_espacio(plano_id),
             self.longitudes_por_capa(plano_id),
             dxf_leido.avisos,
+        )
+
+    # --- Cargas y ventilación ----------------------------------------------------------
+
+    def estaciones(self, documento_id: str) -> list[clima_idae.EstacionIdae]:
+        """Estaciones de la guía del IDAE incorporada como documento (se lee una vez)."""
+        if documento_id not in self._guias:
+            try:
+                self._guias[documento_id] = self.lector_guia(self.ruta_documento(documento_id))
+            except clima_idae.GuiaNoReconocida as exc:
+                raise OrdenRechazada(str(exc)) from exc
+            if not self._guias[documento_id]:
+                del self._guias[documento_id]
+                raise OrdenRechazada(
+                    "Ese PDF no contiene fichas de estación de la guía del IDAE «Condiciones "
+                    "climáticas exteriores de proyecto»."
+                )
+        return self._guias[documento_id]
+
+    def estacion(self, documento_id: str, pagina: int) -> clima_idae.EstacionIdae:
+        for e in self.estaciones(documento_id):
+            if e.pagina == pagina:
+                return e
+        raise OrdenRechazada(f"La página {pagina} de la guía no es la ficha de una estación.")
+
+    def cargas_config(self) -> dict[str, Any] | None:
+        return leer(self._con, "cargas_proyecto", {"id": 1})
+
+    def fijar_cargas(self, **datos: Any) -> None:
+        """Clima y obra (ver FijarCargasProyecto). Comprueba antes que la página es una
+        estación de la guía."""
+        self.estacion(datos["guia_documento_id"], datos["estacion_pagina"])
+        self.ejecutar(FijarCargasProyecto(**datos))
+
+    def datos_cargas_espacios(self) -> dict[str, dict[str, Any]]:
+        filas = self._filas("SELECT * FROM cargas_espacio")
+        return {
+            f["elemento_id"]: {
+                "uso": f["uso"],
+                "ajustes": json.loads(f["ajustes"]),
+                "fachadas": json.loads(f["fachadas"]),
+            }
+            for f in filas
+        }
+
+    def fijar_cargas_espacio(
+        self,
+        espacio_id: str,
+        uso: str,
+        ajustes: dict[str, Any] | None = None,
+        fachadas: dict[str, bool] | None = None,
+    ) -> None:
+        self.ejecutar(FijarCargasEspacio(espacio_id, uso, ajustes or {}, fachadas or {}))
+
+    def calcular_cargas(self) -> calculo_cargas.ResultadoCargas:
+        config = self.cargas_config()
+        if config is None:
+            raise OrdenRechazada(
+                "Faltan el clima y la obra: elige la guía del IDAE, la estación, la provincia "
+                "y la altitud de la obra."
+            )
+        return calculo_cargas.calcular(
+            config,
+            self.estacion(config["guia_documento_id"], config["estacion_pagina"]),
+            self.espacios(),
+            self.niveles(),
+            self.datos_cargas_espacios(),
         )
 
 

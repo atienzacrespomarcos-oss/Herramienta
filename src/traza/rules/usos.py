@@ -250,3 +250,40 @@ def caudal_exterior_m3h(uso: Uso, area_m2: float, personas: float) -> float:
     if v.metodo == "lamina":
         return area_m2 * v.valor * 3.6
     raise ValueError(f"Método de ventilación no previsto: «{v.metodo}».")
+
+
+# --- Huecos en fachada --------------------------------------------------------------------
+# Decisión del usuario (07-11-2026): «% por fachada», propuesto y modificable. Fuente:
+# ASHRAE 90.1-2019, apéndice G, tabla G3.1.1-1 (huecos verticales del edificio de referencia,
+# en fracción de la superficie bruta de fachada), tal como la incorpora NREL en
+# openstudio-standards (ashrae_90_1_prm_2019.prm_wwr_bldg_type.json).
+F_ASHRAE_901 = "ASHRAE 90.1-2019, tabla G3.1.1-1"
+F_SIN_HUECOS = (
+    "Local sin huecos al exterior (práctica habitual en cámaras, salas limpias, quirófanos y CPD)"
+)
+_WWR = {
+    "Oficinas": (0.31, f"{F_ASHRAE_901}: oficina de 5000 a 50 000 ft²"),
+    "Hotel": (0.34, f"{F_ASHRAE_901}: hotel de más de 75 habitaciones"),
+    "Sanitario": (0.27, f"{F_ASHRAE_901}: hospital"),
+    "Comercial": (0.11, f"{F_ASHRAE_901}: comercio independiente"),
+    "Logística": (0.06, f"{F_ASHRAE_901}: almacén no refrigerado"),
+    "Industria": (0.06, f"{F_ASHRAE_901}: almacén no refrigerado (nave)"),
+    "Frío": (0.0, F_SIN_HUECOS),
+    "Salas limpias": (0.0, F_SIN_HUECOS),
+    "Otros": (0.40, f"{F_ASHRAE_901}: resto de usos"),
+}
+_WWR_USO = {
+    "comedor": (0.24, f"{F_ASHRAE_901}: restaurante"),
+    "cocina": (0.24, f"{F_ASHRAE_901}: restaurante"),
+    "restaurante_hotel": (0.24, f"{F_ASHRAE_901}: restaurante"),
+    "consulta": (0.21, f"{F_ASHRAE_901}: centro sanitario ambulatorio"),
+    "supermercado": (0.07, f"{F_ASHRAE_901}: supermercado"),
+    "gran_superficie": (0.07, f"{F_ASHRAE_901}: supermercado"),
+    "centro_calculo": (0.0, F_SIN_HUECOS),
+    "quirofano": (0.0, F_SIN_HUECOS),
+}
+
+
+def huecos(uso: Uso) -> tuple[float, str]:
+    """Fracción de huecos en fachada propuesta para el uso, con su fuente."""
+    return _WWR_USO.get(uso.clave) or _WWR[uso.grupo]

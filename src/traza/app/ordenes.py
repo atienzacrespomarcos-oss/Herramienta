@@ -26,6 +26,8 @@ from traza.core.procedencia import Origen, Procedencia
 from traza.core.tipos import TIPOS_DE_PLANO, Clase, tipo, validar_valor
 from traza.io.pdf import pagina_citada
 from traza.persistence.filas import Delta, Fila, leer
+from traza.rules import cerramientos
+from traza.rules.usos import POR_CLAVE
 
 
 class OrdenRechazada(ValueError):
@@ -1253,6 +1255,9 @@ class QuitarDePlano(Orden):
             )
         ]
         deltas = [Delta("propiedad", p, None) for p in props]
+        cargas = leer(con, "cargas_espacio", {"elemento_id": self.elemento_id})
+        if cargas is not None:
+            deltas.append(Delta("cargas_espacio", cargas, None))
         geo = leer(con, "geometria", {"elemento_id": self.elemento_id})
         if geo is not None:
             deltas.append(Delta("geometria", geo, None))
@@ -1324,3 +1329,141 @@ class FijarAlturaEspacio(Orden):
             elif antes is not None:
                 deltas.append(Delta("propiedad", antes, None))
         return deltas
+
+
+# --- Cargas y ventilación (Etapa 4, docs/modules/cargas.md) ---------------------------
+
+#: Lo que el usuario puede cambiar de la propuesta del uso de un espacio: clave → (etiqueta,
+#: admite negativo). Lo que no esté aquí sale del catálogo del uso.
+AJUSTES_CARGAS = {
+    "personas": ("Ocupación (personas)", False),
+    "sensible_persona_w": ("Calor sensible por persona (W)", False),
+    "latente_persona_w": ("Calor latente por persona (W)", False),
+    "iluminacion_w_m2": ("Iluminación (W/m²)", False),
+    "equipos_w_m2": ("Equipos (W/m²)", False),
+    # Proceso con signo: un mueble frigorífico abierto resta carga.
+    "proceso_sensible_w": ("Proceso, sensible (W)", True),
+    "proceso_latente_w": ("Proceso, latente (W)", True),
+    "t_invierno_c": ("Temperatura de invierno (°C)", True),
+    "t_verano_c": ("Temperatura de verano (°C)", True),
+    "aire_exterior_m3h": ("Aire exterior (m³/h)", False),
+    "huecos": ("Huecos en fachada (fracción 0–1)", False),
+}
+#: Sin calefacción (cámaras, almacenes sin calefactar): se marca aparte.
+AJUSTE_SIN_CALEFACCION = "sin_calefaccion"
+SECTORES_FACHADA = ("N", "NE", "E", "SE", "S", "SO", "O", "NO")
+COLORES = ("claro", "oscuro")
+
+
+def _finito(nombre: str, valor) -> float:
+    if isinstance(valor, bool) or not isinstance(valor, int | float) or not math.isfinite(valor):
+        raise OrdenRechazada(f"«{nombre}» tiene que ser un número.")
+    return float(valor)
+
+
+@dataclass
+class FijarCargasProyecto(Orden):
+    """Clima y obra del proyecto: la guía del IDAE (documento del proyecto) y la página de
+    su estación, provincia y altitud de la obra, y las hipótesis de conjunto. La guía la
+    valida Proyecto antes (que la página sea de verdad una estación)."""
+
+    guia_documento_id: str
+    estacion_pagina: int
+    provincia: str
+    altitud_obra: float
+    tipo_construccion: str
+    norte: float = 0.0
+    mes: int = 7
+    color: str = "oscuro"
+    recuperacion: float = 0.0
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        doc = leer(con, "documento", {"id": self.guia_documento_id})
+        if doc is None or doc["paginas"] is None:
+            raise OrdenRechazada("La guía del IDAE tiene que ser un PDF incorporado al proyecto.")
+        if (
+            isinstance(self.estacion_pagina, bool)
+            or not 1 <= self.estacion_pagina <= doc["paginas"]
+        ):
+            raise OrdenRechazada("Esa página no existe en la guía.")
+        try:
+            cerramientos.zona_climatica(self.provincia, 0)
+        except KeyError as exc:
+            raise OrdenRechazada(str(exc).strip('"')) from None
+        if self.tipo_construccion not in cerramientos.TIPOS:
+            raise OrdenRechazada(f"Tipo de construcción no previsto: «{self.tipo_construccion}».")
+        if self.mes not in range(1, 13) or isinstance(self.mes, bool):
+            raise OrdenRechazada("El mes de proyecto va de 1 a 12.")
+        if self.color not in COLORES:
+            raise OrdenRechazada(f"Color de cerramientos no previsto: «{self.color}».")
+        rec = _finito("Recuperador", self.recuperacion)
+        if not 0 <= rec < 1:
+            raise OrdenRechazada("La eficiencia del recuperador va de 0 a 1 (sin llegar a 1).")
+        despues = {
+            "id": 1,
+            "guia_documento_id": self.guia_documento_id,
+            "estacion_pagina": int(self.estacion_pagina),
+            "provincia": self.provincia,
+            "altitud_obra": _finito("Altitud de la obra", self.altitud_obra),
+            "tipo_construccion": self.tipo_construccion,
+            "norte": _finito("Norte del plano", self.norte) % 360.0,
+            "mes": int(self.mes),
+            "color": self.color,
+            "recuperacion": rec,
+        }
+        antes = leer(con, "cargas_proyecto", {"id": 1})
+        if antes == despues:
+            raise OrdenRechazada("No hay cambios en los datos de cargas del proyecto.")
+        return [Delta("cargas_proyecto", antes, despues)]
+
+
+@dataclass
+class FijarCargasEspacio(Orden):
+    """Uso de un espacio, lo que el usuario cambia de su propuesta y sus correcciones de
+    fachada por sector (True: es fachada aunque el plano no lo diga; False: no lo es)."""
+
+    espacio_id: str
+    uso: str
+    ajustes: dict = field(default_factory=dict)
+    fachadas: dict = field(default_factory=dict)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        el = _elemento(con, self.espacio_id)
+        if el["tipo"] != "espacio":
+            raise OrdenRechazada("Los datos de cargas son de los espacios.")
+        if self.uso not in POR_CLAVE:
+            raise OrdenRechazada(f"Uso no previsto: «{self.uso}».")
+        ajustes: dict = {}
+        for clave, valor in self.ajustes.items():
+            if clave == AJUSTE_SIN_CALEFACCION:
+                if not isinstance(valor, bool):
+                    raise OrdenRechazada("«Sin calefacción» es sí o no.")
+                if valor:
+                    ajustes[clave] = True
+                continue
+            if clave not in AJUSTES_CARGAS:
+                raise OrdenRechazada(f"Dato de cargas no previsto: «{clave}».")
+            etiqueta, negativo = AJUSTES_CARGAS[clave]
+            v = _finito(etiqueta, valor)
+            if v < 0 and not negativo:
+                raise OrdenRechazada(f"«{etiqueta}» no admite valores negativos.")
+            if clave == "huecos" and v > 1:
+                raise OrdenRechazada("Los huecos son una fracción de la fachada, de 0 a 1.")
+            ajustes[clave] = v
+        if AJUSTE_SIN_CALEFACCION in ajustes and "t_invierno_c" in ajustes:
+            raise OrdenRechazada("Un espacio sin calefacción no tiene temperatura de invierno.")
+        fachadas = {}
+        for s, v in self.fachadas.items():
+            if s not in SECTORES_FACHADA or not isinstance(v, bool):
+                raise OrdenRechazada(f"Corrección de fachada no válida: «{s}».")
+            fachadas[s] = v
+        despues = {
+            "elemento_id": self.espacio_id,
+            "uso": self.uso,
+            "ajustes": json.dumps(ajustes, sort_keys=True, ensure_ascii=False),
+            "fachadas": json.dumps(fachadas, sort_keys=True),
+        }
+        antes = leer(con, "cargas_espacio", {"elemento_id": self.espacio_id})
+        if antes == despues:
+            raise OrdenRechazada("No hay cambios en los datos de cargas del espacio.")
+        return [Delta("cargas_espacio", antes, despues)]
