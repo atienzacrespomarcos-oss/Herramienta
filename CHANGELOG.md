@@ -2,6 +2,19 @@
 
 ## [Sin publicar]
 
+### Etapa 5.B · salida a AutoCAD de las redes de aire (08-11-2026)
+- «Exportar a AutoCAD…» en el paso Redes: un DXF R2013 y un LISP con el mismo contenido.
+  - Contenido: ejes, conducto a su ancho (abierto solo donde llega un ramal) y etiquetas de
+    sección y caudal por tramo y por terminal.
+  - Capas por tipo de red, XDATA TRAZA con el id de cada tramo, unidades y coordenadas del
+    plano de partida.
+  - El LISP (APPLOAD + TRAZA_RED) dibuja la red dentro del plano abierto. Solo usa
+    funciones de AutoLISP 2013 (lista blanca con prueba) y se escribe en cp1252.
+- Pruebas:
+  - el DXF se vuelve a leer con ezdxf (auditoría sin errores) y con el lector de TRAZA;
+  - se comprueba la geometría de la T y de las esquinas;
+  - el LISP se comprueba con paréntesis equilibrados, funciones permitidas y codificación.
+
 ### Etapa 5 · redes de aire (07-11-2026)
 - Paso «Redes de aire» para impulsión, retorno y extracción. Cada red se define por la capa
   de ejes que dibuja el usuario en AutoCAD, sus bloques de difusores o rejillas y el

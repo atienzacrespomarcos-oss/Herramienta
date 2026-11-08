@@ -81,7 +81,9 @@ class PaginaRedes(QWidget):
         division.setStretchFactor(0, 3)
         division.setStretchFactor(1, 2)
         caja = QVBoxLayout(self)
-        caja.addWidget(_barra([self.a_nueva, self.a_cambiar, self.a_borrar, self.a_excel]))
+        caja.addWidget(
+            _barra([self.a_nueva, self.a_cambiar, self.a_borrar, self.a_excel, self.a_autocad])
+        )
         caja.addLayout(cabecera)
         caja.addWidget(self.resumen)
         caja.addWidget(division, 1)
@@ -96,6 +98,7 @@ class PaginaRedes(QWidget):
         self.a_borrar = a(m, "Borrar red", self.accion_borrar)
         m.addSeparator()
         self.a_excel = a(m, "Exportar listado Excel…", self.accion_excel)
+        self.a_autocad = a(m, "Exportar a AutoCAD (DXF y LISP)…", self.accion_autocad)
 
     @property
     def proyecto(self):
@@ -163,6 +166,23 @@ class PaginaRedes(QWidget):
         if destino is not None:
             ruta = self.proyecto.exportar_red_excel(red["id"], destino)
             self.v.preguntas.informacion("Listado Excel", f"Guardado en {ruta}")
+
+    def accion_autocad(self) -> None:
+        if self.red_id() is None:
+            return
+        red = self.proyecto.red(self.red_id())
+        destino = self.v.preguntas.destino_dxf(
+            self.proyecto.carpeta.raiz.parent / f"{self.proyecto.nombre} - {red['nombre']}.dxf"
+        )
+        if destino is None:
+            return
+        dxf_ruta, lsp_ruta = self.proyecto.exportar_red_autocad(red["id"], destino)
+        self.v.preguntas.informacion(
+            "Exportar a AutoCAD",
+            f"Guardados:\n{dxf_ruta}\n{lsp_ruta}\n\nEl DXF se abre en AutoCAD 2013 o "
+            "posterior. Para dibujar la red dentro de tu plano: APPLOAD, carga el .lsp y "
+            "escribe TRAZA_RED.",
+        )
 
     # --- Contenido -----------------------------------------------------------------------
 
@@ -322,5 +342,5 @@ class PaginaRedes(QWidget):
         self.v.menu_redes.menuAction().setVisible(con_paso)
         self.a_nueva.setEnabled(con_paso)
         hay_red = con_paso and self.red_id() is not None
-        for a in (self.a_cambiar, self.a_borrar, self.a_excel):
+        for a in (self.a_cambiar, self.a_borrar, self.a_excel, self.a_autocad):
             a.setEnabled(hay_red)

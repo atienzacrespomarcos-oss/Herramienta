@@ -115,6 +115,9 @@ class PreguntasPreparadas:
     def destino_pdf(self, sugerido):
         return self._siguiente("destino_pdf")
 
+    def destino_dxf(self, sugerido):
+        return self._siguiente("destino_dxf")
+
     def red_aire(self, planos, niveles, info, actual):
         r = self._siguiente("red_aire")
         return r(planos, niveles, info, actual) if callable(r) else r

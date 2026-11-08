@@ -137,9 +137,39 @@ Estado: **en desarrollo**.
   - el alto «sin límite» llega a 3 m, el mayor lado que se fabrica de forma habitual;
   - con varios bloques de equipo iguales, se toma el más cercano a los ejes de la red.
 
+## Salida a AutoCAD (`io/salida_autocad.py`, «Exportar a AutoCAD…»)
+Decisión ADR-0008 / C-04 de la especificación: el DXF es la salida principal, la que se
+comprueba en las pruebas; el LISP sirve para dibujar dentro del plano que el usuario tiene
+abierto.
+- **DXF R2013 (AC1027)**, el que abren AutoCAD 2013–2017. Va en las unidades y coordenadas
+  del plano de partida, para superponerlo o copiarlo.
+  - Capas por tipo de red (IMP, RET, EXT): `TRAZA-xxx-EJES`, `TRAZA-xxx-CONDUCTO` y
+    `TRAZA-xxx-TEXTOS`.
+  - Color: impulsión azul, retorno verde y extracción naranja; los textos en blanco/negro.
+- **Contenido** (presentación limpia):
+  - el eje;
+  - el conducto a su ancho, con esquinas a inglete y abierto solo por el lado al que
+    llega un ramal;
+  - una etiqueta por tramo, «600×300 · 2835 m³/h», en el lado más largo y por fuera del
+    conducto;
+  - una por terminal, «D01 · 1418 m³/h»;
+  - textos de 0,15 m.
+- **XDATA** (ADR-0009): APPID `TRAZA` con `id_red:tramo` o `id_red:terminal`, para
+  reconocerlos al volver a leer el plano.
+- **LISP** (`.lsp` junto al DXF): APPLOAD y el comando `TRAZA_RED`.
+  - Crea las capas si no existen y dibuja con `entmake`.
+  - Solo usa funciones que ya existían en AutoLISP 2013 (y en R14). La lista blanca está
+    en `FUNCIONES_LISP` y la vigila una prueba.
+  - Se escribe en la página de códigos de Windows (cp1252), la que lee AutoCAD 2013.
+- **Protocolo de prueba en el AutoCAD del usuario** (pendiente):
+  1. abrir el DXF;
+  2. en el plano original, APPLOAD del .lsp y TRAZA_RED;
+  3. comprobar que coincide con los ejes dibujados;
+  4. copiar, mover y guardar, y comprobar que la XDATA sigue (ADR-0009).
+
 ## Pendiente
 - Validar con un DXF real del usuario y contrastar con su cálculo previo (criterio de
   aceptación de la Etapa 3 de la hoja de ruta).
-- DXF de salida con etiquetas de sección y caudal, y LISP para AutoCAD 2013–2017.
+- Probar el DXF y el LISP en el AutoCAD del usuario (protocolo de arriba).
 - Secciones fijadas a mano por tramo: el motor ya las admite (`seccion_fija`), pero la
   interfaz aún no las ofrece.
