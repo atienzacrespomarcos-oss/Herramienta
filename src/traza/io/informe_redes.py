@@ -48,8 +48,19 @@ def hipotesis(r: Any) -> list[str]:
         "En retorno y extracción (aire que converge) se usan los coeficientes de derivación "
         "divergente como aproximación.",
         f"Terminales: {FUENTE_TERMINAL}.",
-        "Caudales: atributo CAUDAL del bloque si lo tiene; si no, el del espacio (cargas) "
-        f"repartido entre sus terminales, con ΔT de impulsión {red['salto_impulsion']:g} K.",
+        "Caudales: atributo CAUDAL del bloque si lo tiene; si no, el del espacio repartido "
+        "entre sus terminales, "
+        + {
+            "volumen": "con las renovaciones/h de la tabla 3.6 según su volumen (Soler & "
+            "Palau, Manual práctico de ventilación, cap. 3) y nunca menos que su aire exterior.",
+            "renovaciones": f"con {red.get('renovaciones') or 0:g} renovaciones/h (tabla 3.5 "
+            "de Soler & Palau como guía) y nunca menos que su aire exterior.",
+        }.get(
+            red.get("criterio_caudal") or "cargas",
+            "con el aire exterior del espacio (cargas)."
+            if red["tipo"] == "extraccion"
+            else f"de las cargas, con ΔT de impulsión {red['salto_impulsion']:g} K.",
+        ),
         "Presión necesaria: la del camino crítico de la red (sin el equipo: filtros, baterías "
         "y atenuadores los da su fabricante).",
         *(f"Aviso: {a}" for a in r.avisos),
@@ -74,6 +85,11 @@ def exportar_excel(destino: Path, proyecto: str, r: Any) -> Path:
             ["Presión necesaria en la red (camino crítico)", c.presion_necesaria_pa, "Pa"],
             ["Terminal del camino crítico", c.terminal_critico, ""],
             ["Potencia específica exigida (RITE IT 1.2.4.2.5)", f"SFP {r.sfp_exigida}", ""],
+            [
+                "Potencia eléctrica máxima del ventilador (SFP × caudal)",
+                r.potencia_maxima_w,
+                "W",
+            ],
             [
                 "Rendimiento mínimo del motoventilador solo con la red (cota inferior)",
                 r.rendimiento_minimo,

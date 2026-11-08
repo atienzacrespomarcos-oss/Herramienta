@@ -2,6 +2,17 @@
 
 ## [Sin publicar]
 
+### Etapa 6 · ventilación sencilla (08-11-2026)
+- Red de extracción o de impulsión de ventilación: el caudal de cada espacio puede salir
+  de renovaciones por hora, según su volumen (tabla 3.6 del manual de Soler & Palau) o
+  fijas (tabla 3.5 como guía). Nunca baja del aire exterior del espacio.
+- Punto de trabajo del ventilador: caudal, presión de la red y potencia eléctrica máxima
+  por la SFP exigida (RITE IT 1.2.4.2.5), en pantalla y en el Excel.
+- Esquema V7: criterio de caudal y renovaciones de la red.
+- Revisión independiente (sin bloqueantes): el aviso de espacios sin terminales no salta
+  por las renovaciones; un texto erróneo en el campo de renovaciones deshabilitado ya no
+  bloquea Aceptar; la hipótesis del Excel de una extracción por cargas ya no habla de ΔT.
+
 ### Etapa 5.B · salida a AutoCAD de las redes de aire (08-11-2026)
 - «Exportar a AutoCAD…» en el paso Redes: un DXF R2013 y un LISP con el mismo contenido.
   - Contenido: ejes, conducto a su ancho (abierto solo donde llega un ramal) y etiquetas de

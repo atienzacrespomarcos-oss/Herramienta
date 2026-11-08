@@ -26,7 +26,7 @@ from traza.core.procedencia import Origen, Procedencia
 from traza.core.tipos import TIPOS_DE_PLANO, Clase, tipo, validar_valor
 from traza.io.pdf import pagina_citada
 from traza.persistence.filas import Delta, Fila, leer
-from traza.rules import cerramientos
+from traza.rules import cerramientos, ventilacion
 from traza.rules.usos import POR_CLAVE
 
 
@@ -1494,6 +1494,12 @@ class FijarCargasEspacio(Orden):
 
 TIPOS_RED = {"impulsion": "Impulsión", "retorno": "Retorno", "extraccion": "Extracción"}
 FORMAS_CONDUCTO = ("rectangular", "circular")
+#: Caudal de cada espacio (docs/modules/redes_aire.md, «Ventilación»).
+CRITERIOS_CAUDAL = {
+    "cargas": "De las cargas (aire exterior / carga sensible)",
+    "volumen": "Renovaciones/h según volumen (S&P, tabla 3.6)",
+    "renovaciones": "Renovaciones/h fijas",
+}
 
 
 @dataclass
@@ -1513,12 +1519,35 @@ class DefinirRed(Orden):
     alto_maximo: float | None = 0.4
     forma: str = "rectangular"
     salto_impulsion: float = 10.0
+    criterio_caudal: str = "cargas"
+    renovaciones: float | None = None
     id: str = field(default_factory=nuevo_id)
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
         titulo = self.titulo.strip()
         if not titulo:
             raise OrdenRechazada("La red necesita un nombre (p. ej. «Impulsión UTA-1»).")
+        if self.criterio_caudal not in CRITERIOS_CAUDAL:
+            raise OrdenRechazada(f"Criterio de caudal no previsto: «{self.criterio_caudal}».")
+        renovaciones = None
+        if self.criterio_caudal != "cargas":
+            # Las renovaciones son de ventilación: el retorno sale de la impulsión, y la
+            # impulsión de climatización, de la carga del local.
+            if self.tipo == "retorno":
+                raise OrdenRechazada("El retorno sale de la impulsión: su caudal es de las cargas.")
+            if self.tipo == "impulsion" and self.climatizacion:
+                raise OrdenRechazada(
+                    "En climatización la impulsión sale de la carga del local; las "
+                    "renovaciones por hora son para redes de ventilación."
+                )
+        if self.criterio_caudal == "renovaciones":
+            if self.renovaciones is None:
+                raise OrdenRechazada("Escribe las renovaciones por hora.")
+            renovaciones = _finito("Renovaciones por hora", self.renovaciones)
+            if not ventilacion.RENOVACIONES_MIN <= renovaciones <= ventilacion.RENOVACIONES_MAX:
+                raise OrdenRechazada(
+                    "Las renovaciones por hora van de 0,5 a 60 (tabla 3.5 del manual de S&P)."
+                )
         if self.tipo not in TIPOS_RED:
             raise OrdenRechazada(f"Tipo de red no previsto: «{self.tipo}».")
         _plano(con, self.plano_id)
@@ -1562,6 +1591,8 @@ class DefinirRed(Orden):
             "alto_maximo": alto,
             "forma": self.forma,
             "salto_impulsion": salto,
+            "criterio_caudal": self.criterio_caudal,
+            "renovaciones": renovaciones,
             "creado": antes["creado"] if antes else ahora(),
         }
         if antes == despues:

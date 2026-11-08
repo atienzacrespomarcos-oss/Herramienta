@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from traza.app.ordenes import FORMAS_CONDUCTO, TIPOS_RED
+from traza.app.ordenes import CRITERIOS_CAUDAL, FORMAS_CONDUCTO, TIPOS_RED
 from traza.core.numeros import escribir_numero
 from traza.ui.dialogos_planos import _numero_opcional
 
@@ -58,6 +58,19 @@ class DialogoRed(QDialog):
         self.forma = QComboBox()
         self.forma.addItems(FORMAS_CONDUCTO)
         self.salto = QLineEdit("10")
+        self.criterio = QComboBox()
+        for k, v in CRITERIOS_CAUDAL.items():
+            self.criterio.addItem(v, k)
+        self.criterio.setToolTip(
+            "Ventilación ambiental (manual de S&P, cap. 3). Nunca baja del aire exterior "
+            "del espacio (RITE o RD 486/1997)."
+        )
+        self.renovaciones = QLineEdit()
+        self.renovaciones.setPlaceholderText("p. ej. 6")
+        self.renovaciones.setToolTip(
+            "Tabla 3.5 de S&P: fábricas y talleres de mecanizado 5–10, cocinas industriales "
+            "15–20, fundiciones 20–30, naves con hornos y baños 30–60, pintura 40–60."
+        )
         self.error = QLabel()
         self.error.setStyleSheet("color: #c0392b")
         self.error.setWordWrap(True)
@@ -74,12 +87,17 @@ class DialogoRed(QDialog):
         f.addRow("Alto máximo del conducto (mm; vacío = hasta 3 m)", self.alto)
         f.addRow("Forma", self.forma)
         f.addRow("Salto térmico de impulsión (K)", self.salto)
+        f.addRow("Caudal de cada espacio", self.criterio)
+        f.addRow("Renovaciones por hora", self.renovaciones)
         f.addRow(self.error)
         botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         botones.accepted.connect(self._aceptar)
         botones.rejected.connect(self.reject)
         f.addRow(botones)
         self.plano.currentIndexChanged.connect(lambda _i: self._cargar_plano())
+        self.tipo.currentIndexChanged.connect(lambda _i: self._ajustar())
+        self.climatizacion.toggled.connect(lambda _c: self._ajustar())
+        self.criterio.currentIndexChanged.connect(lambda _i: self._ajustar())
         if actual:
             self.tipo.setCurrentIndex(max(self.tipo.findData(actual["tipo"]), 0))
             self.plano.setCurrentIndex(max(self.plano.findData(actual["plano_id"]), 0))
@@ -90,7 +108,24 @@ class DialogoRed(QDialog):
             self.alto.setText("" if alto is None else escribir_numero(round(alto * 1000)))
             self.forma.setCurrentText(actual["forma"])
             self.salto.setText(escribir_numero(actual["salto_impulsion"]))
+            criterio = actual.get("criterio_caudal") or "cargas"
+            self.criterio.setCurrentIndex(max(self.criterio.findData(criterio), 0))
+            if actual.get("renovaciones") is not None:
+                self.renovaciones.setText(escribir_numero(actual["renovaciones"]))
         self._cargar_plano()
+        self._ajustar()
+
+    def _ajustar(self) -> None:
+        """Las renovaciones son de ventilación: no en el retorno ni en la impulsión de
+        climatización (la orden lo rechaza; aquí no se ofrece)."""
+        tipo = self.tipo.currentData()
+        admite = tipo == "extraccion" or (
+            tipo == "impulsion" and not self.climatizacion.isChecked()
+        )
+        if not admite:
+            self.criterio.setCurrentIndex(self.criterio.findData("cargas"))
+        self.criterio.setEnabled(admite)
+        self.renovaciones.setEnabled(admite and self.criterio.currentData() == "renovaciones")
 
     def _cargar_plano(self) -> None:
         self.capa.clear()
@@ -134,6 +169,12 @@ class DialogoRed(QDialog):
             friccion = _numero_opcional(self.friccion.text(), "Pérdida de carga")
             alto = _numero_opcional(self.alto.text(), "Alto máximo")
             salto = _numero_opcional(self.salto.text(), "Salto térmico")
+            # Solo si se usa: un texto erróneo en el campo deshabilitado no bloquea Aceptar.
+            renovaciones = (
+                _numero_opcional(self.renovaciones.text(), "Renovaciones por hora")
+                if self.criterio.currentData() == "renovaciones"
+                else None
+            )
         except ValueError as exc:
             self.error.setText(str(exc))
             return
@@ -153,6 +194,8 @@ class DialogoRed(QDialog):
             "alto_maximo": None if alto is None else alto / 1000,
             "forma": self.forma.currentText(),
             "salto_impulsion": salto,
+            "criterio_caudal": self.criterio.currentData(),
+            "renovaciones": renovaciones if self.criterio.currentData() == "renovaciones" else None,
         }
         if self._actual:
             self.resultado["id"] = self._actual["id"]
