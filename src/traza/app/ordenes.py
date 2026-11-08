@@ -1600,6 +1600,127 @@ class DefinirRed(Orden):
         return [Delta("red_aire", antes, despues)]
 
 
+TIPOS_SISTEMA = {"2_tubos": "2 tubos (frío / calor)", "4_tubos": "4 tubos (frío y calor)"}
+
+
+@dataclass
+class DefinirSistemaHidraulico(Orden):
+    """Crea un sistema hidráulico o cambia el que tiene `id` (docs/modules/hidronica.md).
+    `circuitos`: [{nombre, espacios: [id], unidades, longitud_m, perdida_terminal_kpa,
+    exterior}]."""
+
+    titulo: str
+    tipo: str
+    circuitos: list[dict]
+    material: str = "acero"
+    frio_impulsion: float = 7.0
+    frio_retorno: float = 12.0
+    calor_impulsion: float = 45.0
+    calor_retorno: float = 40.0
+    altura_m: float = 0.0
+    longitud_primario_m: float = 10.0
+    volumen_minimo_l_kw: float = 3.5
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        from traza.rules.hidraulica import MATERIALES
+
+        titulo = self.titulo.strip()
+        if not titulo:
+            raise OrdenRechazada("El sistema necesita un nombre (p. ej. «Climatización planta 1»).")
+        if self.tipo not in TIPOS_SISTEMA:
+            raise OrdenRechazada(f"Tipo de sistema no previsto: «{self.tipo}».")
+        if self.material not in MATERIALES:
+            raise OrdenRechazada(f"Material no previsto: «{self.material}».")
+        fi, fr = (
+            _finito("Frío, impulsión", self.frio_impulsion),
+            _finito("Frío, retorno", self.frio_retorno),
+        )
+        ci, cr = (
+            _finito("Calor, impulsión", self.calor_impulsion),
+            _finito("Calor, retorno", self.calor_retorno),
+        )
+        if not 1 <= fi < fr <= 25:
+            raise OrdenRechazada("Frío: impulsión menor que retorno, entre 1 y 25 °C.")
+        if not 25 <= cr < ci <= 90:
+            raise OrdenRechazada("Calor: retorno menor que impulsión, entre 25 y 90 °C.")
+        altura = _finito("Altura de la instalación", self.altura_m)
+        primario = _finito("Longitud del primario", self.longitud_primario_m)
+        minimo = _finito("Volumen mínimo", self.volumen_minimo_l_kw)
+        if not 0 <= altura <= 100 or not 0 <= primario <= 500 or not 0 < minimo <= 50:
+            raise OrdenRechazada("Altura 0–100 m, primario 0–500 m y volumen mínimo hasta 50 l/kW.")
+        if not self.circuitos:
+            raise OrdenRechazada("El sistema necesita al menos un circuito.")
+        circuitos, nombres = [], set()
+        for c in self.circuitos:
+            nombre = str(c.get("nombre", "")).strip()
+            if not nombre or nombre.casefold() in nombres:
+                raise OrdenRechazada("Cada circuito necesita un nombre propio.")
+            nombres.add(nombre.casefold())
+            espacios = sorted(set(c.get("espacios") or []))
+            if not espacios:
+                raise OrdenRechazada(f"{nombre}: elige los espacios a los que da servicio.")
+            for e in espacios:
+                if _elemento(con, e)["tipo"] != "espacio":
+                    raise OrdenRechazada(f"{nombre}: «{e}» no es un espacio.")
+            unidades = c.get("unidades")
+            if (
+                isinstance(unidades, bool)
+                or not isinstance(unidades, int)
+                or not 1 <= unidades <= 500
+            ):
+                raise OrdenRechazada(f"{nombre}: las unidades van de 1 a 500.")
+            longitud = _finito(f"{nombre}, longitud", c.get("longitud_m"))
+            perdida = _finito(f"{nombre}, pérdida de la unidad", c.get("perdida_terminal_kpa"))
+            if not 0 <= longitud <= 2000 or not 0 <= perdida <= 200:
+                raise OrdenRechazada(f"{nombre}: longitud 0–2000 m y pérdida 0–200 kPa.")
+            circuitos.append(
+                {
+                    "nombre": nombre,
+                    "espacios": espacios,
+                    "unidades": unidades,
+                    "longitud_m": longitud,
+                    "perdida_terminal_kpa": perdida,
+                    "exterior": bool(c.get("exterior", False)),
+                }
+            )
+        otro = con.execute(
+            "SELECT id FROM sistema_hidraulico WHERE nombre = ? AND id <> ?", (titulo, self.id)
+        ).fetchone()
+        if otro:
+            raise OrdenRechazada(f"Ya hay un sistema llamado «{titulo}».")
+        antes = leer(con, "sistema_hidraulico", {"id": self.id})
+        despues = {
+            "id": self.id,
+            "nombre": titulo,
+            "tipo": self.tipo,
+            "material": self.material,
+            "frio_impulsion": fi,
+            "frio_retorno": fr,
+            "calor_impulsion": ci,
+            "calor_retorno": cr,
+            "altura_m": altura,
+            "longitud_primario_m": primario,
+            "volumen_minimo_l_kw": minimo,
+            "circuitos": json.dumps(circuitos, ensure_ascii=False),
+            "creado": antes["creado"] if antes else ahora(),
+        }
+        if antes == despues:
+            raise OrdenRechazada("No hay cambios en el sistema.")
+        return [Delta("sistema_hidraulico", antes, despues)]
+
+
+@dataclass
+class BorrarSistemaHidraulico(Orden):
+    sistema_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "sistema_hidraulico", {"id": self.sistema_id})
+        if antes is None:
+            raise OrdenRechazada("Ese sistema no existe.")
+        return [Delta("sistema_hidraulico", antes, None)]
+
+
 @dataclass
 class BorrarRed(Orden):
     red_id: str
