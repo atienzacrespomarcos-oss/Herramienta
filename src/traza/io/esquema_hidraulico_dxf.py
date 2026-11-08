@@ -28,7 +28,11 @@ CAPAS = {
     "leyenda": ("TRAZA-H-LEYENDA", 8),
 }
 TEXTO, ROTULO = 2.5, 2.0  # alturas en mm de papel
-ALTO_BANDA = 210.0  # la banda va de y0 − 25 (llenado) a y0 + 180 (título)
+#: Estilo de texto TrueType: la fuente SHX por defecto (txt.shx) no tiene «Δ» ni «≥» y en
+#: AutoCAD salían como «?» (revisión 08-11-2026). Arial viene con Windows.
+ESTILO = "TRAZA"
+ALTO_BANDA = 230.0  # la banda va de y0 − 25 (llenado) a y0 + 200 (título)
+LARGO_NOMBRE = 18  # caracteres del nombre del circuito en su caja (el completo, en el Excel)
 PASO_CIRCUITO = 48.0
 
 
@@ -55,7 +59,8 @@ class _Dibujo:
 
     def texto(self, t, x, y, capa="textos", alto=ROTULO, giro=0.0, alinear="MIDDLE_LEFT"):
         e = self.msp.add_text(
-            t, dxfattribs={"layer": CAPAS[capa][0], "height": alto, "rotation": giro}
+            t,
+            dxfattribs={"layer": CAPAS[capa][0], "height": alto, "rotation": giro, "style": ESTILO},
         )
         e.set_placement((x, y), align=TextEntityAlignment[alinear])
         self._xdata(e)
@@ -82,9 +87,16 @@ class _Dibujo:
             dx, dy = (3.2, 0) if vertical else (0, 3.2)
             self.texto(marca, x + dx, y + dy, "valvuleria", 1.6, alinear="MIDDLE_CENTER")
 
-    def retencion(self, x, y, vertical=False) -> None:
+    def retencion(self, x, y, vertical=False, sentido=1) -> None:
+        """Válvula con una barra en el lado de aguas abajo (`sentido` ±1 del flujo)."""
         self.valvula(x, y, vertical)
-        self.linea(self._girar([(2.0, -2.6), (2.0, 2.6)], x, y, vertical), "valvuleria")
+        b = 2.0 * sentido
+        self.linea(self._girar([(b, -2.6), (b, 2.6)], x, y, vertical), "valvuleria")
+
+    def manguito(self, x, y, vertical=False) -> None:
+        """Manguito antivibratorio: dos barras paralelas que cortan la tubería."""
+        for a in (-0.8, 0.8):
+            self.linea(self._girar([(a, -2.2), (a, 2.2)], x, y, vertical), "valvuleria")
 
     def bomba(self, x, y, vertical=False, sentido=1) -> None:
         """Círculo con triángulo en el sentido del flujo (`sentido` ±1)."""
@@ -126,7 +138,7 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
     """Dibuja un servicio con su base en y0. Devuelve la x donde acaba."""
     yr, yi = y0 + 40.0, y0 + 90.0  # retorno e impulsión del primario y colectores
     p = s.presiones
-    d.texto(titulo, 0, y0 + 178, alto=TEXTO * 1.4)
+    d.texto(titulo, 0, y0 + 200, alto=TEXTO * 1.4)
     # Generador.
     generador = {
         "frio": "ENFRIADORA",
@@ -161,10 +173,14 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
         elif simbolo == "bomba":
             d.bomba(x, yr, sentido=-1)
         elif simbolo == "ret":
-            d.retencion(x, yr)
+            d.retencion(x, yr, sentido=-1)
         else:
             d.filtro(x, yr)
     d.instrumento(102, yr + 9, "ΔP", (102, yr + 3))
+    for x in (107, 97):  # manguitos de la bomba de primario
+        d.manguito(x, yr)
+    d.manguito(33, yi)  # manguitos del generador
+    d.manguito(33, yr)
     d.instrumento(46, yr - 8, "T", (46, yr))
     d.instrumento(54, yr - 8, "P", (54, yr))
     d.texto(f"Bomba primario {_n(s.altura_primario_pa / 9806.65)} m c.a.", 86, yr + 15)
@@ -176,26 +192,28 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
     d.texto(
         f"INERCIA ≥ {_n(s.inercia_l, 0)} l" if s.inercia_l > 0 else "SEPARADOR",
         xi + 8,
-        yi + 12,
+        yi + 19,
         alinear="MIDDLE_CENTER",
     )
-    d.texto(f"bocas {s.bocas_inercia.tubo.nombre}", xi + 8, yr - 10, alinear="MIDDLE_CENTER")
+    d.texto(f"bocas {s.bocas_inercia.tubo.nombre}", xi + 8, yi + 15, alinear="MIDDLE_CENTER")
     d.purgador(xi + 8, yi + 6)
+    d.linea([(xi + 8, yr - 6), (xi + 8, yr - 11)], "retorno")  # vaciado del depósito
+    d.valvula(xi + 8, yr - 13, vertical=True, marca="V")
     # Colectores.
     n = len(s.circuitos)
     xc0, xc1 = xi + 30, xi + 40 + (n + 0.6) * PASO_CIRCUITO
     d.linea([(xi + 16, yi), (xc1, yi)], "impulsion", ancho=1.2)
     d.linea([(xi + 16, yr), (xc1, yr)], "retorno", ancho=1.2)
-    d.texto(f"Colector impulsión {s.colector.tubo.nombre}", xc0, yi - 4)
-    d.texto(f"Colector retorno {s.colector.tubo.nombre}", xc0, yr - 4)
+    xt = xc0 + 12 + max(n - 1, 0) * PASO_CIRCUITO + 20  # tras el último retorno
+    d.texto(f"Colector impulsión {s.colector.tubo.nombre}", xt, yi - 4)
+    d.texto(f"Colector retorno {s.colector.tubo.nombre}", xt, yr - 4)
     d.instrumento(xc0 - 6, yi + 8, "T", (xc0 - 6, yi))
     d.instrumento(xc0 - 6, yr - 8, "T", (xc0 - 6, yr))
     d.purgador(xc1 - 3, yi)
     d.purgador(xc1 - 3, yr + 0.5)
     d.texto("reserva", xc1 - 3, yi - 4, alinear="MIDDLE_CENTER")
     # Circuitos.
-    control = "PICV" if grande else "2 vías"
-    ytop = y0 + 150.0
+    ytop = y0 + 168.0
     for i, c in enumerate(s.circuitos):
         x = xc0 + 12 + i * PASO_CIRCUITO
         xr = x + 14
@@ -206,19 +224,33 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
         d.valvula(x, yi + 6, vertical=True)
         d.bomba(x, yi + 16, vertical=True)
         d.instrumento(x - 7, yi + 16, "ΔP", (x - 3, yi + 16))
-        d.retencion(x, yi + 25, vertical=True)
+        d.retencion(x, yi + 25, vertical=True, sentido=1)
+        d.manguito(x, yi + 11, vertical=True)
+        d.manguito(x, yi + 21, vertical=True)
         d.valvula(x, yi + 33, vertical=True)
         d.purgador(x, ytop)
-        d.instrumento(xr + 7, ytop - 10, "T", (xr, ytop - 10))
-        d.valvula(xr, ytop - 20, vertical=True, marca="E")
-        d.filtro(xr, ytop - 28, vertical=True)
+        # Valvulería de cada unidad (RITE IT 1.3.4.2.12 y 1.3.4.2.8.2): corte, filtro de
+        # 0,25 mm si va, control a la entrada; equilibrado a la salida.
+        d.valvula(x, ytop - 26, vertical=True)
+        if c.conexion.tubo.dn > 15:
+            d.filtro(x, ytop - 17, vertical=True)
+        d.valvula(x, ytop - 8, vertical=True, marca="M")
+        d.valvula(xr, ytop - 8, vertical=True, marca="E")
+        d.texto(f"×{c.datos.unidades}", x + 3, ytop - 17, alto=1.4)
+        # Del circuito, en el retorno: termómetro, equilibrado y filtro.
+        d.instrumento(xr + 7, ytop - 17, "T", (xr, ytop - 17))
+        d.valvula(xr, ytop - 26, vertical=True, marca="E")
+        d.filtro(xr, ytop - 35, vertical=True)
         d.valvula(xr, yr + 8, vertical=True)
         d.linea([(xr, yr + 14), (xr + 5, yr + 14)], "retorno")
         d.valvula(xr + 7, yr + 14, marca="V")
         d.texto(_rotulo_tubo(c), x - 13, yi + 6, giro=90)
         # Unidades terminales.
         d.caja(x - 6, ytop + 2, xr + 6, ytop + 22)
-        d.texto(c.datos.nombre, (x + xr) / 2, ytop + 18, alinear="MIDDLE_CENTER")
+        nombre = c.datos.nombre
+        if len(nombre) > LARGO_NOMBRE:
+            nombre = nombre[: LARGO_NOMBRE - 1] + "…"
+        d.texto(nombre, (x + xr) / 2, ytop + 18, alinear="MIDDLE_CENTER")
         d.texto(
             f"{c.datos.unidades} ud · {c.conexion.tubo.nombre}",
             (x + xr) / 2,
@@ -226,11 +258,12 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
             alinear="MIDDLE_CENTER",
             alto=1.6,
         )
-        valvula = "PICV" if grande else f"Kv {_n(c.kv_valvula, 2)}"
-        d.texto(
-            f"corte+equil.+{control}", (x + xr) / 2, ytop + 8, alinear="MIDDLE_CENTER", alto=1.4
+        valvula = (
+            f"PICV {_n(c.caudal_m3s / c.datos.unidades * 3600, 2)} m³/h"
+            if grande
+            else f"2 vías Kv ≥ {_n(c.kv_valvula, 2)}"
         )
-        d.texto(valvula, (x + xr) / 2, ytop + 4.5, alinear="MIDDLE_CENTER", alto=1.4)
+        d.texto(valvula, (x + xr) / 2, ytop + 7, alinear="MIDDLE_CENTER", alto=1.4)
     # Expansión, alivio y llenado (bajo el retorno del primario, junto a la aspiración).
     ye = y0 + 12.0
     d.linea([(116, yr), (116, ye)], "retorno")
@@ -265,8 +298,9 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
 
 
 LEYENDA = (
-    ("valvula", "Válvula de corte (E equilibrado, V vaciado, S seguridad, A alivio)"),
-    ("retencion", "Válvula de retención"),
+    ("valvula", "Válvula de corte (E equilibrado, M control, V vaciado, S seguridad, A alivio)"),
+    ("retencion", "Válvula de retención (barra aguas abajo)"),
+    ("manguito", "Manguito antivibratorio"),
     ("bomba", "Bomba (flecha: sentido del flujo)"),
     ("filtro", "Filtro"),
     ("T", "Termómetro con vaina"),
@@ -284,6 +318,9 @@ def _leyenda(d: _Dibujo, x0: float, y0: float) -> None:
             d.valvula(x0 + 3, y)
         elif simbolo == "retencion":
             d.retencion(x0 + 3, y)
+        elif simbolo == "manguito":
+            d.linea([(x0, y), (x0 + 6, y)], "retorno")
+            d.manguito(x0 + 3, y)
         elif simbolo == "bomba":
             d.bomba(x0 + 3, y)
         elif simbolo == "filtro":
@@ -301,6 +338,8 @@ def _leyenda(d: _Dibujo, x0: float, y0: float) -> None:
     d.texto("Impulsión", x0 + 10, y, "leyenda")
     d.linea([(x0, y - 7), (x0 + 7, y - 7)], "retorno")
     d.texto("Retorno", x0 + 10, y - 7, "leyenda")
+    d.texto("Cruce de líneas sin punto: no hay conexión", x0, y - 15, "leyenda")
+    d.texto("×n: valvulería de cada unidad, n unidades", x0, y - 22, "leyenda")
 
 
 def escribir_esquema(destino: Path, proyecto: str, r: Any) -> Path:
@@ -313,6 +352,7 @@ def escribir_esquema(destino: Path, proyecto: str, r: Any) -> Path:
     doc = ezdxf.new("R2013", setup=True)
     doc.header["$INSUNITS"] = 4  # mm (de papel)
     doc.appids.new(APPID)
+    doc.styles.new(ESTILO, dxfattribs={"font": "arial.ttf"})
     for nombre, color in CAPAS.values():
         doc.layers.add(nombre, color=color)
     msp = doc.modelspace()

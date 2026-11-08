@@ -177,6 +177,10 @@ Estado: **en desarrollo**.
     bloque de sus unidades (número, conexión, válvula de control y Kv);
   - expansión y llenado: vaso con manómetro y presiones; red, corte, filtro, contador,
     desconector, alivio y presostato.
+- **Texto**: estilo TrueType `TRAZA` con Arial (la fuente SHX por defecto de AutoCAD no
+  tiene «Δ» ni «≥»).
+- **Unidades**: la valvulería de cada unidad (corte, filtro de 0,25 mm si va, control «M»
+  y equilibrado «E») se dibuja una vez con «×n».
 - **Capas**: `TRAZA-H-IMPULSION` (rojo), `TRAZA-H-RETORNO` (azul), `TRAZA-H-EQUIPOS`,
   `TRAZA-H-VALVULERIA` (verde), `TRAZA-H-TEXTOS`, `TRAZA-H-LEYENDA`.
 - **Símbolos**: no se encontró una norma española vigente y accesible de símbolos para

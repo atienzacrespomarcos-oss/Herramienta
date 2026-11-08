@@ -35,6 +35,10 @@ def test_esquema_completo_y_legible(red, tmp_path, tipo, bandas):  # noqa: F811
             assert ed._rotulo_tubo(c) in texto
     for grupo in ("VASO", "RED", "DES", "Alivio", "Seguridad", "LEYENDA", "Bomba primario"):
         assert grupo in texto, grupo
+    # Texto en estilo TrueType (la fuente SHX por defecto no tiene «Δ» ni «≥»).
+    assert doc.styles.get(ed.ESTILO).dxf.font == "arial.ttf"
+    assert all(t.dxf.style == ed.ESTILO for t in doc.modelspace().query("TEXT"))
+    assert "Manguito antivibratorio" in texto and "aguas abajo" in texto
     # Todo lleva XDATA TRAZA con el id del sistema.
     assert all(e.get_xdata("TRAZA")[0].value == f"{sid}:esquema" for e in doc.modelspace())
 
