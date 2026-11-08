@@ -54,6 +54,12 @@ def test_recorrido_completo(ventana, tmp_path):  # noqa: F811
     assert any("Guardado" in t for t in q.informaciones)
     wb = load_workbook(tmp_path / "Clima.xlsx")
     assert "Elementos" in wb.sheetnames
+    # Esquema de principio en DXF.
+    assert ph.a_esquema.isEnabled()
+    q.preparar("destino_dxf", tmp_path / "Esquema")
+    ph.a_esquema.trigger()
+    assert (tmp_path / "Esquema.dxf").exists()
+    assert any("Esquema" in t or "esquema" in t for t in q.informaciones)
 
 
 def test_un_rechazo_reabre_el_dialogo_con_lo_escrito(ventana):  # noqa: F811

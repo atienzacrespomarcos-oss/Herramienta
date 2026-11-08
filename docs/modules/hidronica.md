@@ -164,7 +164,28 @@ Estado: **en desarrollo**.
 - **Excel**: Resumen, Circuitos, Elementos (zona, elemento, especificación, medida, cantidad,
   norma o fuente) e Hipótesis.
 
+## Esquema de principio (`io/esquema_hidraulico_dxf.py`, «Exportar esquema de principio»)
+- **DXF R2013** (AutoCAD 2013–2017), sin escala, en mm de papel (texto 2,5 mm); XDATA
+  `TRAZA` con el id del sistema en cada entidad.
+- **Una banda por servicio** (dos con 4 tubos):
+  - generador; primario con corte, filtro, bomba, retención, termómetros, manómetros y
+    válvula de seguridad; vaciado total;
+  - depósito de inercia en paralelo con purgador;
+  - colectores de impulsión y retorno con termómetro, purgador y picaje de reserva;
+  - un ramal por circuito con corte, bomba, ΔP, retención, equilibrado, filtro,
+    termómetro, purgador y vaciado, rotulado con tubo, caudal y altura de bomba, hasta el
+    bloque de sus unidades (número, conexión, válvula de control y Kv);
+  - expansión y llenado: vaso con manómetro y presiones; red, corte, filtro, contador,
+    desconector, alivio y presostato.
+- **Capas**: `TRAZA-H-IMPULSION` (rojo), `TRAZA-H-RETORNO` (azul), `TRAZA-H-EQUIPOS`,
+  `TRAZA-H-VALVULERIA` (verde), `TRAZA-H-TEXTOS`, `TRAZA-H-LEYENDA`.
+- **Símbolos**: no se encontró una norma española vigente y accesible de símbolos para
+  esquemas de climatización (la UNE-EN ISO 10628-2 es de la industria química; la UNE de
+  1991 de símbolos de instalaciones no se pudo consultar). Se usan los habituales:
+  válvula = dos triángulos enfrentados, retención = válvula con barra, bomba = círculo con
+  triángulo en el sentido del flujo, filtro = rombo, instrumentos = círculo con letra. El
+  propio DXF lleva la **leyenda**, para que se lea sin otra referencia.
+
 ## Pendiente
-- **Esquema de principio en DXF** (decisión del usuario): siguiente entrega (7.B).
 - Validar con un proyecto real del usuario.
 - Volúmenes de agua de generador y unidades: hoy no se conocen y no entran en el vaso.

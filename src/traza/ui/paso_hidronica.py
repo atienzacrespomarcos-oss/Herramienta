@@ -63,11 +63,14 @@ class PaginaHidronica(QWidget):
         self.a_borrar = a(m, "Borrar sistema", self.accion_borrar)
         m.addSeparator()
         self.a_excel = a(m, "Exportar listado Excel…", self.accion_excel)
+        self.a_esquema = a(m, "Exportar esquema de principio (DXF)…", self.accion_esquema)
         cabecera = QHBoxLayout()
         cabecera.addWidget(QLabel("Sistema:"))
         cabecera.addWidget(self.selector, 1)
         caja = QVBoxLayout(self)
-        caja.addWidget(_barra([self.a_nuevo, self.a_cambiar, self.a_borrar, self.a_excel]))
+        caja.addWidget(
+            _barra([self.a_nuevo, self.a_cambiar, self.a_borrar, self.a_excel, self.a_esquema])
+        )
         caja.addLayout(cabecera)
         caja.addWidget(self.resumen)
         caja.addWidget(self.pestanas, 1)
@@ -139,6 +142,22 @@ class PaginaHidronica(QWidget):
         if destino is not None:
             ruta = self.proyecto.exportar_sistema_hidraulico_excel(s["id"], destino)
             self.v.preguntas.informacion("Listado Excel", f"Guardado en {ruta}")
+
+    def accion_esquema(self) -> None:
+        if self.sistema_id() is None:
+            return
+        s = self.proyecto.sistema_hidraulico(self.sistema_id())
+        destino = self.v.preguntas.destino_dxf(
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - {_archivo(s['nombre'])} - esquema.dxf"
+        )
+        if destino is not None:
+            ruta = self.proyecto.exportar_esquema_hidraulico(s["id"], destino)
+            self.v.preguntas.informacion(
+                "Esquema de principio",
+                f"Guardado en {ruta}\n\nSe abre en AutoCAD 2013 o posterior. Es un esquema sin "
+                "escala; los valores completos están en el listado Excel.",
+            )
 
     # --- Contenido -----------------------------------------------------------------------
 
@@ -257,5 +276,5 @@ class PaginaHidronica(QWidget):
         self.v.menu_hidronica.menuAction().setVisible(con_paso)
         self.a_nuevo.setEnabled(con_paso)
         hay_sistema = con_paso and self.sistema_id() is not None
-        for a in (self.a_cambiar, self.a_borrar, self.a_excel):
+        for a in (self.a_cambiar, self.a_borrar, self.a_excel, self.a_esquema):
             a.setEnabled(hay_sistema)
