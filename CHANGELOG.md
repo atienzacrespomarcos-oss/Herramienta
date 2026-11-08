@@ -35,6 +35,12 @@
   - puntos casi repetidos del eje descartados también al buscar las uniones;
   - nombre de fichero: sin caracteres de control, punto final ni nombres reservados (CON,
     NUL…).
+- Correcciones de la tercera revisión (sin bloqueantes):
+  - T con reducción: cada lado del ramal se recorta con el tramo que tiene a ese lado (antes
+    quedaba un hueco de 50 mm en la cara del estrecho);
+  - vuelta en U tratada como tal (chaflán), no como tramo recto;
+  - reducción con un quiebro de 1° o 2°: también lleva el escalón;
+  - «NUL .txt» se reconoce como nombre reservado.
 
 ### Etapa 5 · redes de aire (07-11-2026)
 - Paso «Redes de aire» para impulsión, retorno y extracción. Cada red se define por la capa

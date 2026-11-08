@@ -119,23 +119,20 @@ def _recorte(nodos, tramo_id: str, punto: Punto, sentido: Punto, lado: float) ->
     propios = nodos.get(_clave(punto), ())
     if len(propios) == 2:
         return 0.0  # codo entre dos tramos: se une a inglete (ver _unir_codos), no se recorta
-    recorte = 0.0
-    for otro, ancho, d in propios:
-        if otro == tramo_id:
-            continue
-        coseno = abs(sentido[0] * d[0] + sentido[1] * d[1])
-        if coseno >= COS_45 - 1e-9:
-            continue  # sigue en la misma dirección: no cruza
-        de_su_lado = normal[0] * d[0] + normal[1] * d[1] > 0.3
-        # Si todos los demás cruzan (este acaba en una T contra el conducto), se recortan
-        # los dos lados; si hay uno que sigue recto, solo el lado por el que llega el otro.
-        alguno_recto = any(
-            o != tramo_id and abs(sentido[0] * e[0] + sentido[1] * e[1]) >= COS_45 - 1e-9
-            for o, _a, e in propios
-        )
-        if de_su_lado or not alguno_recto:
-            recorte = max(recorte, ancho / 2)
-    return recorte
+    cruzan = [
+        (ancho, d)
+        for otro, ancho, d in propios
+        if otro != tramo_id and abs(sentido[0] * d[0] + sentido[1] * d[1]) < COS_45 - 1e-9
+    ]
+    alguno_recto = len(cruzan) < len(propios) - 1
+    de_su_lado = [a for a, d in cruzan if normal[0] * d[0] + normal[1] * d[1] > 0.3]
+    if alguno_recto:
+        # El conducto sigue a través del nodo: solo se abre el lado por el que llega otro.
+        return max(de_su_lado, default=0.0) / 2
+    # Este acaba en una T contra el conducto: cada lado se recorta con la mitad del tramo
+    # que tiene a ese lado. Con el máximo de los dos, en una T con reducción quedaba un
+    # hueco en la cara del tramo estrecho (revisión 08-11-2026).
+    return max(de_su_lado or [a for a, _d in cruzan], default=0.0) / 2
 
 
 def _recortar(pts: list[Punto], inicio: float, fin: float) -> list[Punto]:
@@ -226,8 +223,10 @@ def _unir_codos(
                 pa, previo_a = _punta(ca, ext_a)
                 pb, previo_b = _punta(cb, ext_b)
                 u, v = _dir(previo_a, pa), _dir(previo_b, pb)
-                if abs(_producto(u, v)) > 0.999:  # siguen rectos
-                    en_nodo = (
+                if _producto(u, v) < -0.999:  # siguen rectos (llegan de lados opuestos)
+                    # Entre solo dos tramos nada recorta: el escalón se dibuja siempre, también
+                    # con un quiebro de 1° o 2°. En una T, solo en el lado no recortado.
+                    en_nodo = codo or (
                         abs(_producto((pa[0] - nodo[0], pa[1] - nodo[1]), u)) < 1e-6
                         and abs(_producto((pb[0] - nodo[0], pb[1] - nodo[1]), v)) < 1e-6
                     )
@@ -235,6 +234,9 @@ def _unir_codos(
                         contornos[(a, lado)] = _alargar(ca, ext_a, pb)  # escalón
                     continue
                 if not codo:
+                    continue
+                if _producto(u, v) > 0.999:  # vuelta en U: no hay corte, se cierra con chaflán
+                    contornos[(a, lado)] = _alargar(ca, ext_a, pb)
                     continue
                 punto = _cruce(pa, u, pb, v)
                 if punto is None:

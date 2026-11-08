@@ -268,6 +268,34 @@ def test_reduccion_en_linea_y_en_la_t_dibuja_el_escalon():
     assert _cerca(a_abajo[-1], (10, -0.2))
     a_arriba = next(ln for ln in c["A"] if ln[0][1] > 0)
     assert _cerca(a_arriba[-1], (9.85, 0.25))
+    # El ramal arranca en la cara de cada tramo a su lado: sin hueco en el estrecho.
+    b_arriba = next(ln for ln in c["B"] if ln[0][1] > 0)
+    assert _cerca(b_arriba[0], (10.15, 0.2))
+    c_lados = {round(ln[0][0], 6): ln[0] for ln in c["C"]}
+    assert _cerca(c_lados[10.15], (10.15, 0.2)) and _cerca(c_lados[9.85], (9.85, 0.25))
+    # Quiebro de 2° con reducción: también lleva el escalón (no queda abierto).
+    ang = math.radians(2)
+    c = _conducto(
+        _red_ficticia(
+            [
+                ("A", [(0, 0), (10, 0)], 0.6),
+                ("B", [(10, 0), (10 + 10 * math.cos(ang), 10 * math.sin(ang))], 0.4),
+            ]
+        )
+    )
+    for ln in c["A"]:
+        destino = next(lb[0] for lb in c["B"] if (lb[0][1] > 0) == (ln[0][1] > 0))
+        assert _cerca(ln[-1], destino)
+
+
+def test_vuelta_en_u_se_cierra_sin_cruzar_el_conducto():
+    # Vuelta de 179,9°: no puede tratarse como un tramo recto (unía izquierda con izquierda
+    # a través del conducto). Cada lado acaba en la punta del lado que le corresponde.
+    c = _conducto(_red_ficticia([("A", [(0, 0), (10, 0)], 0.5), ("B", [(10, 0), (0, 0.01)], 0.5)]))
+    for ln in c["A"]:
+        assert all(abs(p[0] - 10) < 0.3 or abs(p[1]) == pytest.approx(0.25) for p in ln)
+    a_der = next(ln for ln in c["A"] if ln[0][1] < 0)
+    assert a_der[-1][1] > 0  # el exterior (abajo) da la vuelta hasta el lado de B
 
 
 def test_nombre_de_fichero_valido_en_windows():
@@ -276,6 +304,7 @@ def test_nombre_de_fichero_valido_en_windows():
     assert _archivo('Red "norte": 1/2') == "Red -norte-- 1-2"
     assert _archivo("Impulsión.") == "Impulsión"
     assert _archivo("CON") == "red CON"
+    assert _archivo("NUL .txt") == "red NUL .txt"
     assert _archivo("a\tb") == "a-b"
     assert _archivo("...") == "red"
 

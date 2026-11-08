@@ -44,7 +44,7 @@ def _archivo(texto: str) -> str:
     y sin nombres reservados (CON, NUL, COM1…)."""
     limpio = "".join("-" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in texto)
     limpio = limpio.strip().rstrip(". ")
-    if limpio.split(".")[0].upper() in _RESERVADOS_WINDOWS:
+    if limpio.split(".")[0].strip().upper() in _RESERVADOS_WINDOWS:
         limpio = f"red {limpio}"
     return limpio or "red"
 

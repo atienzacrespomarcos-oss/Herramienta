@@ -153,7 +153,8 @@ abierto.
       del equipo) aunque tengan distinto ancho;
     - en un giro muy cerrado, si el inglete pasara de 4 semianchos, la esquina se
       achaflana, como hace AutoCAD con su límite de inglete;
-    - en una reducción en línea se dibuja el escalón;
+    - en una reducción en línea (aunque haya un quiebro de 1° o 2°) se dibuja el escalón;
+    - una vuelta en U se cierra con chaflán;
     - en una derivación, abierto solo por el lado al que llega el ramal;
   - una etiqueta por tramo, «600×300 · 2835 m³/h», centrada en el lado más largo, por
     encima del conducto según el sentido de lectura, con su centro a una altura de texto
@@ -171,11 +172,8 @@ abierto.
   - Solo usa funciones que ya existían en AutoLISP 2013 (y en R14). La lista blanca está
     en `FUNCIONES_LISP` y la vigila una prueba.
   - Se escribe en la página de códigos de Windows (cp1252), la que lee AutoCAD 2013.
-- **Aproximación declarada del dibujo**: en una T donde el conducto principal cambia de
-  ancho, el ramal se recorta con el semiancho del principal más ancho. Por el lado del
-  más estrecho queda un hueco de la mitad de la diferencia (p. ej. 50 mm entre 500 y
-  400). El lado opuesto al ramal sí lleva el escalón. Es solo dibujo: el cálculo no
-  cambia.
+- **T con reducción**: cada lado del ramal arranca en la cara del tramo que tiene a ese
+  lado, y el lado opuesto al ramal lleva el escalón de la reducción.
 - **Protocolo de prueba en el AutoCAD del usuario** (pendiente):
   1. abrir el DXF;
   2. en el plano original, APPLOAD del .lsp y TRAZA_RED;
