@@ -259,7 +259,10 @@ def calcular(
             c = cargas_por_id.get(e["id"])
             if c is None or e["id"] in por_espacio:
                 continue
-            q, _ = caudal_espacio_m3h(tipo, c, red["salto_impulsion"], presion, *criterio)
+            # Con renovaciones todo espacio tendría caudal: se avisa solo de los que piden
+            # aire exterior, como antes (revisión 08-11-2026: una extracción de aseos avisaba
+            # de toda la nave).
+            q, _ = caudal_espacio_m3h(tipo, c, red["salto_impulsion"], presion)
             if q > 0:
                 avisos.append(
                     f"{e['codigo']} {e['nombre'] or ''}: necesita {q:.0f} m³/h y no tiene "

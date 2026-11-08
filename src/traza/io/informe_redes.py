@@ -57,7 +57,9 @@ def hipotesis(r: Any) -> list[str]:
             "de Soler & Palau como guía) y nunca menos que su aire exterior.",
         }.get(
             red.get("criterio_caudal") or "cargas",
-            f"de las cargas, con ΔT de impulsión {red['salto_impulsion']:g} K.",
+            "con el aire exterior del espacio (cargas)."
+            if red["tipo"] == "extraccion"
+            else f"de las cargas, con ΔT de impulsión {red['salto_impulsion']:g} K.",
         ),
         "Presión necesaria: la del camino crítico de la red (sin el equipo: filtros, baterías "
         "y atenuadores los da su fabricante).",

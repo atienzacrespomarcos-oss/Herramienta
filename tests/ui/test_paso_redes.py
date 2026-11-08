@@ -174,3 +174,20 @@ def test_dialogo_renovaciones_solo_en_ventilacion(qtbot):
     assert d.criterio.currentData() == "cargas" and not d.renovaciones.isEnabled()
     d._aceptar()
     assert d.resultado["criterio_caudal"] == "cargas" and d.resultado["renovaciones"] is None
+
+
+def test_renovaciones_deshabilitadas_no_bloquean_aceptar(qtbot):
+    from PySide6.QtCore import Qt
+
+    planos = [{"id": "p1", "documento_nombre": "Nave.dxf"}]
+    d = DialogoRed(None, planos, [], lambda _p: (["M-EXT"], ["REJILLA"]), None)
+    qtbot.addWidget(d)
+    d.tipo.setCurrentIndex(d.tipo.findData("extraccion"))
+    d.criterio.setCurrentIndex(d.criterio.findData("renovaciones"))
+    d.renovaciones.setText("abc")
+    d.criterio.setCurrentIndex(d.criterio.findData("volumen"))
+    d.nombre.setText("Extracción nave")
+    d.terminales.item(0).setCheckState(Qt.Checked)
+    d._aceptar()
+    assert d.resultado is not None and d.resultado["criterio_caudal"] == "volumen"
+    assert d.resultado["renovaciones"] is None

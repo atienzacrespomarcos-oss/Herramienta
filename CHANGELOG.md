@@ -9,6 +9,9 @@
 - Punto de trabajo del ventilador: caudal, presión de la red y potencia eléctrica máxima
   por la SFP exigida (RITE IT 1.2.4.2.5), en pantalla y en el Excel.
 - Esquema V7: criterio de caudal y renovaciones de la red.
+- Revisión independiente (sin bloqueantes): el aviso de espacios sin terminales no salta
+  por las renovaciones; un texto erróneo en el campo de renovaciones deshabilitado ya no
+  bloquea Aceptar; la hipótesis del Excel de una extracción por cargas ya no habla de ΔT.
 
 ### Etapa 5.B · salida a AutoCAD de las redes de aire (08-11-2026)
 - «Exportar a AutoCAD…» en el paso Redes: un DXF R2013 y un LISP con el mismo contenido.

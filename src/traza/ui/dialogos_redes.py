@@ -169,7 +169,12 @@ class DialogoRed(QDialog):
             friccion = _numero_opcional(self.friccion.text(), "Pérdida de carga")
             alto = _numero_opcional(self.alto.text(), "Alto máximo")
             salto = _numero_opcional(self.salto.text(), "Salto térmico")
-            renovaciones = _numero_opcional(self.renovaciones.text(), "Renovaciones por hora")
+            # Solo si se usa: un texto erróneo en el campo deshabilitado no bloquea Aceptar.
+            renovaciones = (
+                _numero_opcional(self.renovaciones.text(), "Renovaciones por hora")
+                if self.criterio.currentData() == "renovaciones"
+                else None
+            )
         except ValueError as exc:
             self.error.setText(str(exc))
             return

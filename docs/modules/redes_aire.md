@@ -114,6 +114,9 @@ Estado: **en desarrollo**.
   - Con renovaciones, el caudal **nunca baja del aire exterior** del espacio: el mínimo
     legal del RD 486/1997, anejo III (30 o 50 m³/h por trabajador), que el propio manual
     cita, o el del RITE en locales para personas.
+- El aviso de «espacio sin terminales de esta red» sigue saliendo solo de los espacios que
+  piden aire exterior: con renovaciones, todos tendrían caudal y una extracción de aseos
+  avisaría de toda la nave.
 - Solo en **extracción** y en **impulsión de ventilación**: el retorno sale de la
   impulsión y la impulsión de climatización, de la carga del local. La orden lo rechaza y
   el diálogo no lo ofrece.
@@ -123,11 +126,12 @@ Estado: **en desarrollo**.
   fabricante (Sodeca, S&P…). La herramienta no lleva curvas de ventiladores.
 
 ## En el proyecto (`app/redes.py`, paso «Redes de aire»)
-- **Qué se guarda** (esquema V6, tabla `red_aire`):
+- **Qué se guarda** (esquema V6 y V7, tabla `red_aire`):
   - el nombre, el tipo, el plano y el nivel;
   - la capa de los ejes, los bloques de terminales y el bloque del equipo;
   - los criterios: pérdida de carga objetivo, alto máximo, forma, salto de impulsión y si
-    es climatización o ventilación.
+    es climatización o ventilación;
+  - el criterio de caudal (cargas, renovaciones según volumen o fijas) y las renovaciones.
   - Los tramos y resultados se calculan del dibujo cada vez. Corregir el trazado es
     corregirlo en AutoCAD y volver a incorporar el DXF.
 - **Lectura del dibujo** (`engines/topologia_conductos.py`):
