@@ -14,6 +14,16 @@
   - el DXF se vuelve a leer con ezdxf (auditoría sin errores) y con el lector de TRAZA;
   - se comprueba la geometría de la T y de las esquinas;
   - el LISP se comprueba con paréntesis equilibrados, funciones permitidas y codificación.
+- Correcciones de la revisión independiente:
+  - un nombre de red con comillas o barra invertida rompía el LISP: se escapa;
+  - etiquetas centradas sobre el conducto según el sentido de lectura y separadas una
+    altura de texto; las de terminal, debajo, para no pisar las de los tramos;
+  - los codos de dos tramos quedaban abiertos: se cierran;
+  - el recorte de la T solo abre el lado al que llega el ramal, con tolerancia en 45°;
+  - segmentos de longitud nula descartados; inglete limitado en giros cerrados;
+  - el DXF abre encuadrado (zoom extensión);
+  - fichero abierto en AutoCAD: mensaje claro en lugar de un error; nombres de fichero
+    sin caracteres que Windows no admite.
 
 ### Etapa 5 · redes de aire (07-11-2026)
 - Paso «Redes de aire» para impulsión, retorno y extracción. Cada red se define por la capa

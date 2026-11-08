@@ -148,12 +148,16 @@ abierto.
   - Color: impulsión azul, retorno verde y extracción naranja; los textos en blanco/negro.
 - **Contenido** (presentación limpia):
   - el eje;
-  - el conducto a su ancho, con esquinas a inglete y abierto solo por el lado al que
-    llega un ramal;
-  - una etiqueta por tramo, «600×300 · 2835 m³/h», en el lado más largo y por fuera del
-    conducto;
-  - una por terminal, «D01 · 1418 m³/h»;
-  - textos de 0,15 m.
+  - el conducto a su ancho, con esquinas a inglete (limitado a 4 veces el semiancho en
+    giros muy cerrados), codos cerrados y abierto solo por el lado al que llega un ramal;
+  - una etiqueta por tramo, «600×300 · 2835 m³/h», centrada en el lado más largo, por
+    encima del conducto según el sentido de lectura y separada de él una altura de texto;
+  - una por terminal, «D01 · 1418 m³/h», debajo del terminal para no pisar las de los
+    tramos;
+  - textos de 0,15 m, centrados (alineación «medio-centro» del DXF).
+- Si el DXF o el LISP están abiertos en AutoCAD, la herramienta lo dice y pide cerrarlo
+  u otro nombre; los nombres de fichero propuestos quitan los caracteres que Windows no
+  admite.
 - **XDATA** (ADR-0009): APPID `TRAZA` con `id_red:tramo` o `id_red:terminal`, para
   reconocerlos al volver a leer el plano.
 - **LISP** (`.lsp` junto al DXF): APPLOAD y el comando `TRAZA_RED`.

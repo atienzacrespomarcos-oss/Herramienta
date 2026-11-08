@@ -109,3 +109,83 @@ def test_red_sin_calcular_no_se_exporta(red, tmp_path):  # noqa: F811
     )
     with pytest.raises(OrdenRechazada, match="no se ha podido calcular"):
         p.exportar_red_autocad(red_id, tmp_path / "X")
+
+
+def test_nombre_con_comillas_y_barra_no_rompe_el_lisp(red, tmp_path):  # noqa: F811
+    p, red_id, plano_id, nivel_id = red
+    p.definir_red(
+        id=red_id,
+        titulo='Impulsión "norte" \\ zona',
+        tipo="impulsion",
+        plano_id=plano_id,
+        capa_ejes="M-IMPULSION",
+        bloques_terminales=["DIFUSOR"],
+        bloque_equipo="UTA",
+        nivel_id=nivel_id,
+    )
+    _dxf, lsp = p.exportar_red_autocad(red_id, tmp_path / "R")
+    texto = lsp.read_bytes().decode("cp1252")
+    assert '\\"norte\\" \\\\ zona' in texto
+    limpio = re.sub(r";[^\n]*", "", re.sub(r'"(?:\\.|[^"\\])*"', '""', texto))
+    assert limpio.count("(") == limpio.count(")")
+
+
+def test_etiquetas_centradas_y_fuera_del_conducto(red, tmp_path):  # noqa: F811
+    p, red_id, _, _ = red
+    r = p.calcular_red(red_id)
+    lineas, textos = sa.entidades(r)
+    calc = {t.tramo.id: t for t in r.calculo.tramos}
+    for tx in textos:
+        tid = tx.ident.split(":")[1]
+        if tid not in calc:
+            continue  # etiqueta de terminal
+        geo = next(g for g in r.topologia.tramos if g.tramo.id == tid)
+        (x0, y0), (x1, y1) = geo.puntos[0], geo.puntos[-1]
+        largo = math.hypot(x1 - x0, y1 - y0)
+        distancia = abs((x1 - x0) * (y0 - tx.y) - (x0 - tx.x) * (y1 - y0)) / largo
+        assert distancia >= calc[tid].seccion.a_m / 2 + sa.ALTURA_TEXTO_M - 1e-9
+        assert -math.pi / 2 < tx.angulo_rad <= math.pi / 2  # nunca boca abajo
+    doc = ezdxf.readfile(p.exportar_red_autocad(red_id, tmp_path / "C")[0])
+    for t in doc.modelspace().query("TEXT"):
+        assert (t.dxf.halign, t.dxf.valign) == (1, 2)  # centrado en su punto
+
+
+def test_esquina_entre_dos_tramos_cerrada():
+    from types import SimpleNamespace
+
+    from traza.engines import conductos as cd
+    from traza.engines.topologia_conductos import Terminal, leer
+
+    # Un difusor en la esquina parte el codo en dos tramos: la esquina tiene que cerrarse.
+    top = leer(
+        [[(0, 0), (10, 0), (10, 10)]],
+        [Terminal("D1", 10, 0, 0.2), Terminal("D2", 10, 10, 0.2)],
+        equipo=(0, 0),
+    )
+    calc = cd.calcular_red([t.tramo for t in top.tramos], "impulsion", 0.8, 0.4)
+    r = SimpleNamespace(
+        red={"id": "r", "tipo": "impulsion", "nombre": "R"},
+        calculo=calc,
+        topologia=top,
+        terminales=[],
+    )
+    lineas, _ = sa.entidades(r)
+    conducto = [ln.puntos for ln in lineas if ln.capa.endswith("CONDUCTO")]
+    assert len(conducto) == 4
+    finales = {ln[-1] for ln in conducto}
+    iniciales = {ln[0] for ln in conducto}
+    # Cada lado de un tramo acaba donde empieza el del otro (la esquina, cerrada).
+    assert len(finales & iniciales) == 2
+
+
+def test_fichero_abierto_en_autocad(red, tmp_path, monkeypatch):  # noqa: F811
+    from traza.app.ordenes import OrdenRechazada
+
+    p, red_id, _, _ = red
+
+    def bloqueado(*_a, **_k):
+        raise PermissionError(13, "Permission denied", str(tmp_path / "R.dxf"))
+
+    monkeypatch.setattr(sa, "escribir_dxf", bloqueado)
+    with pytest.raises(OrdenRechazada, match="abierto en AutoCAD"):
+        p.exportar_red_autocad(red_id, tmp_path / "R")

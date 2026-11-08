@@ -33,6 +33,11 @@ COLOR_CRITICO = QColor(200, 40, 40)
 COLOR_ELEGIDO = QColor(230, 126, 34)
 
 
+def _archivo(texto: str) -> str:
+    """Nombre válido en Windows para sugerir: sin < > : " / \\ | ? * (revisión 08-11-2026)."""
+    return "".join("-" if c in '<>:"/\\|?*' else c for c in texto).strip() or "red"
+
+
 def _n(v, decimales: int = 1) -> str:
     return "" if v is None else escribir_numero(round(float(v), decimales))
 
@@ -161,7 +166,8 @@ class PaginaRedes(QWidget):
             return
         red = self.proyecto.red(self.red_id())
         destino = self.v.preguntas.destino_excel(
-            self.proyecto.carpeta.raiz.parent / f"{self.proyecto.nombre} - {red['nombre']}.xlsx"
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - {_archivo(red['nombre'])}.xlsx"
         )
         if destino is not None:
             ruta = self.proyecto.exportar_red_excel(red["id"], destino)
@@ -172,7 +178,8 @@ class PaginaRedes(QWidget):
             return
         red = self.proyecto.red(self.red_id())
         destino = self.v.preguntas.destino_dxf(
-            self.proyecto.carpeta.raiz.parent / f"{self.proyecto.nombre} - {red['nombre']}.dxf"
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - {_archivo(red['nombre'])}.dxf"
         )
         if destino is None:
             return

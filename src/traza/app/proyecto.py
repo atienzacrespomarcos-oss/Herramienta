@@ -1146,8 +1146,15 @@ class Proyecto:
             )
         unidad = self.plano(r.red["plano_id"])["unidad"]
         destino = Path(destino)
-        dxf_ruta = salida_autocad.escribir_dxf(destino, r, unidad)
-        lsp_ruta = salida_autocad.escribir_lisp(dxf_ruta.with_suffix(".lsp"), r, unidad)
+        try:
+            dxf_ruta = salida_autocad.escribir_dxf(destino, r, unidad)
+            lsp_ruta = salida_autocad.escribir_lisp(dxf_ruta.with_suffix(".lsp"), r, unidad)
+        except PermissionError as exc:
+            # En Windows, un fichero abierto en AutoCAD no se puede sobrescribir.
+            raise OrdenRechazada(
+                f"No se puede escribir «{Path(exc.filename or destino).name}»: ¿está abierto en "
+                "AutoCAD? Ciérralo o elige otro nombre."
+            ) from exc
         return dxf_ruta, lsp_ruta
 
     def exportar_red_excel(self, red_id: str, destino: Path) -> Path:
