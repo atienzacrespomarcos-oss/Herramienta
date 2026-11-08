@@ -178,6 +178,108 @@ def test_esquina_entre_dos_tramos_cerrada():
     assert len(finales & iniciales) == 2
 
 
+def _red_ficticia(tramos: list[tuple[str, list, float]]):
+    """Red ya «calculada» con la geometría y el ancho (m) que se pidan, para probar el
+    dibujo sin depender del dimensionado."""
+    from types import SimpleNamespace as N
+
+    calc = [
+        N(
+            tramo=N(id=tid, caudal_m3s=0.1),
+            seccion=N(a_m=ancho, texto=lambda a=ancho: f"{a * 1000:.0f}×300"),
+        )
+        for tid, _pts, ancho in tramos
+    ]
+    geo = [N(tramo=N(id=tid, longitud_m=1.0), puntos=pts) for tid, pts, _ancho in tramos]
+    return N(
+        red={"id": "r", "tipo": "impulsion", "nombre": "R"},
+        calculo=N(tramos=calc, caminos={}),
+        topologia=N(tramos=geo),
+        terminales=[],
+    )
+
+
+def _conducto(r) -> dict[str, list[list]]:
+    lineas, _ = sa.entidades(r)
+    salida: dict[str, list[list]] = {}
+    for ln in lineas:
+        if ln.capa.endswith("CONDUCTO"):
+            salida.setdefault(ln.ident.split(":")[1], []).append(list(ln.puntos))
+    return salida
+
+
+def _cerca(p, q) -> bool:
+    return math.dist(p, q) < 1e-6
+
+
+def test_esquina_cerrada_con_anchos_distintos():
+    # 500 mm hasta la esquina y 400 mm después (revisión: con anchos distintos los lados no
+    # casaban y la esquina quedaba abierta). Exterior: x = 10,20 e y = −0,25.
+    c = _conducto(_red_ficticia([("A", [(0, 0), (10, 0)], 0.5), ("B", [(10, 0), (10, 10)], 0.4)]))
+    a_der = next(ln for ln in c["A"] if ln[0][1] < 0)
+    b_der = next(ln for ln in c["B"] if ln[0][0] > 10)
+    assert _cerca(a_der[-1], b_der[0]) and _cerca(a_der[-1], (10.2, -0.25))
+    a_izq = next(ln for ln in c["A"] if ln[0][1] > 0)
+    b_izq = next(ln for ln in c["B"] if ln[0][0] < 10)
+    assert _cerca(a_izq[-1], b_izq[0]) and _cerca(a_izq[-1], (9.8, 0.25))
+
+
+def test_dos_tramos_que_salen_del_mismo_punto():
+    # Dos salidas del equipo en L: los dos tramos empiezan en el nodo y la esquina se cierra
+    # igual (izquierda de uno con derecha del otro).
+    c = _conducto(_red_ficticia([("A", [(0, 0), (10, 0)], 0.5), ("B", [(0, 0), (0, 10)], 0.5)]))
+    puntas = [ln[0] for lns in c.values() for ln in lns]
+    assert sum(_cerca(p, (-0.25, -0.25)) for p in puntas) == 2  # exterior
+    assert sum(_cerca(p, (0.25, 0.25)) for p in puntas) == 2  # interior
+
+
+def test_giro_muy_cerrado_se_achaflana():
+    # Vuelta a la izquierda de 170°: el inglete exterior (al este del nodo) saldría a unos
+    # 11 semianchos; se achaflana uniendo las dos puntas. Los lados interiores sí se cortan
+    # detrás del nodo, dentro del conducto, que es lo correcto.
+    ang = math.radians(170)
+    fin = (10 + 10 * math.cos(ang), 10 * math.sin(ang))
+    c = _conducto(_red_ficticia([("A", [(0, 0), (10, 0)], 0.5), ("B", [(10, 0), fin], 0.5)]))
+    puntos = [p for lns in c.values() for ln in lns for p in ln]
+    assert max(p[0] for p in puntos) <= 10 + sa.INGLETE_MAXIMO * 0.25 + 1e-9
+    a_der = next(ln for ln in c["A"] if ln[0][1] < 0)  # exterior de A (sur)
+    b_der = next(ln for ln in c["B"] if ln[-1][1] > fin[1])  # exterior de B (norte)
+    assert _cerca(a_der[-1], b_der[0])  # cerrado por el chaflán
+
+
+def test_reduccion_en_linea_y_en_la_t_dibuja_el_escalon():
+    # Recto 500 → 400: un escalón de 50 mm por lado en el nodo.
+    c = _conducto(_red_ficticia([("A", [(0, 0), (10, 0)], 0.5), ("B", [(10, 0), (20, 0)], 0.4)]))
+    for ln in c["A"]:
+        assert _cerca(ln[-2], (10, math.copysign(0.25, ln[0][1])))
+        assert _cerca(ln[-1], (10, math.copysign(0.2, ln[0][1])))
+    # T: principal 500 → 400 con ramal hacia arriba. Por abajo (lado opuesto al ramal), el
+    # escalón; por arriba, cada tramo acaba en la cara del ramal.
+    c = _conducto(
+        _red_ficticia(
+            [
+                ("A", [(0, 0), (10, 0)], 0.5),
+                ("B", [(10, 0), (20, 0)], 0.4),
+                ("C", [(10, 0), (10, 5)], 0.3),
+            ]
+        )
+    )
+    a_abajo = next(ln for ln in c["A"] if ln[0][1] < 0)
+    assert _cerca(a_abajo[-1], (10, -0.2))
+    a_arriba = next(ln for ln in c["A"] if ln[0][1] > 0)
+    assert _cerca(a_arriba[-1], (9.85, 0.25))
+
+
+def test_nombre_de_fichero_valido_en_windows():
+    from traza.ui.paso_redes import _archivo
+
+    assert _archivo('Red "norte": 1/2') == "Red -norte-- 1-2"
+    assert _archivo("Impulsión.") == "Impulsión"
+    assert _archivo("CON") == "red CON"
+    assert _archivo("a\tb") == "a-b"
+    assert _archivo("...") == "red"
+
+
 def test_fichero_abierto_en_autocad(red, tmp_path, monkeypatch):  # noqa: F811
     from traza.app.ordenes import OrdenRechazada
 

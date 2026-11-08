@@ -33,9 +33,20 @@ COLOR_CRITICO = QColor(200, 40, 40)
 COLOR_ELEGIDO = QColor(230, 126, 34)
 
 
+_RESERVADOS_WINDOWS = {"CON", "PRN", "AUX", "NUL"} | {
+    f"{base}{n}" for base in ("COM", "LPT") for n in range(1, 10)
+}
+
+
 def _archivo(texto: str) -> str:
-    """Nombre válido en Windows para sugerir: sin < > : " / \\ | ? * (revisión 08-11-2026)."""
-    return "".join("-" if c in '<>:"/\\|?*' else c for c in texto).strip() or "red"
+    """Nombre válido en Windows para sugerir (revisión 08-11-2026): sin < > : " / \\ | ? *
+    ni caracteres de control, sin punto ni espacio al final (Windows los quita sin avisar)
+    y sin nombres reservados (CON, NUL, COM1…)."""
+    limpio = "".join("-" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in texto)
+    limpio = limpio.strip().rstrip(". ")
+    if limpio.split(".")[0].upper() in _RESERVADOS_WINDOWS:
+        limpio = f"red {limpio}"
+    return limpio or "red"
 
 
 def _n(v, decimales: int = 1) -> str:

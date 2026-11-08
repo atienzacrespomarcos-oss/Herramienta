@@ -90,13 +90,24 @@ def _clave(p: Punto) -> tuple[int, int]:
     return round(p[0] * 1000), round(p[1] * 1000)  # al milímetro
 
 
-def _extremos(tramos, calc) -> dict[tuple[int, int], list[tuple[str, float, Punto]]]:
+def _sin_repetidos(pts) -> list[Punto]:
+    """Sin puntos repetidos ni casi repetidos (< 1 µm): un lado de longitud nula da una
+    dirección nula, que descolocaba el inglete y hacía «cruzar» a un tramo que sigue recto
+    (revisión 08-11-2026)."""
+    salida = [tuple(pts[0])]
+    for q in pts[1:]:
+        if math.hypot(q[0] - salida[-1][0], q[1] - salida[-1][1]) > 1e-6:
+            salida.append(tuple(q))
+    return salida
+
+
+def _extremos(ejes: dict[str, list[Punto]], anchos: dict[str, float]):
     """Por cada punto de unión: (tramo, ancho, dirección que sale del punto)."""
     nodos: dict[tuple[int, int], list[tuple[str, float, Punto]]] = {}
-    for g in tramos:
-        pts, ancho = g.puntos, calc[g.tramo.id].seccion.a_m
-        nodos.setdefault(_clave(pts[0]), []).append((g.tramo.id, ancho, _dir(pts[0], pts[1])))
-        nodos.setdefault(_clave(pts[-1]), []).append((g.tramo.id, ancho, _dir(pts[-1], pts[-2])))
+    for tid, pts in ejes.items():
+        ancho = anchos[tid]
+        nodos.setdefault(_clave(pts[0]), []).append((tid, ancho, _dir(pts[0], pts[1])))
+        nodos.setdefault(_clave(pts[-1]), []).append((tid, ancho, _dir(pts[-1], pts[-2])))
     return nodos
 
 
@@ -153,30 +164,93 @@ def _cruce(p: Punto, u: Punto, q: Punto, v: Punto) -> Punto | None:
     return (p[0] + s * u[0], p[1] + s * u[1])
 
 
-def _unir_codos(contornos: dict, tramos) -> None:
-    """Donde solo se encuentran dos tramos (uno acaba y el otro empieza, p. ej. con un
-    difusor en la esquina), cada lado se prolonga hasta cortar al del otro: la esquina
-    queda cerrada (revisión 08-11-2026: quedaba abierta por fuera)."""
-    por_punto: dict[tuple[int, int], list] = {}
-    for g in tramos:
-        por_punto.setdefault(_clave(g.puntos[-1]), []).append(("fin", g.tramo.id))
-        por_punto.setdefault(_clave(g.puntos[0]), []).append(("ini", g.tramo.id))
+def _punta(c: list[Punto], extremo: str) -> tuple[Punto, Punto]:
+    """(punto del contorno en el nodo, el anterior a él)."""
+    return (c[-1], c[-2]) if extremo == "fin" else (c[0], c[1])
+
+
+def _cambiar_punta(c: list[Punto], extremo: str, p: Punto) -> list[Punto]:
+    return [*c[:-1], p] if extremo == "fin" else [p, *c[1:]]
+
+
+def _alargar(c: list[Punto], extremo: str, p: Punto) -> list[Punto]:
+    return [*c, p] if extremo == "fin" else [p, *c]
+
+
+def _producto(p: Punto, q: Punto) -> float:
+    return p[0] * q[0] + p[1] * q[1]
+
+
+def _unir_codos(
+    contornos: dict[tuple[str, int], list[Punto]],
+    ejes: dict[str, list[Punto]],
+    medios: dict[str, float],
+) -> None:
+    """Cierra los contornos donde se encuentran solo dos tramos, p. ej. con un difusor en
+    la esquina o con dos salidas del equipo (revisión 08-11-2026: quedaban abiertos):
+    - en un giro, cada lado se prolonga hasta cortar al del otro;
+    - si el giro es tan cerrado que el inglete pasaría de INGLETE_MAXIMO semianchos (o el
+      lado interior se cruzaría consigo mismo), se achaflana uniendo las dos puntas;
+    - si siguen rectos con distinto ancho, se dibuja el escalón de la reducción.
+    En una T, se dibuja también el escalón del lado opuesto al ramal cuando el conducto
+    cambia de ancho en ella.
+    Los lados se emparejan por su signo (izquierda/derecha), no por su semiancho: con
+    anchos distintos no casaban y la esquina quedaba abierta."""
+    por_punto: dict[tuple[int, int], list[tuple[str, str, Punto, Punto]]] = {}
+    for tid, pts in ejes.items():
+        por_punto.setdefault(_clave(pts[0]), []).append((tid, "ini", pts[0], _dir(pts[0], pts[1])))
+        por_punto.setdefault(_clave(pts[-1]), []).append(
+            (tid, "fin", pts[-1], _dir(pts[-1], pts[-2]))
+        )
     for extremos in por_punto.values():
-        if sorted(e[0] for e in extremos) != ["fin", "ini"]:
-            continue
-        a = next(e[1] for e in extremos if e[0] == "fin")
-        b = next(e[1] for e in extremos if e[0] == "ini")
-        for (tid, lado), ca in list(contornos.items()):
-            cb = contornos.get((b, lado))
-            if tid != a or cb is None or len(ca) < 2 or len(cb) < 2:
-                continue
-            u, v = _dir(ca[-2], ca[-1]), _dir(cb[0], cb[1])
-            if abs(u[0] * v[0] + u[1] * v[1]) > 0.999:
-                continue  # siguen rectos: no hay esquina
-            punto = _cruce(ca[-1], u, cb[0], v)
-            if punto is not None:
-                contornos[(a, lado)] = [*ca[:-1], punto]
-                contornos[(b, lado)] = [punto, *cb[1:]]
+        if len(extremos) == 2:
+            parejas = [(extremos[0], extremos[1], True)]
+        else:  # T o cruz: solo el escalón de los que siguen rectos
+            parejas = [
+                (e, f, False)
+                for i, e in enumerate(extremos)
+                for f in extremos[i + 1 :]
+                if _producto(e[3], f[3]) < -0.999
+            ]
+        for (a, ext_a, nodo, _da), (b, ext_b, _nb, _db), codo in parejas:
+            if a == b:
+                continue  # un tramo cerrado sobre sí mismo: no es una unión
+            limite = INGLETE_MAXIMO * max(medios[a], medios[b])
+            for lado in (1, -1):
+                # Si uno acaba y el otro empieza, izquierda con izquierda; si los dos acaban
+                # (o empiezan) en el nodo, la izquierda de uno es la derecha del otro.
+                lado_b = lado if ext_a != ext_b else -lado
+                ca, cb = contornos.get((a, lado)), contornos.get((b, lado_b))
+                if not ca or not cb or len(ca) < 2 or len(cb) < 2:
+                    continue
+                pa, previo_a = _punta(ca, ext_a)
+                pb, previo_b = _punta(cb, ext_b)
+                u, v = _dir(previo_a, pa), _dir(previo_b, pb)
+                if abs(_producto(u, v)) > 0.999:  # siguen rectos
+                    en_nodo = (
+                        abs(_producto((pa[0] - nodo[0], pa[1] - nodo[1]), u)) < 1e-6
+                        and abs(_producto((pb[0] - nodo[0], pb[1] - nodo[1]), v)) < 1e-6
+                    )
+                    if en_nodo and math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 1e-6:
+                        contornos[(a, lado)] = _alargar(ca, ext_a, pb)  # escalón
+                    continue
+                if not codo:
+                    continue
+                punto = _cruce(pa, u, pb, v)
+                if punto is None:
+                    continue
+                if _producto((punto[0] - pa[0], punto[1] - pa[1]), u) >= 0:  # lado exterior
+                    valido = math.hypot(punto[0] - nodo[0], punto[1] - nodo[1]) <= limite
+                else:  # lado interior: el corte no puede quedar detrás del vértice anterior
+                    valido = (
+                        _producto((punto[0] - previo_a[0], punto[1] - previo_a[1]), u) > 0
+                        and _producto((punto[0] - previo_b[0], punto[1] - previo_b[1]), v) > 0
+                    )
+                if valido:
+                    contornos[(a, lado)] = _cambiar_punta(ca, ext_a, punto)
+                    contornos[(b, lado_b)] = _cambiar_punta(cb, ext_b, punto)
+                else:
+                    contornos[(a, lado)] = _alargar(ca, ext_a, pb)  # chaflán
 
 
 def _legible(angulo: float) -> float:
@@ -201,29 +275,29 @@ def entidades(r: Any) -> tuple[list[Linea], list[Texto]]:
     calc = {t.tramo.id: t for t in c.tramos}
     lineas: list[Linea] = []
     textos: list[Texto] = []
-    dibujables = [
-        g for g in top.tramos if g.tramo.id in calc and g.tramo.longitud_m > 0
-    ]  # los de longitud 0 son el ramal a un difusor sobre el conducto
-    extremos = _extremos(dibujables, calc)
-    contornos: dict[tuple[str, float], list[Punto]] = {}
-    for geo in dibujables:
-        t = calc[geo.tramo.id]
-        # Sin puntos repetidos: un lado de longitud 0 descolocaba el inglete.
-        pts = [q for i, q in enumerate(geo.puntos) if i == 0 or q != geo.puntos[i - 1]]
-        if len(pts) < 2:
-            continue
-        ident = f"{red['id']}:{geo.tramo.id}"
+    # Los de longitud 0 son el ramal a un difusor sobre el conducto: no se dibujan.
+    ejes: dict[str, list[Punto]] = {}
+    for g in top.tramos:
+        if g.tramo.id in calc and g.tramo.longitud_m > 0:
+            pts = _sin_repetidos(g.puntos)
+            if len(pts) >= 2:
+                ejes[g.tramo.id] = pts
+    medios = {tid: calc[tid].seccion.a_m / 2 for tid in ejes}
+    extremos = _extremos(ejes, {tid: calc[tid].seccion.a_m for tid in ejes})
+    contornos: dict[tuple[str, int], list[Punto]] = {}  # (tramo, +1 izquierda / −1 derecha)
+    for tid, pts in ejes.items():
+        t = calc[tid]
+        ident = f"{red['id']}:{tid}"
         lineas.append(Linea(cp["ejes"], tuple(pts), ident))
-        medio = t.seccion.a_m / 2
+        medio = medios[tid]
         # El conducto acaba en la cara del que cruza en una derivación, no en su eje.
         sentido_ini, sentido_fin = _dir(pts[0], pts[1]), _dir(pts[-2], pts[-1])
-        for lado in (medio, -medio):
+        for signo in (1, -1):
+            lado = signo * medio
             # Solo se abre el lado que da al conducto que llega: el opuesto sigue entero.
-            recorte_ini = _recorte(extremos, geo.tramo.id, pts[0], sentido_ini, lado)
-            recorte_fin = _recorte(extremos, geo.tramo.id, pts[-1], sentido_fin, lado)
-            contornos[(geo.tramo.id, lado)] = _recortar(
-                _desplazada(pts, lado), recorte_ini, recorte_fin
-            )
+            recorte_ini = _recorte(extremos, tid, pts[0], sentido_ini, lado)
+            recorte_fin = _recorte(extremos, tid, pts[-1], sentido_fin, lado)
+            contornos[(tid, signo)] = _recortar(_desplazada(pts, lado), recorte_ini, recorte_fin)
         # Etiqueta centrada en el lado más largo, por encima del conducto según se lee (con
         # el texto enderezado, «encima» cambia de lado: antes quedaba pegado al conducto).
         (x0, y0), (x1, y1) = max(
@@ -243,7 +317,7 @@ def entidades(r: Any) -> tuple[list[Linea], list[Texto]]:
                 ident,
             )
         )
-    _unir_codos(contornos, dibujables)
+    _unir_codos(contornos, ejes, medios)
     for (tid, _lado), contorno in contornos.items():  # en orden: tramo a tramo, + y −
         if len(contorno) >= 2:
             lineas.append(Linea(cp["conducto"], tuple(contorno), f"{red['id']}:{tid}"))

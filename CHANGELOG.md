@@ -24,6 +24,17 @@
   - el DXF abre encuadrado (zoom extensión);
   - fichero abierto en AutoCAD: mensaje claro en lugar de un error; nombres de fichero
     sin caracteres que Windows no admite.
+- Correcciones de la segunda revisión:
+  - el codo entre dos tramos de distinto ancho quedaba abierto (los lados se emparejaban
+    por su semiancho): ahora por izquierda/derecha;
+  - también se cierran dos tramos que salen (o llegan) al mismo punto, p. ej. dos salidas
+    del equipo;
+  - giro muy cerrado: chaflán en lugar de un pico de hasta 11 semianchos; el lado interior
+    ya no se cruza consigo mismo;
+  - reducción en línea o en la T (lado opuesto al ramal): se dibuja el escalón;
+  - puntos casi repetidos del eje descartados también al buscar las uniones;
+  - nombre de fichero: sin caracteres de control, punto final ni nombres reservados (CON,
+    NUL…).
 
 ### Etapa 5 · redes de aire (07-11-2026)
 - Paso «Redes de aire» para impulsión, retorno y extracción. Cada red se define por la capa
