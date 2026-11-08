@@ -60,3 +60,41 @@ def test_fichero_abierto_en_autocad(red, tmp_path, monkeypatch):  # noqa: F811
     monkeypatch.setattr(ed, "escribir_esquema", bloqueado)
     with pytest.raises(OrdenRechazada, match="abierto en AutoCAD"):
         p.exportar_esquema_hidraulico(sid, tmp_path / "E")
+
+
+def test_lo_dibujado_coincide_con_la_lista(red, tmp_path, monkeypatch):  # noqa: F811
+    """Se cuentan las llamadas de dibujo: manguitos, vaciados, retenciones con su sentido,
+    filtros de 0,25 mm solo con conexión > DN15 y nombres largos recortados."""
+    p, _, _, _ = red
+    c = _circuitos(p)
+    c[1]["nombre"] = "Nave de producción norte"
+    sid = p.definir_sistema_hidraulico(titulo="Clima", tipo="2_tubos", circuitos=c)
+    r = p.calcular_sistema_hidraulico(sid)
+    llamadas: dict[str, list] = {}
+    for metodo in ("manguito", "retencion", "filtro", "valvula"):
+        original = getattr(ed._Dibujo, metodo)
+
+        def espia(self, *a, _m=metodo, _o=original, **k):
+            llamadas.setdefault(_m, []).append((a, k))
+            return _o(self, *a, **k)
+
+        monkeypatch.setattr(ed._Dibujo, metodo, espia)
+    doc = ezdxf.readfile(p.exportar_esquema_hidraulico(sid, tmp_path / "E"))
+    s = r.servicios[0]
+    n = len(s.circuitos)
+    # Generador (2) + bomba de primario (2) + 2 por bomba de circuito; 2 más en la leyenda.
+    assert len(llamadas["manguito"]) == 4 + 2 * n + 1
+    # Retención: primario con flujo hacia −x, circuitos hacia +y.
+    sentidos = [k.get("sentido", 1) for a, k in llamadas["retencion"]]
+    assert sentidos.count(-1) == 1 and sentidos.count(1) == n + 1  # + leyenda
+    # Vaciados («V»): total del primario, depósito de inercia y uno por circuito.
+    vaciados = [k for a, k in llamadas["valvula"] if k.get("marca") == "V"]
+    assert len(vaciados) == 2 + n
+    # Filtros: 1 mm del primario y de cada circuito, 0,25 mm por unidad con conexión > DN15,
+    # llenado y leyenda.
+    finos = sum(1 for x in s.circuitos if x.conexion.tubo.dn > 15)
+    assert len(llamadas["filtro"]) == 1 + n + finos + 1 + 1
+    texto = _textos(doc)
+    assert f"×{s.circuitos[0].datos.unidades}" in texto
+    recortado = "Nave de producción norte"[: ed.LARGO_NOMBRE - 1] + "…"
+    assert recortado in texto and "Nave de producción norte" not in texto

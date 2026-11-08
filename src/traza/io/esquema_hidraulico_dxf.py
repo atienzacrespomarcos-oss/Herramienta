@@ -31,7 +31,7 @@ TEXTO, ROTULO = 2.5, 2.0  # alturas en mm de papel
 #: Estilo de texto TrueType: la fuente SHX por defecto (txt.shx) no tiene «Δ» ni «≥» y en
 #: AutoCAD salían como «?» (revisión 08-11-2026). Arial viene con Windows.
 ESTILO = "TRAZA"
-ALTO_BANDA = 230.0  # la banda va de y0 − 25 (llenado) a y0 + 200 (título)
+ALTO_BANDA = 230.0  # la banda va de y0 − 9 (texto de llenado) a y0 + 200 (título)
 LARGO_NOMBRE = 18  # caracteres del nombre del circuito en su caja (el completo, en el Excel)
 PASO_CIRCUITO = 48.0
 
@@ -90,8 +90,10 @@ class _Dibujo:
     def retencion(self, x, y, vertical=False, sentido=1) -> None:
         """Válvula con una barra en el lado de aguas abajo (`sentido` ±1 del flujo)."""
         self.valvula(x, y, vertical)
-        b = 2.0 * sentido
-        self.linea(self._girar([(b, -2.6), (b, 2.6)], x, y, vertical), "valvuleria")
+        # La barra va fuera de los triángulos (en ±3,2): sobre su arista no se distinguía de
+        # una válvula de corte (segunda revisión, 08-11-2026).
+        b = 3.2 * sentido
+        self.linea(self._girar([(b, -2.8), (b, 2.8)], x, y, vertical), "valvuleria")
 
     def manguito(self, x, y, vertical=False) -> None:
         """Manguito antivibratorio: dos barras paralelas que cortan la tubería."""
@@ -119,7 +121,12 @@ class _Dibujo:
         self.circulo(x, y, 2.2, "valvuleria")
         self.texto(letra, x, y, "valvuleria", 1.5, alinear="MIDDLE_CENTER")
 
-    def purgador(self, x, y) -> None:
+    def purgador(self, x, y, lado: int = 0) -> None:
+        """Triángulo sobre una pequeña toma vertical; con `lado` ±1, la toma sale primero de
+        lado (para un purgador a media tubería vertical)."""
+        if lado:
+            self.linea([(x, y), (x + 3 * lado, y)], "valvuleria")
+            x += 3 * lado
         self.linea([(x, y), (x, y + 3)], "valvuleria")
         self.linea([(x - 1.5, y + 3), (x + 1.5, y + 3), (x, y + 5.5)], "valvuleria", cerrada=True)
 
@@ -219,8 +226,8 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
         xr = x + 14
         d.punto(x, yi, "impulsion")
         d.punto(xr, yr, "retorno")
-        d.linea([(x, yi), (x, ytop)], "impulsion")
-        d.linea([(xr, ytop), (xr, yr)], "retorno")
+        d.linea([(x, yi), (x, ytop + 2)], "impulsion")  # hasta la caja de unidades
+        d.linea([(xr, ytop + 2), (xr, yr)], "retorno")
         d.valvula(x, yi + 6, vertical=True)
         d.bomba(x, yi + 16, vertical=True)
         d.instrumento(x - 7, yi + 16, "ΔP", (x - 3, yi + 16))
@@ -228,9 +235,11 @@ def _banda(d: _Dibujo, s: Servicio, y0: float, titulo: str, grande: bool) -> flo
         d.manguito(x, yi + 11, vertical=True)
         d.manguito(x, yi + 21, vertical=True)
         d.valvula(x, yi + 33, vertical=True)
-        d.purgador(x, ytop)
+        d.purgador(x, ytop - 4.5, lado=-1)  # bajo la caja de unidades (antes caía dentro)
         # Valvulería de cada unidad (RITE IT 1.3.4.2.12 y 1.3.4.2.8.2): corte, filtro de
-        # 0,25 mm si va, control a la entrada; equilibrado a la salida.
+        # 0,25 mm (solo ante válvulas automáticas > DN15) y control a la entrada;
+        # equilibrado a la salida. El filtro del retorno es el de 1 mm del circuito
+        # (IT 1.3.4.2.8.1), que va siempre.
         d.valvula(x, ytop - 26, vertical=True)
         if c.conexion.tubo.dn > 15:
             d.filtro(x, ytop - 17, vertical=True)
