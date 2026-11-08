@@ -2,6 +2,12 @@
 
 ## [Sin publicar]
 
+### Etapa 7.B · esquema de principio en DXF (08-11-2026)
+- «Agua → Exportar esquema de principio (DXF)…»: esquema R2013 sin escala con una banda
+  por servicio (generador, primario, inercia, colectores, un ramal por circuito hasta sus
+  unidades, expansión, seguridad y llenado), toda la valvulería e instrumentos, rótulos con
+  tubos, caudales, alturas de bomba, Kv y presiones, capas por función y leyenda.
+
 ### Etapa 7 · sistema hidráulico de climatización (08-11-2026)
 - Paso «Sistema hidráulico» (menú Agua): primario-secundario, 2 tubos (bomba de calor
   reversible) y 4 tubos (frío y calor independientes); circuitos por grupos de espacios

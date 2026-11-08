@@ -49,6 +49,7 @@ from traza.io import (
     bc3_modificar,
     clima_idae,
     dxf,
+    esquema_hidraulico_dxf,
     informe_cargas,
     informe_hidronica,
     informe_redes,
@@ -1193,6 +1194,19 @@ class Proyecto:
             return calculo_hidronica.calcular(sistema, cargas)
         except ValueError as exc:
             raise OrdenRechazada(str(exc)) from exc
+
+    def exportar_esquema_hidraulico(self, sistema_id: str, destino: Path) -> Path:
+        """Esquema de principio en DXF R2013 (docs/modules/hidronica.md)."""
+        r = self.calcular_sistema_hidraulico(sistema_id)
+        try:
+            return esquema_hidraulico_dxf.escribir_esquema(Path(destino), self.nombre, r)
+        except ValueError as exc:
+            raise OrdenRechazada(str(exc)) from exc
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en AutoCAD? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
 
     def exportar_sistema_hidraulico_excel(self, sistema_id: str, destino: Path) -> Path:
         r = self.calcular_sistema_hidraulico(sistema_id)
