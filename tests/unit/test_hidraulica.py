@@ -122,7 +122,8 @@ def test_elementos_sin_omitir_ninguno():
     assert alivio.dn >= 20
     # 150 kW > 70 kW: válvulas independientes de la presión y medida obligatoria.
     assert any("PICV" in e.elemento for e in lista)
-    assert all("recomendado" not in e.norma for e in lista)
+    # La medida (> 70 kW) es obligatoria: ningún termómetro o manómetro sale «recomendado».
+    assert all("recomendado" not in e.norma for e in lista if "1.3.4.4.5" in e.norma)
     unidades = [e for e in lista if e.zona == "Unidades de C1" and e.elemento == "Válvula de corte"]
     assert unidades[0].cantidad == 6
 

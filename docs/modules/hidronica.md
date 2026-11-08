@@ -97,7 +97,8 @@ Estado: **en desarrollo**.
   cada generador (la 3.4.2.3 habla del circuito). Umbral de 70 kW (medida, PICV): potencia
   de toda la instalación (frío + calor en 4 tubos).
 - **Bombas**: cada una con válvulas de corte para desmontarla, retención, manómetro
-  diferencial y manguitos antivibratorios (RITE IT 1.3.4.2.1.2 los exige con motor > 3 kW).
+  diferencial y manguitos antivibratorios (RITE IT 1.3.4.2.1.2 los exige con motor > 3 kW;
+  por debajo se ponen como recomendados y el listado lo dice).
 - **Dilatación del plástico**: según el fabricante del tubo (la guía IDAE no da
   coeficiente; RITE IT 1.3.4.2.6.5, códigos del CTN 53).
 - **Un espacio solo puede estar en un circuito** del sistema: si no, su carga se sumaría
@@ -153,13 +154,14 @@ Estado: **en desarrollo**.
   volumen mínimo del generador (l/kW) y los circuitos en JSON (nombre, espacios, unidades,
   longitud de ida, pérdida de la unidad en kPa, exterior).
 - **Potencias**: las cargas de los espacios de cada circuito (verano y invierno), sin
-  simultaneidad. Sin cargas no hay sistema que calcular.
+  simultaneidad. Sin cargas no hay sistema que calcular; un circuito sin potencia se deja
+  fuera con aviso.
 - **2 tubos**: un servicio frío/calor (bomba de calor reversible) dimensionado para el
   modo de más caudal. **4 tubos**: dos servicios independientes, cada uno con su
   generador, primario, inercia, vaso y circuitos.
 - **En pantalla** (presentación limpia): «Sala de máquinas» (generador, primario,
   colectores, inercia, vaso, presiones), «Circuitos» y «Elementos».
-- **Excel**: Resumen, Circuitos, Elementos (zona, elemento, especificación, DN, cantidad,
+- **Excel**: Resumen, Circuitos, Elementos (zona, elemento, especificación, medida, cantidad,
   norma o fuente) e Hipótesis.
 
 ## Pendiente

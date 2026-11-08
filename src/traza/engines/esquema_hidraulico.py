@@ -75,7 +75,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         "En la conexión del generador",
         dn_p,
         2,
-        "RITE IT 1.3.4.2.1.2 (equipos con motor > 3 kW)",
+        "RITE IT 1.3.4.2.1.2 (exigido con motor > 3 kW; recomendado)",
     )
     add(
         z,
@@ -128,7 +128,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         "Aspiración y descarga de la bomba de primario",
         dn_p,
         2,
-        "RITE IT 1.3.4.2.1.2 (motor > 3 kW)",
+        "RITE IT 1.3.4.2.1.2 (exigido con motor > 3 kW; recomendado)",
     )
     add(
         z,
@@ -304,7 +304,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
             "Aspiración y descarga de la bomba",
             d,
             2,
-            "RITE IT 1.3.4.2.1.2 (motor > 3 kW)",
+            "RITE IT 1.3.4.2.1.2 (exigido con motor > 3 kW; recomendado)",
         )
         add(z, "Filtro de malla 1 mm", "Retorno del circuito", d, 1, "RITE IT 1.3.4.2.8.1")
         add(z, "Válvula de equilibrado", "Retorno del circuito", d, 1, "RITE IT 1.2.4.2.7")
