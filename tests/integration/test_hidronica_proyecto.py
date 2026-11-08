@@ -95,6 +95,11 @@ def test_la_orden_rechaza_datos_incoherentes_y_se_deshace(red):  # noqa: F811
         p.definir_sistema_hidraulico(
             titulo="X", tipo="2_tubos", circuitos=c, frio_impulsion=12, frio_retorno=7
         )
+    # Un espacio en dos circuitos sumaría su carga dos veces.
+    with pytest.raises(OrdenRechazada, match="se sumaría dos veces"):
+        p.definir_sistema_hidraulico(
+            titulo="X", tipo="2_tubos", circuitos=[c[0], {**c[1], "espacios": c[0]["espacios"]}]
+        )
     sid = p.definir_sistema_hidraulico(titulo="Clima", tipo="2_tubos", circuitos=c)
     with pytest.raises(OrdenRechazada, match="Ya hay un sistema"):
         p.definir_sistema_hidraulico(titulo="Clima", tipo="4_tubos", circuitos=c)

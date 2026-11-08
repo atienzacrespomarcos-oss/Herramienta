@@ -56,6 +56,60 @@ def test_recorrido_completo(ventana, tmp_path):  # noqa: F811
     assert "Elementos" in wb.sheetnames
 
 
+def test_un_rechazo_reabre_el_dialogo_con_lo_escrito(ventana):  # noqa: F811
+    v, q = ventana
+    ph = v.pagina_hidronica
+    v.ir_a_paso("hidronica")
+    vistos = []
+
+    def primero(espacios, actual):
+        ids = {e["nombre"]: e["id"] for e in espacios}
+        c = {
+            "nombre": "C1",
+            "espacios": [ids["OFICINAS"]],
+            "unidades": 2,
+            "longitud_m": 20.0,
+            "perdida_terminal_kpa": 15.0,
+        }
+        return {"titulo": "Clima", "tipo": "2_tubos", "circuitos": [c, {**c, "nombre": "C2"}]}
+
+    def segundo(espacios, actual):
+        vistos.append(actual)  # vuelve con lo escrito, sin id (es nuevo)
+        return {"titulo": actual["titulo"], "tipo": "2_tubos", "circuitos": actual["circuitos"][:1]}
+
+    q.preparar("sistema_hidraulico", primero, segundo)
+    ph.a_nuevo.trigger()
+    assert any("dos veces" in a for a in q.avisos)
+    assert vistos[0]["nombre"] == "Clima" and len(vistos[0]["circuitos"]) == 2
+    assert ph.selector.count() == 1
+
+
+def test_espacio_borrado_no_sale_como_id(qtbot):
+    espacios = [{"id": "e1", "codigo": "ESP-001", "nombre": "Oficinas"}]
+    actual = {
+        "id": "s1",
+        "nombre": "Clima",
+        "tipo": "2_tubos",
+        "material": "acero",
+        "circuitos": [
+            {
+                "nombre": "C1",
+                "espacios": ["e1", "borrado-uuid"],
+                "unidades": 1,
+                "longitud_m": 10.0,
+                "perdida_terminal_kpa": 15.0,
+                "exterior": False,
+            }
+        ],
+    }
+    d = DialogoSistema(None, espacios, actual)
+    qtbot.addWidget(d)
+    assert d.tabla.item(0, 1).text() == "ESP-001"
+    assert "ya no existen" in d.error.text()
+    d._aceptar()
+    assert d.resultado["circuitos"][0]["espacios"] == ["e1"]
+
+
 def test_dialogo_real(qtbot):
     espacios = [{"id": "e1", "codigo": "ESP-001", "nombre": "Oficinas"}]
     d = DialogoSistema(None, espacios, None)

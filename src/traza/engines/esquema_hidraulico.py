@@ -18,9 +18,10 @@ class Elemento:
     zona: str  # «Generador», «Colectores», «Circuito C1», «Unidades de C1»…
     elemento: str
     especificacion: str
-    dn: int | None
+    dn: int | None  # el que cuentan los umbrales del RITE (en cobre y plástico, el interior)
     cantidad: int
     norma: str
+    medida: str = ""  # lo que se pide: «DN50», «22×1»…
 
 
 def _n(v: float, d: int = 1) -> str:
@@ -41,12 +42,17 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     total_kw = potencia_instalacion_kw if potencia_instalacion_kw is not None else s.potencia_kw
     grande = total_kw > 70
     medida = "RITE IT 1.3.4.4.5.6" + ("" if grande else " (exigido > 70 kW; recomendado)")
-    dn_p = s.primario.tubo.dn
+    dn_p = s.primario.tubo
     p = s.presiones
     lista: list[Elemento] = []
 
     def add(zona, elemento, especificacion, dn, cantidad, norma):
-        lista.append(Elemento(zona, elemento, especificacion, dn, cantidad, norma))
+        """`dn`: un tubo (se pide por su medida) o un DN de las tablas del RITE."""
+        if isinstance(dn, rh.Tubo):
+            medida, dn = dn.nombre, dn.dn
+        else:
+            medida = f"DN{dn}" if dn else ""
+        lista.append(Elemento(zona, elemento, especificacion, dn, cantidad, norma, medida))
 
     # --- Generador y primario ---
     z = "Generador y primario"
@@ -73,7 +79,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     )
     add(
         z,
-        f"Válvula de corte {rh.valvula_corte(dn_p)}",
+        f"Válvula de corte {rh.valvula_corte(dn_p.dn)}",
         "Entrada y salida del generador",
         dn_p,
         2,
@@ -99,7 +105,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     )
     add(
         z,
-        f"Válvula de retención {rh.valvula_retencion(dn_p)}",
+        f"Válvula de retención {rh.valvula_retencion(dn_p.dn)}",
         "Impulsión de la bomba de primario",
         dn_p,
         1,
@@ -107,6 +113,14 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     )
     add(
         z, "Manómetro diferencial", "Aspiración y descarga de la bomba de primario", None, 1, medida
+    )
+    add(
+        z,
+        f"Válvula de corte {rh.valvula_corte(dn_p.dn)}",
+        "Aspiración y descarga de la bomba de primario (desmontaje)",
+        dn_p,
+        2,
+        "Mantenimiento; RITE IT 1.3.4.2.7",
     )
     add(
         z,
@@ -127,13 +141,18 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     )
     # --- Depósito de inercia (compensador) ---
     z = "Depósito de inercia"
-    db = s.bocas_inercia.tubo.dn
+    db = s.bocas_inercia.tubo
     add(
         z,
         "Depósito de inercia de 4 bocas en paralelo (compensador hidráulico)",
-        f"≥ {_n(s.inercia_l, 0)} l (mínimo del fabricante {_n(s.volumen_minimo_l, 0)} l menos "
-        f"{_n(s.volumen_primario_l, 0)} l del primario); cuerpo ≥ "
-        f"{_n(s.cuerpo_inercia_mm, 0)} mm (3·d)",
+        (
+            f"≥ {_n(s.inercia_l, 0)} l (mínimo del fabricante {_n(s.volumen_minimo_l, 0)} l "
+            f"menos {_n(s.volumen_primario_l, 0)} l del primario)"
+            if s.inercia_l > 0
+            else f"Por volumen no hace falta: el primario ya tiene {_n(s.volumen_primario_l, 0)} l "
+            f"(mínimo {_n(s.volumen_minimo_l, 0)} l); se mantiene como separador"
+        )
+        + f"; cuerpo ≥ {_n(s.cuerpo_inercia_mm, 0)} mm (3·d)",
         db,
         1,
         "IDAE «La bomba de calor…» (2023); Caleffi Idraulica 18 (tres diámetros)",
@@ -156,19 +175,27 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     )
     # --- Colectores ---
     z = "Colectores"
-    dc = s.colector.tubo.dn
+    dc = s.colector.tubo
     n = len(s.circuitos)
     for lado in ("impulsión", "retorno"):
         add(
             z,
             f"Colector de {lado}",
             f"{s.colector.tubo.nombre}, {_n(s.colector.velocidad_m_s, 2)} m/s; picajes: "
-            f"1 de primario DN{db}, {n} de circuitos y 1 de reserva",
+            f"1 de primario {db.nombre}, {n} de circuitos y 1 de reserva",
             dc,
             1,
             "Criterio de la ficha (separador de baja pérdida, Caleffi)",
         )
         add(z, "Termómetro con vaina", f"Colector de {lado}", None, 1, medida)
+        add(
+            z,
+            "Purgador automático",
+            f"Parte alta del colector de {lado}",
+            rh.PURGADOR_DN_MIN,
+            1,
+            "RITE IT 1.3.4.2.3.6",
+        )
     # --- Expansión, seguridad, llenado y vaciado ---
     z = "Expansión, seguridad y llenado"
     frio = s.frio
@@ -220,7 +247,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         z,
         "Válvula de vaciado total",
         "Punto más bajo; descarga visible",
-        rh.dn_vaciado(total_kw, frio),
+        rh.dn_vaciado(s.potencia_kw, frio),
         1,
         "RITE IT 1.3.4.2.3 (tabla 3.4.2.3)",
     )
@@ -236,11 +263,11 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
     pic = "independiente de la presión (PICV)" if grande else "de 2 vías"
     for c in s.circuitos:
         z = f"Circuito {c.datos.nombre}"
-        d = c.tubo.tubo.dn
+        d = c.tubo.tubo
         add(z, "Picaje en colector", "Impulsión y retorno", d, 2, "Ficha")
         add(
             z,
-            f"Válvula de corte {rh.valvula_corte(d)}",
+            f"Válvula de corte {rh.valvula_corte(d.dn)}",
             "Salida y retorno del colector",
             d,
             2,
@@ -256,13 +283,29 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         )
         add(
             z,
-            f"Válvula de retención {rh.valvula_retencion(d)}",
+            f"Válvula de retención {rh.valvula_retencion(d.dn)}",
             "Impulsión de la bomba",
             d,
             1,
             "RITE IT 1.3.4.2.7",
         )
         add(z, "Manómetro diferencial", "Aspiración y descarga de la bomba", None, 1, medida)
+        add(
+            z,
+            f"Válvula de corte {rh.valvula_corte(d.dn)}",
+            "Aspiración y descarga de la bomba (desmontaje)",
+            d,
+            2,
+            "Mantenimiento; RITE IT 1.3.4.2.7",
+        )
+        add(
+            z,
+            "Manguito antivibratorio",
+            "Aspiración y descarga de la bomba",
+            d,
+            2,
+            "RITE IT 1.3.4.2.1.2 (motor > 3 kW)",
+        )
         add(z, "Filtro de malla 1 mm", "Retorno del circuito", d, 1, "RITE IT 1.3.4.2.8.1")
         add(z, "Válvula de equilibrado", "Retorno del circuito", d, 1, "RITE IT 1.2.4.2.7")
         add(z, "Termómetro con vaina", "Retorno del circuito", None, 1, medida)
@@ -293,7 +336,16 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
             1,
             "RITE IT 1.2.4.2.1.2",
         )
-        if c.dilatacion_mm is not None:
+        if c.dilatacion_mm is None:
+            add(
+                z,
+                "Dilatación a compensar",
+                "Según el fabricante del tubo (la guía IDAE nº 18 no da coeficiente para plástico)",
+                d,
+                1,
+                "RITE IT 1.3.4.2.6.5 (códigos del CTN 53 de AENOR)",
+            )
+        else:
             add(
                 z,
                 "Dilatación a compensar",
@@ -305,7 +357,7 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         # --- Unidades terminales ---
         zu = f"Unidades de {c.datos.nombre}"
         u = c.datos.unidades
-        du = c.conexion.tubo.dn
+        du = c.conexion.tubo
         add(zu, "Válvula de corte", "Entrada de cada unidad", du, u, "RITE IT 1.3.4.2.12")
         add(
             zu,
@@ -318,12 +370,14 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         add(
             zu,
             f"Válvula de control {pic}",
-            f"Kv ≥ {_n(c.kv_valvula, 2)} (ΔP = la de la unidad, {_mca(c.perdida_valvula_pa)})",
+            f"Caudal de diseño {_m3h(c.caudal_m3s / u)} por unidad (se elige por caudal)"
+            if grande
+            else f"Kv ≥ {_n(c.kv_valvula, 2)} (ΔP = la de la unidad, {_mca(c.perdida_valvula_pa)})",
             du,
             u,
             "RITE IT 1.2.4.3.1.5",
         )
-        if du > 15:
+        if du.dn > 15:
             add(
                 zu,
                 "Filtro de malla 0,25 mm",

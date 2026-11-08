@@ -116,7 +116,14 @@ class DialogoSistema(QDialog):
         fila = self.tabla.rowCount()
         self.tabla.insertRow(fila)
         c = c or {}
-        codigos = ", ".join(self._codigo.get(e, e) for e in c.get("espacios", []))
+        # Un espacio borrado después no se enseña por su id interno: se quita y se avisa
+        # (revisión 08-11-2026: salía un UUID y Aceptar fallaba sin poder corregirlo).
+        conocidos = [e for e in c.get("espacios", []) if e in self._codigo]
+        if len(conocidos) < len(c.get("espacios", [])):
+            self.error.setText(
+                f"{c.get('nombre', '')}: se han quitado espacios que ya no existen en el proyecto."
+            )
+        codigos = ", ".join(self._codigo[e] for e in conocidos)
         valores = [
             c.get("nombre", f"C{fila + 1}"),
             codigos,
@@ -190,6 +197,6 @@ class DialogoSistema(QDialog):
             self.resultado = None
             self.error.setText(str(exc))
             return
-        if self._actual:
+        if self._actual and self._actual.get("id"):  # al reabrir uno nuevo no hay id
             self.resultado["id"] = self._actual["id"]
         self.accept()

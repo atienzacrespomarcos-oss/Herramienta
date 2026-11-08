@@ -15,6 +15,13 @@
 - Fuentes: RITE, guía IDAE nº 18 (comprobado contra sus ejemplos resueltos), guía IDAE de
   la bomba de calor (2023), ASHRAE, Caleffi, Carrier, Viega (UNE-EN 10255).
 - Esquema V8: tabla `sistema_hidraulico`.
+- Revisión independiente (sin bloqueantes): un espacio en dos circuitos se rechaza (su
+  carga se sumaba dos veces); el diálogo vuelve con lo escrito si la orden rechaza algo;
+  un espacio borrado no sale como id; cobre y plástico se piden por su medida y los
+  umbrales del RITE usan su diámetro interior; vaciado total por la potencia de cada
+  circuito; válvulas de corte y manguitos en todas las bombas, purgadores en colectores;
+  PICV por caudal; circuitos sin potencia avisados también en 2 tubos; tabla de
+  aislamiento transcrita en la ficha con su prueba.
 
 ### Etapa 6 · ventilación sencilla (08-11-2026)
 - Red de extracción o de impulsión de ventilación: el caudal de cada espacio puede salir

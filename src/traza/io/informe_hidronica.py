@@ -112,12 +112,12 @@ def exportar_excel(destino: Path, proyecto: str, r: Any) -> Path:
             ("Zona", 34),
             ("Elemento", 46),
             ("Especificación", 70),
-            ("DN", 6),
+            ("Medida", 9),
             ("Cantidad", 9),
             ("Norma o fuente", 48),
         ],
         [
-            [e.zona, e.elemento, e.especificacion, e.dn or "", e.cantidad, e.norma]
+            [e.zona, e.elemento, e.especificacion, e.medida, e.cantidad, e.norma]
             for e in r.elementos
         ],
     )

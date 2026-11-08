@@ -16,7 +16,7 @@ IDAE_18 = "IDAE, Guía técnica nº 18 «Instalaciones de climatización por agu
 class Tubo:
     material: str
     nombre: str  # «DN50» o «22×1»
-    dn: int  # diámetro nominal (mm) para el listado; en cobre y plástico, el exterior
+    dn: int  # DN; en cobre y plástico, el diámetro interior redondeado (mm)
     exterior_mm: float
     espesor_mm: float
 
@@ -28,7 +28,10 @@ class Tubo:
 def _serie(material: str, filas, dn_es_exterior: bool) -> tuple[Tubo, ...]:
     tubos = []
     for nombre, de, e in filas:
-        dn = round(de) if dn_es_exterior else int(nombre.removeprefix("DN"))
+        # En cobre y plástico no hay DN: los umbrales del RITE (retención, filtros, tipo de
+        # válvula) se comparan con el diámetro interior, que es lo que el DN aproxima
+        # (revisión 08-11-2026: con el exterior, un 54×2 salía con mariposa).
+        dn = round(de - 2 * e) if dn_es_exterior else int(nombre.removeprefix("DN"))
         tubos.append(Tubo(material, nombre, dn, de, e))
     return tuple(tubos)
 

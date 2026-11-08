@@ -173,7 +173,9 @@ class Servicio:
 
 
 def _modo(clave: str, t: Temperaturas):
-    """(salto, temperatura media de cálculo) de cada modo que lleva el servicio."""
+    """(modo, salto, temperatura de cálculo) de cada modo del servicio. La de cálculo es la
+    más fría del modo (impulsión en frío, retorno en calor): agua más viscosa, más
+    pérdida, del lado de la seguridad."""
     modos = []
     if clave in ("frio", "frio_calor"):
         modos.append(("frio", t.frio_retorno - t.frio_impulsion, t.frio_impulsion))

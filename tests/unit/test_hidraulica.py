@@ -136,3 +136,105 @@ def test_errores_de_datos():
         )
     with pytest.raises(ValueError, match="fuera de la tabla"):
         h.agua(95)
+
+
+def test_aislamiento_transcrito_del_rite():
+    """Tablas 1.2.4.2.1 y 1.2.4.2.3 del RITE (BOE), copiadas en la ficha: calientes interior
+    40–60 °C (25, 30, 30, 30, 35) y fríos interior > 0–10 °C (25, 30, 30, 40, 40)."""
+    diametros = (30, 50, 80, 120, 160)
+    assert [rh.espesor_aislamiento_mm(d, "interior", 50, None) for d in diametros] == [
+        25,
+        30,
+        30,
+        30,
+        35,
+    ]
+    assert [rh.espesor_aislamiento_mm(d, "interior", 80, None) for d in diametros] == [
+        25,
+        30,
+        30,
+        40,
+        40,
+    ]
+    assert [rh.espesor_aislamiento_mm(d, "interior", None, 7) for d in diametros] == [
+        25,
+        30,
+        30,
+        40,
+        40,
+    ]
+    assert [rh.espesor_aislamiento_mm(d, "interior", None, 12) for d in diametros] == [
+        20,
+        20,
+        30,
+        30,
+        30,
+    ]
+
+
+def test_cobre_y_plastico_se_comparan_por_el_interior():
+    # 54×2 tiene 50 mm interiores (≈ DN50): válvula de bola, no de mariposa; 35×1,5 (32 mm)
+    # admite retención de clapeta.
+    assert _tubo("cobre", "54×2").dn == 50 and rh.valvula_corte(50) == "de bola"
+    assert _tubo("cobre", "35×1,5").dn == 32 and rh.valvula_retencion(32) == "de clapeta"
+    assert _tubo("acero", "DN50").dn == 50
+
+
+def test_medida_de_cada_elemento_y_textos_del_calculo():
+    cs = [h.Circuito("C1", 6_000, 5_000, 2, 15)]
+    s = h.calcular_servicio("frio_calor", cs, material="cobre", longitud_primario_m=30)
+    lista = eh.elementos(s)
+    tuberia = next(e for e in lista if e.zona == "Circuito C1" and e.elemento == "Tubería")
+    assert tuberia.medida == s.circuitos[0].tubo.tubo.nombre and "×" in tuberia.medida
+    alivio = next(e for e in lista if e.elemento == "Válvula automática de alivio")
+    assert alivio.medida == "DN20"
+    # 6 kW: el primario (30 m) ya supera el mínimo de 21 l; el texto lo dice.
+    assert s.inercia_l == 0
+    deposito = next(e for e in lista if e.zona == "Depósito de inercia")
+    assert "no hace falta" in deposito.especificacion
+    # Plástico: la dilatación es del fabricante y se dice.
+    sp = h.calcular_servicio("frio", [h.Circuito("P", 6_000, 0, 2, 15)], material="plastico")
+    dil = next(e for e in eh.elementos(sp) if e.elemento == "Dilatación a compensar")
+    assert "fabricante" in dil.especificacion
+
+
+def test_dos_tubos_sin_potencia_en_un_circuito():
+    from types import SimpleNamespace as N
+
+    from traza.app import hidronica as ah
+
+    def esp(eid, frio, calor):
+        return N(espacio_id=eid, verano=N(total_w=frio), invierno=N(total_w=calor))
+
+    sistema = {
+        "tipo": "2_tubos",
+        "material": "acero",
+        "frio_impulsion": 7.0,
+        "frio_retorno": 12.0,
+        "calor_impulsion": 45.0,
+        "calor_retorno": 40.0,
+        "altura_m": 0.0,
+        "longitud_primario_m": 10.0,
+        "volumen_minimo_l_kw": 3.5,
+        "circuitos": [
+            {
+                "nombre": "A",
+                "espacios": ["e1"],
+                "unidades": 2,
+                "longitud_m": 20.0,
+                "perdida_terminal_kpa": 15.0,
+                "exterior": False,
+            },
+            {
+                "nombre": "Vacío",
+                "espacios": ["e2"],
+                "unidades": 1,
+                "longitud_m": 20.0,
+                "perdida_terminal_kpa": 15.0,
+                "exterior": False,
+            },
+        ],
+    }
+    r = ah.calcular(sistema, N(espacios=[esp("e1", 20_000, 15_000), esp("e2", 0, 0)]))
+    assert [c.datos.nombre for c in r.servicios[0].circuitos] == ["A"]
+    assert any("«Vacío» no tiene potencia" in a for a in r.avisos)

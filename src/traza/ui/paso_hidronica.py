@@ -51,7 +51,7 @@ class PaginaHidronica(QWidget):
                 "Kv",
             ]
         )
-        self.tabla_elementos = _tabla(["Zona", "Elemento", "Especificación", "DN", "Cantidad"])
+        self.tabla_elementos = _tabla(["Zona", "Elemento", "Especificación", "Medida", "Cantidad"])
         self.pestanas = QTabWidget()
         self.pestanas.addTab(self.tabla_resumen, "Sala de máquinas")
         self.pestanas.addTab(self.tabla_circuitos, "Circuitos")
@@ -93,10 +93,19 @@ class PaginaHidronica(QWidget):
                 "Primero confirma los espacios en «Planos y espacios» y calcula sus cargas.",
             )
             return
-        r = self.v.preguntas.sistema_hidraulico(espacios, actual)
-        if r is None:
-            return
-        sid = self.proyecto.definir_sistema_hidraulico(**r)
+        # Si la orden rechaza algo, se avisa y el diálogo vuelve con lo escrito (revisión
+        # 08-11-2026: se cerraba y se perdían todos los circuitos tecleados).
+        while True:
+            r = self.v.preguntas.sistema_hidraulico(espacios, actual)
+            if r is None:
+                return
+            try:
+                sid = self.proyecto.definir_sistema_hidraulico(**r)
+            except OrdenRechazada as exc:
+                self.v.preguntas.aviso("Sistema hidráulico", str(exc))
+                actual = {**r, "nombre": r["titulo"], "id": r.get("id")}
+                continue
+            break
         self.v.refrescar()
         self._elegir(sid)
 
@@ -229,7 +238,7 @@ class PaginaHidronica(QWidget):
         _llenar(
             self.tabla_elementos,
             [
-                [e.zona, e.elemento, e.especificacion, f"DN{e.dn}" if e.dn else "", str(e.cantidad)]
+                [e.zona, e.elemento, e.especificacion, e.medida, str(e.cantidad)]
                 for e in r.elementos
             ],
         )

@@ -81,10 +81,40 @@ Estado: **en desarrollo**.
   publicado específico para colectores; se usa el del separador porque cumplen la misma
   función (pérdida despreciable entre picajes).
 - **Depósito de inercia** en paralelo, con 4 bocas (compensador): volumen = volumen
-  mínimo del fabricante (por defecto 3,5 l/kW, Carrier 30RA) menos el agua de la
-  instalación, al tamaño comercial superior; bocas por el método de los tres diámetros.
-- **Altura de bombas**: tuberías 2 × 1,3 × R·L (IDAE) + unidad terminal + válvula de
-  control (autoridad 1, dentro de 0,6–1,3 del RITE) + filtro.
+  mínimo del fabricante (por defecto 3,5 l/kW, Carrier 30RA) menos el agua del primario.
+  Se da el volumen mínimo; el modelo comercial lo elige el usuario. Si el primario ya
+  cubre el mínimo, el depósito sigue como separador y el listado lo dice. Bocas por el
+  método de los tres diámetros.
+- **Altura de bombas**: tuberías 2 × 1,3 × R·L (IDAE; el 30 % cubre accesorios, filtro
+  incluido) + unidad terminal + válvula de control (autoridad 1, dentro de 0,6–1,3 del
+  RITE). Temperatura de cálculo: la más fría de cada modo (impulsión en frío, retorno en
+  calor), agua más viscosa, del lado de la seguridad.
+- **Cobre y plástico no tienen DN**: los umbrales del RITE (tipo de válvula, retención,
+  filtro de 0,25 mm) se comparan con su diámetro interior, que es lo que el DN aproxima; en
+  el listado se piden por su medida («22×1»).
+- **Llenado y vaciado**: el DN de alimentación, por la potencia de toda la instalación
+  (la tabla 3.4.2.2 habla de la instalación); el de vaciado total, por la del circuito de
+  cada generador (la 3.4.2.3 habla del circuito). Umbral de 70 kW (medida, PICV): potencia
+  de toda la instalación (frío + calor en 4 tubos).
+- **Bombas**: cada una con válvulas de corte para desmontarla, retención, manómetro
+  diferencial y manguitos antivibratorios (RITE IT 1.3.4.2.1.2 los exige con motor > 3 kW).
+- **Dilatación del plástico**: según el fabricante del tubo (la guía IDAE no da
+  coeficiente; RITE IT 1.3.4.2.6.5, códigos del CTN 53).
+- **Un espacio solo puede estar en un circuito** del sistema: si no, su carga se sumaría
+  dos veces (la orden lo rechaza).
+- **Aislamiento** (RITE, tablas transcritas del BOE; λ = 0,040 W/(m·K); diámetro exterior
+  ≤ 35 / ≤ 60 / ≤ 90 / ≤ 140 / > 140 mm):
+
+  | Tabla | Fluido | Espesores (mm) |
+  |---|---|---|
+  | 1.2.4.2.1 interior | caliente 40–60 °C | 25 / 30 / 30 / 30 / 35 |
+  | 1.2.4.2.1 interior | caliente > 60–100 °C | 25 / 30 / 30 / 40 / 40 |
+  | 1.2.4.2.2 exterior | caliente 40–60 °C | 35 / 40 / 40 / 40 / 45 |
+  | 1.2.4.2.2 exterior | caliente > 60–100 °C | 35 / 40 / 40 / 50 / 50 |
+  | 1.2.4.2.3 interior | frío > 0–10 °C | 25 / 30 / 30 / 40 / 40 |
+  | 1.2.4.2.3 interior | frío > 10 °C | 20 / 20 / 30 / 30 / 30 |
+  | 1.2.4.2.4 exterior | frío > 0–10 °C | 45 / 50 / 50 / 60 / 60 |
+  | 1.2.4.2.4 exterior | frío > 10 °C | 40 / 40 / 50 / 50 / 50 |
 - **Tubos** (diámetro exterior × espesor, mm):
   - **acero negro UNE-EN 10255 serie media M** (lo habitual en salas de máquinas y
     distribución), según la tabla de compatibilidad Megapress de Viega

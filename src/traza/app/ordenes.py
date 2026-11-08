@@ -1652,6 +1652,7 @@ class DefinirSistemaHidraulico(Orden):
         if not self.circuitos:
             raise OrdenRechazada("El sistema necesita al menos un circuito.")
         circuitos, nombres = [], set()
+        de_quien: dict[str, str] = {}  # espacio → circuito: su carga no se suma dos veces
         for c in self.circuitos:
             nombre = str(c.get("nombre", "")).strip()
             if not nombre or nombre.casefold() in nombres:
@@ -1661,8 +1662,15 @@ class DefinirSistemaHidraulico(Orden):
             if not espacios:
                 raise OrdenRechazada(f"{nombre}: elige los espacios a los que da servicio.")
             for e in espacios:
-                if _elemento(con, e)["tipo"] != "espacio":
+                el = _elemento(con, e)
+                if el["tipo"] != "espacio":
                     raise OrdenRechazada(f"{nombre}: «{e}» no es un espacio.")
+                if e in de_quien:
+                    raise OrdenRechazada(
+                        f"El espacio {el['codigo']} está en «{de_quien[e]}» y en «{nombre}»: su "
+                        "carga se sumaría dos veces."
+                    )
+                de_quien[e] = nombre
             unidades = c.get("unidades")
             if (
                 isinstance(unidades, bool)

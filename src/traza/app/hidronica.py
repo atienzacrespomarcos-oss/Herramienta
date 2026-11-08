@@ -43,7 +43,9 @@ def calcular(sistema: dict[str, Any], cargas) -> ResultadoSistema:
         for eid in c["espacios"]:
             e = por_id.get(eid)
             if e is None:
-                avisos.append(f"{c['nombre']}: un espacio no tiene cargas; no suma potencia.")
+                avisos.append(
+                    f"{c['nombre']}: un espacio no tiene cargas o ya no existe; no suma potencia."
+                )
                 continue
             frio += max(e.verano.total_w, 0.0)
             calor += max(e.invierno.total_w, 0.0)
@@ -71,9 +73,15 @@ def calcular(sistema: dict[str, Any], cargas) -> ResultadoSistema:
         util = [
             c
             for c in circuitos
-            if (clave != "frio" or c.potencia_frio_w > 0)
-            and (clave != "calor" or c.potencia_calor_w > 0)
+            if (clave == "frio" and c.potencia_frio_w > 0)
+            or (clave == "calor" and c.potencia_calor_w > 0)
+            or (clave == "frio_calor" and max(c.potencia_frio_w, c.potencia_calor_w) > 0)
         ]
+        for c in circuitos:
+            if c not in util:
+                avisos.append(
+                    f"{h.SERVICIOS[clave]}: «{c.nombre}» no tiene potencia; no se calcula."
+                )
         if not util:
             avisos.append(f"{h.SERVICIOS[clave]}: ningún circuito tiene potencia; no se calcula.")
             continue
