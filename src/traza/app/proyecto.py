@@ -13,6 +13,7 @@ from typing import Any
 
 from traza.ai import claude_code
 from traza.app import cargas as calculo_cargas
+from traza.app import hidronica as calculo_hidronica
 from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
 from traza.app import planos as calculo_planos
@@ -20,11 +21,13 @@ from traza.app import redes as calculo_redes
 from traza.app.ordenes import (
     ENCARGOS,
     BorrarRed,
+    BorrarSistemaHidraulico,
     CambiarEstado,
     CambiarPlano,
     ConfirmarContorno,
     CrearPendiente,
     DefinirRed,
+    DefinirSistemaHidraulico,
     DescartarPropuesta,
     FijarCargasEspacio,
     FijarCargasProyecto,
@@ -47,6 +50,7 @@ from traza.io import (
     clima_idae,
     dxf,
     informe_cargas,
+    informe_hidronica,
     informe_redes,
     salida_autocad,
 )
@@ -1159,6 +1163,46 @@ class Proyecto:
 
     def exportar_red_excel(self, red_id: str, destino: Path) -> Path:
         return informe_redes.exportar_excel(Path(destino), self.nombre, self.calcular_red(red_id))
+
+    # --- Sistemas hidráulicos (Etapa 7, docs/modules/hidronica.md) ----------------------
+    def sistemas_hidraulicos(self) -> list[dict[str, Any]]:
+        filas = self._filas("SELECT * FROM sistema_hidraulico ORDER BY nombre")
+        for f in filas:
+            f["circuitos"] = json.loads(f["circuitos"])
+        return filas
+
+    def sistema_hidraulico(self, sistema_id: str) -> dict[str, Any]:
+        for s in self.sistemas_hidraulicos():
+            if s["id"] == sistema_id:
+                return s
+        raise OrdenRechazada("Ese sistema no existe.")
+
+    def definir_sistema_hidraulico(self, **datos: Any) -> str:
+        orden = DefinirSistemaHidraulico(**datos)
+        self.ejecutar(orden)
+        return orden.id
+
+    def borrar_sistema_hidraulico(self, sistema_id: str) -> None:
+        self.ejecutar(BorrarSistemaHidraulico(sistema_id))
+
+    def calcular_sistema_hidraulico(self, sistema_id: str) -> calculo_hidronica.ResultadoSistema:
+        """Las potencias salen de las cargas: sin cargas no hay sistema que dimensionar."""
+        sistema = self.sistema_hidraulico(sistema_id)
+        cargas = self.calcular_cargas()
+        try:
+            return calculo_hidronica.calcular(sistema, cargas)
+        except ValueError as exc:
+            raise OrdenRechazada(str(exc)) from exc
+
+    def exportar_sistema_hidraulico_excel(self, sistema_id: str, destino: Path) -> Path:
+        r = self.calcular_sistema_hidraulico(sistema_id)
+        try:
+            return informe_hidronica.exportar_excel(Path(destino), self.nombre, r)
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en Excel? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
 
 
 def _codigo_libre(propuesto: str, usados: set[str]) -> str:

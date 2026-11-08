@@ -284,5 +284,27 @@ ALTER TABLE red_aire ADD COLUMN renovaciones REAL
     CHECK (renovaciones IS NULL OR renovaciones > 0);
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7)
+# V8 (08-11-2026): sistema hidráulico primario-secundario (docs/modules/hidronica.md). Los
+# circuitos van en JSON dentro del sistema (nombre, espacios, unidades, longitud, pérdida de
+# la unidad, exterior): se definen y cambian juntos. Los resultados se calculan cada vez.
+V8 = """
+CREATE TABLE sistema_hidraulico (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
+    tipo TEXT NOT NULL CHECK (tipo IN ('2_tubos', '4_tubos')),
+    material TEXT NOT NULL CHECK (material IN ('acero', 'cobre', 'plastico')),
+    frio_impulsion REAL NOT NULL,
+    frio_retorno REAL NOT NULL,
+    calor_impulsion REAL NOT NULL,
+    calor_retorno REAL NOT NULL,
+    altura_m REAL NOT NULL CHECK (altura_m >= 0),
+    longitud_primario_m REAL NOT NULL CHECK (longitud_primario_m >= 0),
+    volumen_minimo_l_kw REAL NOT NULL CHECK (volumen_minimo_l_kw > 0),
+    circuitos TEXT NOT NULL,
+    creado TEXT NOT NULL,
+    UNIQUE (nombre)
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8)
 VERSION_ACTUAL = len(MIGRACIONES)

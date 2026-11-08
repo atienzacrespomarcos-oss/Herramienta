@@ -2,6 +2,27 @@
 
 ## [Sin publicar]
 
+### Etapa 7 · sistema hidráulico de climatización (08-11-2026)
+- Paso «Sistema hidráulico» (menú Agua): primario-secundario, 2 tubos (bomba de calor
+  reversible) y 4 tubos (frío y calor independientes); circuitos por grupos de espacios
+  con las potencias de las cargas.
+- Dimensiona tuberías (≤ 40 mm c.a./m y ≤ 1,2 m/s hasta DN50), bombas, colectores,
+  depósito de inercia (volumen mínimo del fabricante, solo con el agua del primario), vaso
+  de expansión, presiones, válvulas (Kv, retención por DN, corte), aislamiento (RITE) y
+  dilatación.
+- Lista completa de elementos del esquema, cada uno con el artículo del RITE o la fuente
+  que lo exige, y Excel (Resumen, Circuitos, Elementos, Hipótesis).
+- Fuentes: RITE, guía IDAE nº 18 (comprobado contra sus ejemplos resueltos), guía IDAE de
+  la bomba de calor (2023), ASHRAE, Caleffi, Carrier, Viega (UNE-EN 10255).
+- Esquema V8: tabla `sistema_hidraulico`.
+- Revisión independiente (sin bloqueantes): un espacio en dos circuitos se rechaza (su
+  carga se sumaba dos veces); el diálogo vuelve con lo escrito si la orden rechaza algo;
+  un espacio borrado no sale como id; cobre y plástico se piden por su medida y los
+  umbrales del RITE usan su diámetro interior; vaciado total por la potencia de cada
+  circuito; válvulas de corte y manguitos en todas las bombas, purgadores en colectores;
+  PICV por caudal; circuitos sin potencia avisados también en 2 tubos; tabla de
+  aislamiento transcrita en la ficha con su prueba.
+
 ### Etapa 6 · ventilación sencilla (08-11-2026)
 - Red de extracción o de impulsión de ventilación: el caudal de cada espacio puede salir
   de renovaciones por hora, según su volumen (tabla 3.6 del manual de Soler & Palau) o
