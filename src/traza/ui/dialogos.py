@@ -456,6 +456,12 @@ class Preguntas:
         d = DialogoRed(self.v, planos, niveles, info, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def sistema_hidraulico(self, espacios: list[dict], actual: dict | None):
+        from traza.ui.dialogos_hidronica import DialogoSistema
+
+        d = DialogoSistema(self.v, espacios, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def destino_dxf(self, sugerido: Path) -> Path | None:
         ruta, _ = QFileDialog.getSaveFileName(
             self.v, "Exportar a AutoCAD (DXF y LISP)", str(sugerido), "DXF (*.dxf)"

@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 08-11-2026 (Etapa 6, ventilación sencilla).
+Última actualización: 08-11-2026 (Etapa 7, sistema hidráulico).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -21,7 +21,7 @@ declarados).
 | — | Ventilación y extracción industrial | 3.3 | Pendiente | |
 | — | Rooftop | 3.4 | Pendiente | |
 | RF-104 | VRF / expansión directa | 3.5 | Pendiente | |
-| RF-105 | Hidrónico | 3.6 | Pendiente | |
+| RF-105 | Hidrónico | 7 | Implementada (cálculo y elementos) | `docs/modules/hidronica.md`. Primario-secundario, 2 y 4 tubos, circuitos de las cargas; diámetros, bombas, colectores, inercia, vaso, presiones, válvulas y aislamiento con RITE e IDAE nº 18; lista completa de elementos y Excel. Probado con los ejemplos resueltos de la guía IDAE nº 18. Falta el esquema de principio en DXF (7.B) y validar con un proyecto real. |
 | RF-200…205 | DXF, LISP, listados, memoria | 3 | Pendiente | |
 | RF-110 | Electricidad BT | 4 | Pendiente | |
 | RF-120, 130, 140, 150 | Fontanería, saneamiento, PCI, control | 5 | Pendiente | |

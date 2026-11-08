@@ -116,3 +116,23 @@ Estado: **en desarrollo**.
   desde DN100, RITE); en las unidades, de control de 2 vías con Kv para autoridad 1 y, por
   encima de 70 kW (caudal variable), independientes de la presión (RITE IT 1.2.4.3.1.5).
 - **Secundarios** de caudal variable: válvulas de 2 vías y bombas de velocidad variable.
+
+## En el proyecto (`app/hidronica.py`, paso «Sistema hidráulico», menú «Agua»)
+- **Qué se guarda** (esquema V8, tabla `sistema_hidraulico`): nombre, tipo (2 o 4 tubos),
+  tubería, temperaturas, altura de la instalación sobre la sala, longitud del primario,
+  volumen mínimo del generador (l/kW) y los circuitos en JSON (nombre, espacios, unidades,
+  longitud de ida, pérdida de la unidad en kPa, exterior).
+- **Potencias**: las cargas de los espacios de cada circuito (verano y invierno), sin
+  simultaneidad. Sin cargas no hay sistema que calcular.
+- **2 tubos**: un servicio frío/calor (bomba de calor reversible) dimensionado para el
+  modo de más caudal. **4 tubos**: dos servicios independientes, cada uno con su
+  generador, primario, inercia, vaso y circuitos.
+- **En pantalla** (presentación limpia): «Sala de máquinas» (generador, primario,
+  colectores, inercia, vaso, presiones), «Circuitos» y «Elementos».
+- **Excel**: Resumen, Circuitos, Elementos (zona, elemento, especificación, DN, cantidad,
+  norma o fuente) e Hipótesis.
+
+## Pendiente
+- **Esquema de principio en DXF** (decisión del usuario): siguiente entrega (7.B).
+- Validar con un proyecto real del usuario.
+- Volúmenes de agua de generador y unidades: hoy no se conocen y no entran en el vaso.

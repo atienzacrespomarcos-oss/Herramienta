@@ -122,6 +122,10 @@ class PreguntasPreparadas:
         r = self._siguiente("red_aire")
         return r(planos, niveles, info, actual) if callable(r) else r
 
+    def sistema_hidraulico(self, espacios, actual):
+        r = self._siguiente("sistema_hidraulico")
+        return r(espacios, actual) if callable(r) else r
+
 
 @pytest.fixture
 def ventana(qtbot):
