@@ -13,6 +13,13 @@ Estado: **en desarrollo**.
 | Redes | **Impulsión, retorno y extracción/ventilación**. |
 | Sección | **Rectangular con alto máximo** (falso techo); circular por tramo si se quiere. |
 
+### Ventilación (08-11-2026)
+| Pregunta | Decisión |
+|---|---|
+| Alcance | «Ventilación es algo que me preocupa poco. **Lo sencillo**». |
+| Ventilador | «No te demores en esto. Tampoco en diseño de VRF. **Cada fabricante tiene su software**». La herramienta da el punto de trabajo; el modelo se elige en el selector del fabricante. |
+| Después | Parar y orientar con el usuario los siguientes pasos. |
+
 ## Fuentes y criterios
 
 ### Pérdidas por rozamiento
@@ -89,6 +96,31 @@ Estado: **en desarrollo**.
 - **Extracción**: el aire exterior del espacio.
 - **Reparto**: a partes iguales entre los terminales del espacio. El atributo CAUDAL del
   bloque, si lo tiene, manda.
+
+### Ventilación (`rules/ventilacion.py`)
+- **Fuente**: Soler & Palau, *Manual práctico de ventilación*, cap. 3 «Ventilación
+  ambiental», p. 41–42
+  (<https://info.solerpalau.com/hubfs/Ebooks/SPL%20-%20Manual%20pr%C3%A1ctico%20de%20ventilaci%C3%B3n/Manual%20de%20ventilacion_completo_LR.pdf>).
+  Es el método de sus casos prácticos de naves (CP39: 12 renovaciones/h; CP40: 6;
+  CP47: 4 a 10).
+- **Caudal de cada espacio**, una opción por red:
+  - **de las cargas** (lo de antes);
+  - **renovaciones/h según volumen**, tabla 3.6 del manual (≤ 1000 m³: 20; hasta 5000: 15;
+    hasta 10 000: 10; más: 6). El manual dice que «da buenos resultados con carácter
+    general». En los límites, que el manual solapa, se toma el tramo de menor volumen;
+  - **renovaciones/h fijas**, de 0,5 a 60 (el rango de la tabla 3.5). La tabla 3.5 sale
+    como ayuda en el diálogo: fábricas y talleres de mecanizado 5–10, cocinas industriales
+    15–20, fundiciones 20–30, naves con hornos y baños 30–60, pintura 40–60.
+  - Con renovaciones, el caudal **nunca baja del aire exterior** del espacio: el mínimo
+    legal del RD 486/1997, anejo III (30 o 50 m³/h por trabajador), que el propio manual
+    cita, o el del RITE en locales para personas.
+- Solo en **extracción** y en **impulsión de ventilación**: el retorno sale de la
+  impulsión y la impulsión de climatización, de la carga del local. La orden lo rechaza y
+  el diálogo no lo ofrece.
+- **Punto de trabajo del ventilador**: caudal total, presión de la red (camino crítico,
+  sin el equipo) y **potencia eléctrica máxima** = límite de la SFP exigida (RITE
+  IT 1.2.4.2.5, W por m³/s) × caudal. Con eso se elige el modelo en el selector del
+  fabricante (Sodeca, S&P…). La herramienta no lleva curvas de ventiladores.
 
 ## En el proyecto (`app/redes.py`, paso «Redes de aire»)
 - **Qué se guarda** (esquema V6, tabla `red_aire`):

@@ -142,3 +142,35 @@ def test_dialogo_real(qtbot):
     assert r["bloques_terminales"] == ["DIFUSOR"] and r["bloque_equipo"] == "UTA"
     assert r["alto_maximo"] == pytest.approx(0.35) and r["friccion_objetivo"] == 1.2
     assert "id" not in r
+    assert r["criterio_caudal"] == "cargas" and r["renovaciones"] is None
+
+
+def test_dialogo_renovaciones_solo_en_ventilacion(qtbot):
+    from PySide6.QtCore import Qt
+
+    from traza.app.ordenes import CRITERIOS_CAUDAL
+
+    planos = [{"id": "p1", "documento_nombre": "Nave.dxf"}]
+    d = DialogoRed(None, planos, [], lambda _p: (["M-EXT"], ["REJILLA"]), None)
+    qtbot.addWidget(d)
+    # Las opciones del diálogo son exactamente las que admite la orden.
+    assert [d.criterio.itemData(i) for i in range(d.criterio.count())] == list(CRITERIOS_CAUDAL)
+    # Impulsión de climatización (lo que sale por defecto): no se ofrecen renovaciones.
+    assert not d.criterio.isEnabled() and not d.renovaciones.isEnabled()
+    d.tipo.setCurrentIndex(d.tipo.findData("retorno"))
+    assert not d.criterio.isEnabled()
+    d.tipo.setCurrentIndex(d.tipo.findData("extraccion"))
+    assert d.criterio.isEnabled() and not d.renovaciones.isEnabled()
+    d.criterio.setCurrentIndex(d.criterio.findData("renovaciones"))
+    assert d.renovaciones.isEnabled()
+    d.nombre.setText("Extracción nave")
+    d.terminales.item(0).setCheckState(Qt.Checked)
+    d.renovaciones.setText("7,5")
+    d._aceptar()
+    assert d.resultado["criterio_caudal"] == "renovaciones"
+    assert d.resultado["renovaciones"] == 7.5
+    # Volver a climatización + impulsión deja el criterio en «cargas» y sin renovaciones.
+    d.tipo.setCurrentIndex(d.tipo.findData("impulsion"))
+    assert d.criterio.currentData() == "cargas" and not d.renovaciones.isEnabled()
+    d._aceptar()
+    assert d.resultado["criterio_caudal"] == "cargas" and d.resultado["renovaciones"] is None

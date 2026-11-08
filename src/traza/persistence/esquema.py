@@ -274,5 +274,15 @@ CREATE TABLE red_aire (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6)
+# V7 (08-11-2026): ventilación sencilla (docs/modules/redes_aire.md, «Ventilación»). El caudal
+# de cada espacio puede salir de las cargas (lo de antes), de renovaciones por hora según su
+# volumen (tabla 3.6 del manual de S&P) o de unas renovaciones fijas.
+V7 = """
+ALTER TABLE red_aire ADD COLUMN criterio_caudal TEXT NOT NULL DEFAULT 'cargas'
+    CHECK (criterio_caudal IN ('cargas', 'volumen', 'renovaciones'));
+ALTER TABLE red_aire ADD COLUMN renovaciones REAL
+    CHECK (renovaciones IS NULL OR renovaciones > 0);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7)
 VERSION_ACTUAL = len(MIGRACIONES)

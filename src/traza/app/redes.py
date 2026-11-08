@@ -16,6 +16,7 @@ from traza.core.numeros import leer_numero
 from traza.engines import conductos as cd
 from traza.engines import topologia_conductos as topo
 from traza.io.dxf import PlanoDxf
+from traza.rules import ventilacion
 
 PREFIJO = {"impulsion": "D", "retorno": "R", "extraccion": "E"}
 ATRIBUTO_CAUDAL = "CAUDAL"  # m³/h
@@ -89,6 +90,17 @@ class ResultadoRedAire:
             return None
         return cd.rendimiento_minimo(self.calculo.presion_necesaria_pa, self.sfp_exigida)
 
+    @property
+    def potencia_maxima_w(self) -> float | None:
+        """Potencia eléctrica máxima del ventilador que permite la SFP exigida (RITE
+        IT 1.2.4.2.5): límite de la categoría (W por m³/s) × caudal. Para pedirlo al
+        fabricante junto con caudal y presión: es el punto de trabajo (decisión del usuario,
+        08-11-2026: el modelo se elige en el selector del fabricante)."""
+        limite = dict(cd.SFP).get(self.sfp_exigida)
+        if self.calculo is None or limite is None:
+            return None
+        return limite * self.caudal_total_m3h / 3600
+
 
 def _atributo(bloque, nombre: str) -> str | None:
     for etiqueta, valor in bloque.atributos:
@@ -97,9 +109,31 @@ def _atributo(bloque, nombre: str) -> str | None:
     return None
 
 
-def caudal_espacio_m3h(tipo: str, carga, salto_k: float, presion_pa: float) -> tuple[float, str]:
+def caudal_espacio_m3h(
+    tipo: str,
+    carga,
+    salto_k: float,
+    presion_pa: float,
+    criterio: str = "cargas",
+    renovaciones: float | None = None,
+) -> tuple[float, str]:
     """Caudal de un espacio según el tipo de red, con su explicación."""
     exterior = carga.aire_exterior_m3h
+    if criterio != "cargas" and tipo != "retorno":
+        # Ventilación ambiental (manual de S&P, cap. 3): renovaciones del volumen, y nunca
+        # menos que el aire exterior del espacio (RITE o RD 486/1997, que el manual cita).
+        if criterio == "volumen":
+            n = ventilacion.renovaciones_por_volumen(carga.volumen_m3)
+            de_donde = "tabla 3.6 de S&P"
+        else:
+            n = float(renovaciones or 0.0)
+            de_donde = "fijas"
+        por_renovaciones = n * carga.volumen_m3
+        if por_renovaciones >= exterior:
+            return por_renovaciones, (
+                f"{n:g} renovaciones/h ({de_donde}) de {carga.volumen_m3:.0f} m³"
+            )
+        return exterior, "aire exterior del espacio (mayor que las renovaciones)"
     if tipo == "extraccion":
         return exterior, "aire exterior del espacio (cargas)"
     # La carga del LOCAL: sin la del aire exterior de ventilación, que se trata en el equipo
@@ -176,6 +210,7 @@ def calcular(
 
     cargas_por_id = {c.espacio_id: c for c in cargas.espacios} if cargas else {}
     presion = cargas.condiciones["normal"].presion_pa if cargas else 101_325.0
+    criterio = (red.get("criterio_caudal") or "cargas", red.get("renovaciones"))
     terminales: list[TerminalRed] = []
     usados: set[str] = set()
     for _id, lista in sorted(
@@ -186,7 +221,7 @@ def calcular(
         q_esp, motivo = None, ""
         if e is not None and e["id"] in cargas_por_id:
             q_esp, motivo = caudal_espacio_m3h(
-                tipo, cargas_por_id[e["id"]], red["salto_impulsion"], presion
+                tipo, cargas_por_id[e["id"]], red["salto_impulsion"], presion, *criterio
             )
         for b, _e in lista:
             n = len(terminales) + 1
@@ -224,7 +259,7 @@ def calcular(
             c = cargas_por_id.get(e["id"])
             if c is None or e["id"] in por_espacio:
                 continue
-            q, _ = caudal_espacio_m3h(tipo, c, red["salto_impulsion"], presion)
+            q, _ = caudal_espacio_m3h(tipo, c, red["salto_impulsion"], presion, *criterio)
             if q > 0:
                 avisos.append(
                     f"{e['codigo']} {e['nombre'] or ''}: necesita {q:.0f} m³/h y no tiene "

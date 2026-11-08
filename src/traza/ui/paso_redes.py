@@ -299,11 +299,13 @@ class PaginaRedes(QWidget):
             limite = dict(SFP)[r.sfp_exigida]
             texto += (
                 f" · {_n(c.presion_necesaria_pa, 0)} Pa en la red (crítico {c.terminal_critico})"
-                f" · ventilador SFP {r.sfp_exigida} como máximo"
+                f" · ventilador SFP {r.sfp_exigida}: como mucho {_n(r.potencia_maxima_w, 0)} W"
             )
             self.resumen.setToolTip(
-                f"Presión necesaria en la red, sin el equipo. RITE IT 1.2.4.2.5: SFP "
-                f"{r.sfp_exigida} = como mucho {limite} W por m³/s."
+                f"Punto de trabajo para el selector del fabricante: caudal, presión de la red "
+                f"(sin el equipo: filtros, baterías y rejillas exteriores, aparte) y potencia "
+                f"eléctrica máxima. RITE IT 1.2.4.2.5: SFP {r.sfp_exigida} = como mucho "
+                f"{limite} W por m³/s."
             )
         if r.avisos:
             texto += "\n⚠ " + "\n⚠ ".join(r.avisos)
