@@ -94,6 +94,10 @@ def test_recorrido_completo(ventana, tmp_path):
     pr.a_cambiar.trigger()
     assert "(Retorno)" in pr.selector.currentText()
 
+    q.preparar("destino_dxf", tmp_path / "red.dxf")
+    pr.a_autocad.trigger()
+    assert (tmp_path / "red.dxf").exists() and (tmp_path / "red.lsp").exists()
+    assert any("TRAZA_RED" in i for i in q.informaciones)
     q.preparar("destino_excel", tmp_path / "red.xlsx")
     pr.a_excel.trigger()
     assert load_workbook(tmp_path / "red.xlsx")["Tramos"].max_row == 4

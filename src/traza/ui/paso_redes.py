@@ -33,6 +33,22 @@ COLOR_CRITICO = QColor(200, 40, 40)
 COLOR_ELEGIDO = QColor(230, 126, 34)
 
 
+_RESERVADOS_WINDOWS = {"CON", "PRN", "AUX", "NUL"} | {
+    f"{base}{n}" for base in ("COM", "LPT") for n in range(1, 10)
+}
+
+
+def _archivo(texto: str) -> str:
+    """Nombre válido en Windows para sugerir (revisión 08-11-2026): sin < > : " / \\ | ? *
+    ni caracteres de control, sin punto ni espacio al final (Windows los quita sin avisar)
+    y sin nombres reservados (CON, NUL, COM1…)."""
+    limpio = "".join("-" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in texto)
+    limpio = limpio.strip().rstrip(". ")
+    if limpio.split(".")[0].strip().upper() in _RESERVADOS_WINDOWS:
+        limpio = f"red {limpio}"
+    return limpio or "red"
+
+
 def _n(v, decimales: int = 1) -> str:
     return "" if v is None else escribir_numero(round(float(v), decimales))
 
@@ -81,7 +97,9 @@ class PaginaRedes(QWidget):
         division.setStretchFactor(0, 3)
         division.setStretchFactor(1, 2)
         caja = QVBoxLayout(self)
-        caja.addWidget(_barra([self.a_nueva, self.a_cambiar, self.a_borrar, self.a_excel]))
+        caja.addWidget(
+            _barra([self.a_nueva, self.a_cambiar, self.a_borrar, self.a_excel, self.a_autocad])
+        )
         caja.addLayout(cabecera)
         caja.addWidget(self.resumen)
         caja.addWidget(division, 1)
@@ -96,6 +114,7 @@ class PaginaRedes(QWidget):
         self.a_borrar = a(m, "Borrar red", self.accion_borrar)
         m.addSeparator()
         self.a_excel = a(m, "Exportar listado Excel…", self.accion_excel)
+        self.a_autocad = a(m, "Exportar a AutoCAD (DXF y LISP)…", self.accion_autocad)
 
     @property
     def proyecto(self):
@@ -158,11 +177,30 @@ class PaginaRedes(QWidget):
             return
         red = self.proyecto.red(self.red_id())
         destino = self.v.preguntas.destino_excel(
-            self.proyecto.carpeta.raiz.parent / f"{self.proyecto.nombre} - {red['nombre']}.xlsx"
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - {_archivo(red['nombre'])}.xlsx"
         )
         if destino is not None:
             ruta = self.proyecto.exportar_red_excel(red["id"], destino)
             self.v.preguntas.informacion("Listado Excel", f"Guardado en {ruta}")
+
+    def accion_autocad(self) -> None:
+        if self.red_id() is None:
+            return
+        red = self.proyecto.red(self.red_id())
+        destino = self.v.preguntas.destino_dxf(
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - {_archivo(red['nombre'])}.dxf"
+        )
+        if destino is None:
+            return
+        dxf_ruta, lsp_ruta = self.proyecto.exportar_red_autocad(red["id"], destino)
+        self.v.preguntas.informacion(
+            "Exportar a AutoCAD",
+            f"Guardados:\n{dxf_ruta}\n{lsp_ruta}\n\nEl DXF se abre en AutoCAD 2013 o "
+            "posterior. Para dibujar la red dentro de tu plano: APPLOAD, carga el .lsp y "
+            "escribe TRAZA_RED.",
+        )
 
     # --- Contenido -----------------------------------------------------------------------
 
@@ -322,5 +360,5 @@ class PaginaRedes(QWidget):
         self.v.menu_redes.menuAction().setVisible(con_paso)
         self.a_nueva.setEnabled(con_paso)
         hay_red = con_paso and self.red_id() is not None
-        for a in (self.a_cambiar, self.a_borrar, self.a_excel):
+        for a in (self.a_cambiar, self.a_borrar, self.a_excel, self.a_autocad):
             a.setEnabled(hay_red)

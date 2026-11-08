@@ -41,7 +41,15 @@ from traza.app.ordenes import (
 from traza.core.estados import Estado
 from traza.core.geometria import Contorno, Vertice
 from traza.core.procedencia import Origen, Procedencia
-from traza.io import bc3, bc3_modificar, clima_idae, dxf, informe_cargas, informe_redes
+from traza.io import (
+    bc3,
+    bc3_modificar,
+    clima_idae,
+    dxf,
+    informe_cargas,
+    informe_redes,
+    salida_autocad,
+)
 from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
 from traza.io.excel import exportar_modificado, exportar_partidas, exportar_plano
@@ -1127,6 +1135,27 @@ class Proyecto:
                 r.red, r.terminales, r.topologia, r.calculo, (aviso, *r.avisos), r.medicion
             )
         return r
+
+    def exportar_red_autocad(self, red_id: str, destino: Path) -> tuple[Path, Path]:
+        """DXF R2013 y LISP de la red, en las unidades y coordenadas de su plano: el DXF para
+        abrirlo o superponerlo; el LISP para dibujarla dentro del plano abierto."""
+        r = self.calcular_red(red_id)
+        if r.calculo is None:
+            raise OrdenRechazada(
+                "La red no se ha podido calcular: revisa los avisos antes de exportarla."
+            )
+        unidad = self.plano(r.red["plano_id"])["unidad"]
+        destino = Path(destino)
+        try:
+            dxf_ruta = salida_autocad.escribir_dxf(destino, r, unidad)
+            lsp_ruta = salida_autocad.escribir_lisp(dxf_ruta.with_suffix(".lsp"), r, unidad)
+        except PermissionError as exc:
+            # En Windows, un fichero abierto en AutoCAD no se puede sobrescribir.
+            raise OrdenRechazada(
+                f"No se puede escribir «{Path(exc.filename or destino).name}»: ¿está abierto en "
+                "AutoCAD? Ciérralo o elige otro nombre."
+            ) from exc
+        return dxf_ruta, lsp_ruta
 
     def exportar_red_excel(self, red_id: str, destino: Path) -> Path:
         return informe_redes.exportar_excel(Path(destino), self.nombre, self.calcular_red(red_id))

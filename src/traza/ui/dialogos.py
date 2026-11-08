@@ -456,6 +456,12 @@ class Preguntas:
         d = DialogoRed(self.v, planos, niveles, info, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def destino_dxf(self, sugerido: Path) -> Path | None:
+        ruta, _ = QFileDialog.getSaveFileName(
+            self.v, "Exportar a AutoCAD (DXF y LISP)", str(sugerido), "DXF (*.dxf)"
+        )
+        return Path(ruta) if ruta else None
+
     def destino_pdf(self, sugerido: Path) -> Path | None:
         ruta, _ = QFileDialog.getSaveFileName(
             self.v, "Exportar informe PDF", str(sugerido), "PDF (*.pdf)"

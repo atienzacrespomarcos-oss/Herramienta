@@ -2,6 +2,46 @@
 
 ## [Sin publicar]
 
+### Etapa 5.B · salida a AutoCAD de las redes de aire (08-11-2026)
+- «Exportar a AutoCAD…» en el paso Redes: un DXF R2013 y un LISP con el mismo contenido.
+  - Contenido: ejes, conducto a su ancho (abierto solo donde llega un ramal) y etiquetas de
+    sección y caudal por tramo y por terminal.
+  - Capas por tipo de red, XDATA TRAZA con el id de cada tramo, unidades y coordenadas del
+    plano de partida.
+  - El LISP (APPLOAD + TRAZA_RED) dibuja la red dentro del plano abierto. Solo usa
+    funciones de AutoLISP 2013 (lista blanca con prueba) y se escribe en cp1252.
+- Pruebas:
+  - el DXF se vuelve a leer con ezdxf (auditoría sin errores) y con el lector de TRAZA;
+  - se comprueba la geometría de la T y de las esquinas;
+  - el LISP se comprueba con paréntesis equilibrados, funciones permitidas y codificación.
+- Correcciones de la revisión independiente:
+  - un nombre de red con comillas o barra invertida rompía el LISP: se escapa;
+  - etiquetas centradas sobre el conducto según el sentido de lectura y separadas una
+    altura de texto; las de terminal, debajo, para no pisar las de los tramos;
+  - los codos de dos tramos quedaban abiertos: se cierran;
+  - el recorte de la T solo abre el lado al que llega el ramal, con tolerancia en 45°;
+  - segmentos de longitud nula descartados; inglete limitado en giros cerrados;
+  - el DXF abre encuadrado (zoom extensión);
+  - fichero abierto en AutoCAD: mensaje claro en lugar de un error; nombres de fichero
+    sin caracteres que Windows no admite.
+- Correcciones de la segunda revisión:
+  - el codo entre dos tramos de distinto ancho quedaba abierto (los lados se emparejaban
+    por su semiancho): ahora por izquierda/derecha;
+  - también se cierran dos tramos que salen (o llegan) al mismo punto, p. ej. dos salidas
+    del equipo;
+  - giro muy cerrado: chaflán en lugar de un pico de hasta 11 semianchos; el lado interior
+    ya no se cruza consigo mismo;
+  - reducción en línea o en la T (lado opuesto al ramal): se dibuja el escalón;
+  - puntos casi repetidos del eje descartados también al buscar las uniones;
+  - nombre de fichero: sin caracteres de control, punto final ni nombres reservados (CON,
+    NUL…).
+- Correcciones de la tercera revisión (sin bloqueantes):
+  - T con reducción: cada lado del ramal se recorta con el tramo que tiene a ese lado (antes
+    quedaba un hueco de 50 mm en la cara del estrecho);
+  - vuelta en U tratada como tal (chaflán), no como tramo recto;
+  - reducción con un quiebro de 1° o 2°: también lleva el escalón;
+  - «NUL .txt» se reconoce como nombre reservado.
+
 ### Etapa 5 · redes de aire (07-11-2026)
 - Paso «Redes de aire» para impulsión, retorno y extracción. Cada red se define por la capa
   de ejes que dibuja el usuario en AutoCAD, sus bloques de difusores o rejillas y el
