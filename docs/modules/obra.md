@@ -16,10 +16,13 @@ coste objetivo).
 | Documentos | En el uso diario se echan **en TRAZA, en el ordenador de trabajo**, «sin costes añadidos»: Excel y BC3 se leen en local sin IA; los PDF, con Claude Code y la suscripción del usuario (ADR-0013). Los documentos reales no van al repositorio (es público); las pruebas usan datos inventados. |
 | Pedidos | Siguen fuera (09-11-2026). |
 
-## Lo que muestran los documentos del usuario (09-11-2026)
+## Lo que muestran las plantillas del usuario (09-11-2026)
 
-Vistos fuera del repositorio (no se copian aquí nombres de clientes, proveedores ni
-importes). Lo que importa es su estructura:
+Son **plantillas inventadas** que el usuario compartió para enseñar su forma de trabajar,
+no documentos de ninguna obra: «son plantillas inventadas y que no uses de ninguna forma
+esto. Es parte complementaria que te enseñó mi forma de trabajar» (usuario, 09-11-2026).
+No se usan como datos, no se copian al repositorio ni se usan en las pruebas; de ellas
+solo se toma la **estructura** y la forma de trabajar:
 
 - **Comparativo de costes** (Excel exportado de Presto y trabajado a mano, una hoja):
   - Columnas A–D: `Código`, `Nat` (Capítulo, Partida, Material, Mano de obra, Otros), `Ud`,
@@ -145,8 +148,8 @@ importes). Lo que importa es su estructura:
   - Se leen los resultados guardados por Excel; una fórmula sin resultado se avisa.
   - Un texto en lugar de precio («NO INCLUIDO …») se guarda como nota, con importe 0.
   - Comprobación: objetivo − suma de paquetes > 1 céntimo → aviso «sin repartir».
-  - Comprobado con el comparativo real del usuario (fuera del repositorio): el total leído
-    coincide al céntimo con su fila de TOTAL, incluida su línea añadida a mano.
+  - Probado con un comparativo inventado propio (en las pruebas) con la misma estructura;
+    falta el comparativo de una obra real del usuario.
   - Uno por obra: importar otro lo sustituye (se puede deshacer). Esquema V11.
 - **Revisión independiente (09-11-2026)**: la regla de la línea añadida a mano podía contar
   dos veces un cierre en valores o perder una línea con código; corregido como se describe
