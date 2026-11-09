@@ -15,6 +15,7 @@
 | `referencia_origen` | documento + página/hoja/celda/región + texto extraído + método (manual/determinista/IA) + confianza. | Base de la trazabilidad (RF-021). |
 | `nivel`, `espacio`, `obstaculo` | Geometría de edificio: polígono, cotas, alturas, uso, ocupación. | Planta libre (RF-040). |
 | `cargas_proyecto`, `cargas_espacio` | Clima (guía del IDAE como documento y página de la estación), obra, hipótesis de conjunto; uso de cada espacio, ajustes del usuario y correcciones de fachada. | Esquema V5 (Etapa 4). Lo propuesto no se guarda: sale del catálogo con su fuente al calcular. `docs/modules/cargas.md`. |
+| `subcuadro` | Subcuadro eléctrico de clima: suministro, alimentación y salidas (JSON). | Esquema V9 (Etapa 8). Resultados calculados cada vez. `docs/modules/electricidad.md`. |
 | `sistema_hidraulico` | Sistema hidráulico primario-secundario: tipo (2/4 tubos), tubería, temperaturas, alturas y sus circuitos (JSON: espacios, unidades, longitud, pérdida). | Esquema V8 (Etapa 7). Resultados calculados cada vez. `docs/modules/hidronica.md`. |
 | `red_aire` | Red de aire leída de un DXF: capa de ejes, bloques de terminales y equipo, criterios de dimensionado. | Esquema V6 (Etapa 5); V7 añade el criterio de caudal (cargas, renovaciones por volumen o fijas) y las renovaciones. Tramos y resultados se calculan del dibujo. `docs/modules/redes_aire.md`. |
 | `sistema` | Disciplina, tipo, medio (aire, agua, R-32…), parámetros de diseño, clasificación bienestar/proceso. | |

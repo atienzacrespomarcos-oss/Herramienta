@@ -102,3 +102,22 @@ Estado: **en desarrollo**.
   con la carga de todas sus salidas (ITC-BT-47: 125 % del motor mayor más el resto). Se
   elige la menor sección de esa línea con la que todas las salidas pueden cumplir el
   límite total (alimentación + salida); después, la menor sección de cada salida.
+
+## En el proyecto (`app/subcuadros.py`, paso «Subcuadros de clima», menú «Electricidad»)
+- **Qué se guarda** (esquema V9, tabla `subcuadro`): nombre, suministro, longitud y
+  método de la alimentación, y las salidas en JSON (nombre, kW eléctricos, fases,
+  longitud, cos φ, motor, variador, método).
+- **Proponer desde los equipos**: una salida por generador, bomba de primario, bomba y
+  unidades de cada circuito de los sistemas hidráulicos, y por ventilador de cada red de
+  aire. La potencia eléctrica la pone el usuario con la ficha del modelo; la del
+  ventilador se propone con la máxima que permite su SFP (RITE IT 1.2.4.2.5).
+- **Trifásicos con neutro** (3F+N+PE, interruptor 4P) y monofásicos F+N+PE (2P).
+- **En pantalla**: la alimentación (cable, IG, caída, límite, CUMPLE / NO CUMPLE) y una fila
+  por salida (kW, Ib, cable, magnetotérmico, diferencial, caída total).
+- **Unifilar DXF** R2013 (`io/unifilar_dxf.py`): alimentación con su IG, embarrado, una
+  salida por equipo con magnetotérmico, diferencial, cable rotulado y receptor; capas
+  `TRAZA-E-*`, texto en Arial y leyenda con las fuentes.
+
+## Pendiente
+- Validar con un subcuadro real del usuario.
+- Abrir el unifilar en su AutoCAD.
