@@ -338,5 +338,22 @@ ALTER TABLE plano ADD COLUMN sustituido_por TEXT REFERENCES plano(id);
 CREATE INDEX cambio_orden ON cambio(orden_id);
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)
+# V11 (09-11-2026): Obra (docs/modules/obra.md). El coste objetivo importado del Excel de
+# Presto del usuario (uno por obra; sus partidas y paquetes en JSON, como se leyeron). El
+# presupuesto contratado es una medición ya leída: va en `meta` («venta_medicion»).
+V11 = """
+CREATE TABLE coste_objetivo (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    documento_id TEXT NOT NULL REFERENCES documento(id),
+    hoja TEXT NOT NULL,
+    paquetes TEXT NOT NULL,
+    partidas TEXT NOT NULL,
+    avisos TEXT NOT NULL,
+    lector TEXT NOT NULL,
+    version_lector TEXT NOT NULL,
+    leido TEXT NOT NULL
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11)
 VERSION_ACTUAL = len(MIGRACIONES)

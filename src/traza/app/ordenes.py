@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from traza.core.estados import Estado, transicion_permitida
 from traza.core.geometria import MOTOR as MOTOR_GEOMETRIA
@@ -424,6 +425,9 @@ ENCARGOS = {
     "diseno": "Diseño (plano del cliente)",
     "oferta": "Oferta de un proyecto ajeno",
     "ampliacion": "Ampliación de una instalación existente",
+    # Obra (09-11-2026, docs/modules/obra.md): control de venta, coste, certificaciones y
+    # previsión. Nace desde cero o pasando una Oferta a Obra (cambiar el tipo de encargo).
+    "obra": "Obra (venta, costes y certificaciones)",
 }
 
 
@@ -439,6 +443,69 @@ class CambiarEncargo(Orden):
         if antes == despues:
             raise OrdenRechazada("El proyecto ya tiene ese tipo de encargo.")
         return [Delta("meta", antes, despues)]
+
+
+@dataclass
+class FijarVentaContratada(Orden):
+    """La medición leída que es el presupuesto contratado de la obra (docs/modules/obra.md,
+    «Venta»). Sale de Presto (BC3 o Excel) o del PDF del cliente."""
+
+    medicion_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if leer(con, "medicion", {"id": self.medicion_id}) is None:
+            raise OrdenRechazada("Esa medición no está leída en el proyecto.")
+        antes = leer(con, "meta", {"clave": "venta_medicion"})
+        despues = {"clave": "venta_medicion", "valor": self.medicion_id}
+        if antes == despues:
+            raise OrdenRechazada("Ya es el presupuesto contratado.")
+        return [Delta("meta", antes, despues)]
+
+
+@dataclass
+class QuitarVentaContratada(Orden):
+    """Deja la obra sin presupuesto contratado (p. ej. para volver a leer su documento)."""
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "meta", {"clave": "venta_medicion"})
+        if antes is None:
+            raise OrdenRechazada("La obra no tiene presupuesto contratado.")
+        return [Delta("meta", antes, None)]
+
+
+@dataclass
+class ImportarCosteObjetivo(Orden):
+    """El coste objetivo de la obra, leído del Excel de Presto del usuario (io/coste_presto).
+    Uno por obra: importar otro (la versión nueva del Excel) sustituye al anterior, y se
+    puede deshacer."""
+
+    documento_id: str
+    hoja: str
+    paquetes: list[str]
+    partidas: list[dict[str, Any]]
+    avisos: list[str]
+    lector: str
+    version_lector: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        doc = leer(con, "documento", {"id": self.documento_id})
+        if doc is None:
+            raise OrdenRechazada("El documento no está incorporado al proyecto.")
+        if not self.partidas:
+            raise OrdenRechazada("El coste objetivo no tiene ninguna partida.")
+        antes = leer(con, "coste_objetivo", {"id": 1})
+        despues = {
+            "id": 1,
+            "documento_id": self.documento_id,
+            "hoja": self.hoja,
+            "paquetes": json.dumps(self.paquetes, ensure_ascii=False),
+            "partidas": json.dumps(self.partidas, ensure_ascii=False),
+            "avisos": json.dumps(self.avisos, ensure_ascii=False),
+            "lector": self.lector,
+            "version_lector": self.version_lector,
+            "leido": ahora(),
+        }
+        return [Delta("coste_objetivo", antes, despues)]
 
 
 #: Los pasos que pueden quedar desactualizados (app/flujo.DEPENDE; un test lo vigila).
@@ -584,6 +651,12 @@ class QuitarMedicion(Orden):
                 "SELECT * FROM partida WHERE medicion_id = ? ORDER BY orden", (self.medicion_id,)
             )
         ]
+        venta = leer(con, "meta", {"clave": "venta_medicion"})
+        if venta is not None and venta["valor"] == self.medicion_id:
+            raise OrdenRechazada(
+                "Es el presupuesto contratado de la obra: quítalo antes como contratado "
+                "(«Obra → Quitar presupuesto contratado») o elige otro."
+            )
         usada = con.execute(
             "SELECT m.titulo FROM modificado m WHERE m.medicion_id = ?"
             " UNION SELECT m.titulo FROM cambio_modificado c"

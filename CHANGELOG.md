@@ -2,6 +2,14 @@
 
 ## [Sin publicar]
 
+### Obra · bloque 1: crear obra, venta y coste objetivo (09-11-2026)
+- Encargo **Obra**; una oferta pasa a obra cambiando el tipo de encargo.
+- **Venta**: el presupuesto contratado es una medición leída (BC3, Excel o PDF).
+- **Coste objetivo**: lee el Excel de Presto del usuario tal cual (objetivo por partida y
+  su reparto en paquetes, líneas añadidas a mano, notas «NO INCLUIDO»), con aviso de lo
+  que queda sin repartir.
+- Margen previsto (venta − objetivo) y objetivo por paquete. Esquema V11.
+
 ### Justificación con el formato de los informes del usuario (09-11-2026)
 - Con una plantilla sin estilos de título (la de Aliter), la justificación de cálculos
   sale como sus informes: título centrado, apartados en mayúsculas y negrita, texto
