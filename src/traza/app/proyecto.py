@@ -643,10 +643,8 @@ class Proyecto:
     def prevision(self) -> dict[str, Any] | None:
         return leer(self._con, "prevision", {"id": 1})
 
-    def fijar_prevision(
-        self, coste_total: float, certificacion_total: float, nota: str = ""
-    ) -> None:
-        self.ejecutar(FijarPrevision(coste_total, certificacion_total, nota))
+    def fijar_prevision(self, coste_total: float, venta_total: float, nota: str = "") -> None:
+        self.ejecutar(FijarPrevision(coste_total, venta_total, nota))
 
     def certificado_a_origen(self) -> float | None:
         """Lo certificado a origen (bloque 2b: certificaciones). Hasta entonces, no consta."""

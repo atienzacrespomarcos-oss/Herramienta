@@ -97,7 +97,7 @@ def test_prevision_del_usuario_y_foto(con_coste):
     p = con_coste
     assert p.estado_paso("prevision").estado == "pendiente"
     factura(p, importe=5000)
-    p.fijar_prevision(coste_total=24000, certificacion_total=27000, nota="tras la reunión")
+    p.fijar_prevision(coste_total=24000, venta_total=27000, nota="tras la reunión")
     f = p.foto_obra()
     assert f.prevision["coste_total"] == 24000
     assert f.margen_previsto == 3000 and f.margen_previsto_pct == pytest.approx(100 * 3000 / 27000)
@@ -105,9 +105,9 @@ def test_prevision_del_usuario_y_foto(con_coste):
     assert f.venta == pytest.approx(26500) and f.objetivo == pytest.approx(23200)
     assert p.estado_paso("prevision").estado == "hecho"
     with pytest.raises(OrdenRechazada, match="no cambia"):
-        p.fijar_prevision(coste_total=24000, certificacion_total=27000, nota="tras la reunión")
+        p.fijar_prevision(coste_total=24000, venta_total=27000, nota="tras la reunión")
     with pytest.raises(OrdenRechazada, match="negativa"):
-        p.fijar_prevision(coste_total=-1, certificacion_total=0)
+        p.fijar_prevision(coste_total=-1, venta_total=0)
     p.deshacer()
     assert p.prevision() is None
 

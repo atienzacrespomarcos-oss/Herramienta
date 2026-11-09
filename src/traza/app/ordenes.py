@@ -621,11 +621,11 @@ class FijarPrevision(Orden):
     la estima: la guarda tal cual, con su fecha."""
 
     coste_total: float
-    certificacion_total: float
+    venta_total: float
     nota: str = ""
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
-        for nombre, v in (("coste", self.coste_total), ("certificación", self.certificacion_total)):
+        for nombre, v in (("coste", self.coste_total), ("venta", self.venta_total)):
             if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v):
                 raise OrdenRechazada(f"La {nombre} prevista tiene que ser un número.")
             if v < 0:
@@ -634,7 +634,7 @@ class FijarPrevision(Orden):
         despues = {
             "id": 1,
             "coste_total": float(self.coste_total),
-            "certificacion_total": float(self.certificacion_total),
+            "venta_total": float(self.venta_total),
             "nota": self.nota.strip() or None,
             "fecha": ahora(),
         }

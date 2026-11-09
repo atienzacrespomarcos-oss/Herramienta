@@ -5,7 +5,7 @@
 ### Obra · bloque 2a: coste real y previsión (09-11-2026)
 - **Coste real**: facturas por paquete (proveedor, nº, fecha, importe; abonos en negativo),
   objetivo frente a facturado por paquete, paquetes que se han pasado, cerrar y reabrir.
-- **Previsión**: dos totales del usuario (certificación y coste a fin de obra) junto al
+- **Previsión**: dos totales del usuario (venta y coste a fin de obra) junto al
   contrato y objetivo y a lo real a hoy. Esquema V12.
 
 ### Obra · bloque 1: crear obra, venta y coste objetivo (09-11-2026)

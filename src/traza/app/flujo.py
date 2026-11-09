@@ -173,7 +173,7 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
         return None if p.facturas() else EstadoPaso("")
     if paso == "prevision":
         if p.prevision() is None:
-            return EstadoPaso(PENDIENTE, "Falta: tu previsión (coste y certificación finales)")
+            return EstadoPaso(PENDIENTE, "Falta: tu previsión (venta y coste finales)")
         return None
     return EstadoPaso("")  # sin estado (p. ej. Equipos)
 

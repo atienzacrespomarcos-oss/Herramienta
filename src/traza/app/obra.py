@@ -196,16 +196,12 @@ class Foto:
     @property
     def margen_previsto(self) -> float | None:
         p = self.prevision
-        return None if p is None else p["certificacion_total"] - p["coste_total"]
+        return None if p is None else p["venta_total"] - p["coste_total"]
 
     @property
     def margen_previsto_pct(self) -> float | None:
         p, m = self.prevision, self.margen_previsto
-        return (
-            None
-            if p is None or not p["certificacion_total"]
-            else 100 * m / p["certificacion_total"]
-        )
+        return None if p is None or not p["venta_total"] else 100 * m / p["venta_total"]
 
     @property
     def descuadrados(self) -> list[EstadoPaquete]:

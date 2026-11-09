@@ -158,14 +158,14 @@ def test_prevision_en_pantalla(ventana):
     pp = v.pagina_prevision
     v.ir_a_paso("prevision")
     assert "Aún no has puesto tu previsión" in pp.resumen.text()
-    q.preparar("prevision", {"certificacion_total": 27000.0, "coste_total": 24000.0, "nota": ""})
+    q.preparar("prevision", {"venta_total": 27000.0, "coste_total": 24000.0, "nota": ""})
     pp.a_prevision.trigger()
     assert not q.avisos, q.avisos
     filas = {
         pp.tabla.item(i, 0).text(): [pp.tabla.item(i, j).text() for j in (1, 2, 3)]
         for i in range(pp.tabla.rowCount())
     }
-    assert filas["Venta / certificación"] == ["26.500,00 €", "—", "27.000,00 €"]
+    assert filas["Venta"] == ["26.500,00 €", "—", "27.000,00 €"]
     assert filas["Coste"] == ["23.200,00 €", "0,00 €", "24.000,00 €"]
     assert filas["Margen"] == ["3.300,00 €", "—", "3.000,00 €"]
-    assert "Lo certificado llegará con las certificaciones" in pp.resumen.text()
+    assert "La venta real (lo certificado) llegará con las certificaciones" in pp.resumen.text()

@@ -101,18 +101,18 @@ class DialogoPrevision(QDialog):
         super().__init__(padre)
         self.setWindowTitle("Tu previsión a fin de obra")
         self.resultado: dict | None = None
-        self.certificacion = QLineEdit()
+        self.venta = QLineEdit()
         self.coste = QLineEdit()
         self.nota = QLineEdit()
         self.nota.setPlaceholderText("Opcional: de dónde sale (p. ej. «tras la reunión del 15»)")
         if actual is not None:
-            self.certificacion.setText(escribir_numero(actual["certificacion_total"]))
+            self.venta.setText(escribir_numero(actual["venta_total"]))
             self.coste.setText(escribir_numero(actual["coste_total"]))
             self.nota.setText(actual["nota"] or "")
         self.error = QLabel()
         self.error.setStyleSheet("color: #c0392b")
         f = QFormLayout(self)
-        f.addRow("Certificación total prevista (€)", self.certificacion)
+        f.addRow("Venta total prevista (€)", self.venta)
         f.addRow("Coste total previsto (€)", self.coste)
         f.addRow("Nota", self.nota)
         f.addRow(self.error)
@@ -120,7 +120,7 @@ class DialogoPrevision(QDialog):
 
     def _aceptar(self) -> None:
         try:
-            cert = _importe(self.certificacion.text(), "Certificación")
+            cert = _importe(self.venta.text(), "Venta")
             coste = _importe(self.coste.text(), "Coste")
         except ValueError as exc:
             self.error.setText(str(exc))
@@ -129,7 +129,7 @@ class DialogoPrevision(QDialog):
             self.error.setText("Los totales previstos no pueden ser negativos.")
             return
         self.resultado = {
-            "certificacion_total": cert,
+            "venta_total": cert,
             "coste_total": coste,
             "nota": self.nota.text().strip(),
         }

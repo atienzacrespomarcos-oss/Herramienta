@@ -444,10 +444,10 @@ class PaginaPrevision(QWidget):
         margen_obj = None if f.venta is None or f.objetivo is None else f.venta - f.objetivo
         filas = [
             [
-                "Venta / certificación",
+                "Venta",
                 _eur(f.venta),
                 _eur(f.certificado),
-                _eur(p["certificacion_total"]) if p else "—",
+                _eur(p["venta_total"]) if p else "—",
             ],
             ["Coste", _eur(f.objetivo), _eur(f.facturado), _eur(p["coste_total"]) if p else "—"],
             ["Margen", _eur(margen_obj), _eur(f.margen_real), _eur(f.margen_previsto)],
@@ -466,7 +466,7 @@ class PaginaPrevision(QWidget):
             else "Aún no has puesto tu previsión: «Obra → Actualizar mi previsión…»."
         )
         if f.certificado is None:
-            texto += " Lo certificado llegará con las certificaciones."
+            texto += " La venta real (lo certificado) llegará con las certificaciones."
         self.resumen.setText(texto)
 
     def actualizar_estado(self, hay: bool) -> None:

@@ -379,7 +379,7 @@ CREATE TABLE paquete_cerrado (
 CREATE TABLE prevision (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     coste_total REAL NOT NULL CHECK (coste_total >= 0),
-    certificacion_total REAL NOT NULL CHECK (certificacion_total >= 0),
+    venta_total REAL NOT NULL CHECK (venta_total >= 0),
     nota TEXT,
     fecha TEXT NOT NULL
 );
