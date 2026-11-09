@@ -177,7 +177,8 @@ def _leer_hoja(wv, wf) -> CosteObjetivo:
         nat = _texto(wv.cell(fila, c_nat).value)
         resumen = _texto(wv.cell(fila, c_res).value)
         imp_v = wv.cell(fila, objetivo[3]).value
-        if not nat and resumen.upper().startswith("TOTAL") and _numero(imp_v) is not None:
+        es_total = not nat and not codigo and resumen.upper().startswith("TOTAL")
+        if es_total and _numero(imp_v) is not None:
             total_excel = (fila, _numero(imp_v))  # la última fila de TOTAL, para contrastar
             continue
         if nat == "Capítulo":
@@ -195,7 +196,10 @@ def _leer_hoja(wv, wf) -> CosteObjetivo:
         vistos.setdefault(codigo.casefold(), fila)
         importe = _numero(imp_v)
         if importe is None:
-            if isinstance(imp_v, str) and imp_v.startswith("#"):
+            texto_precio = isinstance(wv.cell(fila, objetivo[2]).value, str)
+            if isinstance(imp_v, str) and imp_v.startswith("#") and not texto_precio:
+                # Con un texto en el precio («NO INCLUIDO…») el #¡VALOR! es esperable: la
+                # nota ya explica el 0 (revisión 09-11-2026).
                 con_error.append(fila)  # #¡VALOR!, #REF!…: un error de la hoja
             elif imp_v is None and _es_formula(wf.cell(fila, objetivo[3]).value):
                 sin_valor.append(fila)

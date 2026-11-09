@@ -148,7 +148,8 @@ def _avisos_venta(r: ResumenObra, partidas: list[dict[str, Any]], medicion) -> N
             "venta puede quedarse corta."
         )
     total_doc = medicion.get("total_documento")
-    if total_doc is not None and r.venta is not None and abs(total_doc - r.venta) > 0.01:
+    diferencia = None if total_doc is None or r.venta is None else total_doc - r.venta
+    if diferencia is not None and round(abs(diferencia), 2) > 0.01:
         a.append(
             f"La suma de partidas no coincide con el total que declara el documento "
             f"({total_doc:.2f} €)."

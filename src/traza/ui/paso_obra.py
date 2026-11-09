@@ -186,7 +186,7 @@ class PaginaCosteObjetivo(_Pagina):
 
         filas = [[nombre, _eur(imp), pct(imp)] for nombre, imp in r.paquetes.items()]
         sin_paquete = total - sum(r.paquetes.values())
-        if round(abs(sin_paquete), 2) >= 0.01:  # el mismo céntimo que el lector
+        if round(abs(sin_paquete), 2) > 0.01:  # la misma tolerancia que el lector
             filas.append(["(sin repartir en paquetes)", _eur(sin_paquete), pct(sin_paquete)])
         _llenar(self.tabla, filas)
         avisos = []
@@ -199,7 +199,12 @@ class PaginaCosteObjetivo(_Pagina):
             avisos.append(
                 f"{r.venta_sin_codigo} partida(s) de venta sin código no se pueden enlazar."
             )
-        avisos += r.avisos_coste
+        # Las líneas añadidas a mano, en un solo renglón (una por línea saturaba la
+        # pantalla); el detalle, en el aviso de cada una al importar.
+        manuales = [a for a in r.avisos_coste if a.startswith("Línea añadida a mano")]
+        if manuales:
+            avisos.append(f"{len(manuales)} línea(s) añadida(s) a mano cuentan en el objetivo.")
+        avisos += [a for a in r.avisos_coste if a not in manuales]
         self.avisos.setText("\n".join(f"⚠ {a}" for a in avisos))
 
     def actualizar_estado(self, hay: bool) -> None:
