@@ -550,14 +550,25 @@ class RegistrarFactura(Orden):
             raise OrdenRechazada("La factura necesita proveedor y número.")
         if isinstance(self.importe, bool) or not isinstance(self.importe, int | float):
             raise OrdenRechazada("El importe tiene que ser un número.")
-        if not math.isfinite(self.importe) or self.importe == 0:
+        # Al céntimo, como la venta y el coste objetivo (revisión 09-11-2026).
+        importe = round(float(self.importe), 2) if math.isfinite(self.importe) else 0.0
+        if importe == 0:
             raise OrdenRechazada("El importe no puede ser 0 (un abono va en negativo).")
         if self.documento_id and leer(con, "documento", {"id": self.documento_id}) is None:
             raise OrdenRechazada("El documento de la factura no está incorporado.")
-        otra = con.execute(
-            "SELECT id FROM factura WHERE proveedor = ? AND numero = ? AND id <> ?",
-            (proveedor, numero, self.id),
-        ).fetchone()
+        # El mismo proveedor y número aunque cambien mayúsculas o espacios: «ACME» y «Acme»
+        # contarían dos veces la misma factura (revisión 09-11-2026).
+        clave = (" ".join(proveedor.split()).casefold(), " ".join(numero.split()).casefold())
+        otra = next(
+            (
+                r[0]
+                for r in con.execute(
+                    "SELECT id, proveedor, numero FROM factura WHERE id <> ?", (self.id,)
+                )
+                if (" ".join(r[1].split()).casefold(), " ".join(r[2].split()).casefold()) == clave
+            ),
+            None,
+        )
         if otra:
             raise OrdenRechazada(f"Ya está apuntada la factura {numero} de {proveedor}.")
         antes = leer(con, "factura", {"id": self.id})
@@ -567,7 +578,7 @@ class RegistrarFactura(Orden):
             "proveedor": proveedor,
             "numero": numero,
             "fecha": _fecha(self.fecha),
-            "importe": float(self.importe),
+            "importe": importe,
             "documento_id": self.documento_id,
             "creado": antes["creado"] if antes else ahora(),
         }

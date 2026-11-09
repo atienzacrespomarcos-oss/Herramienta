@@ -96,13 +96,13 @@ solo se toma la **estructura** y la forma de trabajar:
 ### Certificaciones (las hace el usuario, en su Excel)
 - Se lee el **Excel de certificación** del usuario: por capítulo, partida y subpartida, lo
   certificado a origen de cada mes sobre el 100 % de la venta. TRAZA no decide qué se
-  certifica: lo registra y lo suma (lectura por diseñar con un ejemplo real).
+  certifica: lo registra y lo suma (cómo se interpreta cualquier Excel: «Bloque 2b»).
 - Da el certificado del mes y a origen, por partida y total, y el % sobre la venta.
 
 ### Foto de lo real y previsión del usuario
-- **Foto de lo real** (a la fecha de la última actualización): venta certificada a origen,
-  coste facturado, y su diferencia (margen real hasta hoy); por paquete, objetivo frente
-  a facturado.
+- **Foto de lo real** (a la fecha de la última actualización): **venta real** (lo
+  certificado a origen), **coste real** (lo facturado) y su diferencia (margen real hasta
+  hoy); por paquete, objetivo frente a facturado.
 - **Previsión**: la introduce el usuario como **dos totales**: coste previsto a fin de obra
   y **venta prevista** a fin de obra (con su fecha de actualización). TRAZA no la
   estima; la muestra junto a lo real y al objetivo, con el margen previsto que resulta.
@@ -173,16 +173,21 @@ solo se toma la **estructura** y la forma de trabajar:
   - **Descuadres**: se listan los paquetes que ya se han pasado de su objetivo.
   - **Cerrar paquete**: queda liquidado; no admite facturas nuevas ni cambios en las suyas
     hasta reabrirlo (cerrar y reabrir quedan en el registro de cambios).
-  - Si se reimporta el coste objetivo y un paquete cambia de nombre, sus facturas se
-    avisan como «de paquetes que ya no están en el coste objetivo» (no se pierden).
+  - Si se reimporta el coste objetivo y un paquete cambia de nombre, sus facturas siguen
+    en la lista con su paquete marcado «ya no está en el objetivo»: se pueden corregir
+    (eligiendo un paquete del objetivo), quitar o reabrir su paquete. Si el objetivo de un
+    paquete **cerrado** cambia al reimportar, se avisa.
+  - Importes al céntimo; un importe que redondea a 0 se rechaza. El mismo proveedor y
+    número no se repiten aunque cambien mayúsculas o espacios.
   - Sin facturas al empezar la obra, el paso no lleva marca (no es un pendiente).
 - **Previsión** (paso «Previsión», «Obra → Actualizar mi previsión…»): dos totales que
   pone el usuario, **venta** y **coste** a fin de obra, con nota opcional y su fecha. Una
   tabla de tres columnas: **contrato y objetivo** (venta, objetivo, margen), **real a
-  hoy** (certificado, facturado, margen real) y **tu previsión** (certificación, coste,
-  margen previsto, con su %).
-- El certificado a origen llega con las certificaciones (bloque 2b); hasta entonces, no
-  consta. Esquema V12 (`factura`, `paquete_cerrado`, `prevision`).
+  hoy** (venta real = certificado, coste real = facturado, margen real) y **tu
+  previsión** (venta, coste, margen previsto, con su %). Las ampliaciones, modificados y
+  ofertas pendientes no entran: son futuribles (bloque 3).
+- La venta real (certificado a origen) llega con las certificaciones (bloque 2b); hasta
+  entonces, no consta («—»). Esquema V12 (`factura`, `paquete_cerrado`, `prevision`).
 
 ## Bloque 2b: certificaciones (decidido, por construir)
 

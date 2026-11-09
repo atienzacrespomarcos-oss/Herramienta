@@ -127,3 +127,60 @@ def test_facturas_de_un_paquete_que_desaparece_se_avisan(con_coste, tmp_path):
     wb.save(ruta)
     p.importar_coste_objetivo(p.incorporar_documento(ruta))
     assert p.foto_obra().huerfanas == {"CHAPA": 500}
+
+
+def test_redondeo_al_centimo_y_proveedor_sin_mayusculas(con_coste):
+    p = con_coste
+    factura(p, proveedor="ACME Clima", numero="F-10", importe=10.006)
+    assert p.facturas()[0]["importe"] == 10.01
+    with pytest.raises(OrdenRechazada, match="no puede ser 0"):
+        factura(p, numero="F-11", importe=0.004)
+    with pytest.raises(OrdenRechazada, match="Ya está apuntada"):
+        factura(p, proveedor="acme  clima", numero="f-10")
+
+
+def test_mover_factura_con_origen_o_destino_cerrado(con_coste):
+    p = con_coste
+    fid = factura(p, paquete="EQUIPOS", numero="A1", importe=100)
+    p.cerrar_paquete("CHAPA")
+    with pytest.raises(OrdenRechazada, match="«CHAPA» está cerrado"):
+        factura(p, paquete="CHAPA", numero="A1", importe=100, id=fid)
+    p.cerrar_paquete("CHAPA", cerrar=False)
+    p.cerrar_paquete("EQUIPOS")
+    with pytest.raises(OrdenRechazada, match="paquete cerrado «EQUIPOS»"):
+        factura(p, paquete="CHAPA", numero="A1", importe=100, id=fid)
+    # Deshacer y rehacer cerrar.
+    p.deshacer()
+    assert "EQUIPOS" not in p.paquetes_cerrados()
+    p.rehacer()
+    assert "EQUIPOS" in p.paquetes_cerrados()
+
+
+def test_paquete_que_desaparece_sigue_en_la_lista_y_cerrado_avisa(con_coste, tmp_path):
+    from openpyxl import load_workbook
+
+    p = con_coste
+    fid = factura(p, paquete="CHAPA", proveedor="Chapista", numero="1", importe=500)
+    p.cerrar_paquete("CHAPA")
+    p.cerrar_paquete("EQUIPOS")
+    ruta = comparativo(tmp_path / "C2.xlsx")
+    wb = load_workbook(ruta)
+    ws = wb.active
+    for c in ws[2]:
+        if c.value == "CHAPA":
+            c.value = "CHAPA Y AISLAMIENTO"
+    for fila in ws.iter_rows(min_row=5):  # EQUIPOS de la UTA: 18000 → 17000
+        if fila[0].value and str(fila[0].value).strip() == "UTA01":
+            fila[8].value = 17000
+            fila[9].value = 17000
+            fila[5].value = 17400
+            fila[6].value = 17400
+    wb.save(ruta)
+    r = p.importar_coste_objetivo(p.incorporar_documento(ruta))
+    assert any("paquete cerrado «EQUIPOS» cambia de objetivo" in a for a in r.avisos)
+    chapa = next(x for x in p.foto_obra().paquetes if x.nombre == "CHAPA")
+    assert not chapa.en_objetivo and chapa.cerrado and chapa.facturado == 500
+    # Se puede reabrir y corregir a un paquete del objetivo.
+    p.cerrar_paquete("CHAPA", cerrar=False)
+    factura(p, paquete="CHAPA Y AISLAMIENTO", proveedor="Chapista", numero="1", importe=500, id=fid)
+    assert p.foto_obra().huerfanas == {}

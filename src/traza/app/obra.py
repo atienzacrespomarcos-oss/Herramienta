@@ -170,6 +170,9 @@ class EstadoPaquete:
     facturado: float
     facturas: int
     cerrado: bool
+    #: False: sus facturas son de un paquete que ya no está en el coste objetivo (se
+    #: reimportó con otros nombres). Sale en la lista para poder corregirlas o quitarlas.
+    en_objetivo: bool = True
 
     @property
     def diferencia(self) -> float:
@@ -230,6 +233,10 @@ def foto(
         for nombre, objetivo in resumen.paquetes.items()
     ]
     huerfanas = {n: round(sum(v), 2) for n, v in por_paquete.items() if n not in resumen.paquetes}
+    paquetes += [
+        EstadoPaquete(n, 0.0, v, len(por_paquete[n]), n in cerrados, en_objetivo=False)
+        for n, v in huerfanas.items()
+    ]
     return Foto(
         paquetes,
         round(sum(f["importe"] for f in facturas), 2),

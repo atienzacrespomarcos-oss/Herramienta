@@ -278,7 +278,11 @@ class PaginaCosteReal(QWidget):
     # --- Acciones ------------------------------------------------------------------------
 
     def _pedir(self, actual: dict | None) -> None:
-        paquetes = self.proyecto.coste_objetivo()["paquetes"]
+        paquetes = list(self.proyecto.coste_objetivo()["paquetes"])
+        if actual and actual.get("paquete") and actual["paquete"] not in paquetes:
+            # Factura de un paquete que ya no está en el objetivo: el diálogo lo enseña tal
+            # cual (no lo cambia en silencio por el primero); la orden pide elegir otro.
+            paquetes.append(actual["paquete"])
         # Si la orden rechaza algo, el diálogo vuelve con lo escrito.
         while True:
             datos = self.v.preguntas.factura(paquetes, actual)
@@ -359,7 +363,8 @@ class PaginaCosteReal(QWidget):
                     _eur(x.objetivo),
                     _eur(x.facturado),
                     _eur(x.diferencia),
-                    "Cerrado" if x.cerrado else "Abierto",
+                    ("Cerrado" if x.cerrado else "Abierto")
+                    + ("" if x.en_objetivo else " · ya no está en el objetivo"),
                 ]
                 for x in f.paquetes
             ],

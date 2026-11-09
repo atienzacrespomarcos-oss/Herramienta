@@ -120,16 +120,16 @@ class DialogoPrevision(QDialog):
 
     def _aceptar(self) -> None:
         try:
-            cert = _importe(self.venta.text(), "Venta")
+            venta = _importe(self.venta.text(), "Venta")
             coste = _importe(self.coste.text(), "Coste")
         except ValueError as exc:
             self.error.setText(str(exc))
             return
-        if cert < 0 or coste < 0:
+        if venta < 0 or coste < 0:
             self.error.setText("Los totales previstos no pueden ser negativos.")
             return
         self.resultado = {
-            "venta_total": cert,
+            "venta_total": venta,
             "coste_total": coste,
             "nota": self.nota.text().strip(),
         }

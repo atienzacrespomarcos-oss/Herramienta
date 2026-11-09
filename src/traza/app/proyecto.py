@@ -573,6 +573,15 @@ class Proyecto:
             r = coste_presto.leer(self.ruta_documento(documento_id))
         except coste_presto.CosteNoReconocido as exc:
             raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        # Un paquete cerrado no cambia de objetivo en silencio (línea roja 5): se avisa.
+        antes = self.resumen_obra().paquetes if self.coste_objetivo() else {}
+        nuevos = r.por_paquete()
+        for nombre in sorted(self.paquetes_cerrados()):
+            if nombre in antes and round(abs(nuevos.get(nombre, 0.0) - antes[nombre]), 2) > 0.01:
+                r.avisos.append(
+                    f"El paquete cerrado «{nombre}» cambia de objetivo: "
+                    f"{antes[nombre]:.2f} € → {nuevos.get(nombre, 0.0):.2f} €.".replace(".", ",")
+                )
         self.ejecutar(
             ImportarCosteObjetivo(
                 documento_id,
