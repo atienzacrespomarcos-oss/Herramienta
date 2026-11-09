@@ -57,3 +57,30 @@ Estado: **en desarrollo**.
   - La tabla A da en 400 mm² columna 9 un valor (699 A) fuera de la serie (552 → 645): se
     toma como errata y la herramienta llega hasta 300 mm², más que suficiente para salidas
     de un subcuadro de clima.
+- **GUÍA-BT Anexo 2 «Cálculo de las caídas de tensión»** (sep. 2003, rev. 1),
+  <https://www.plcmadrid.es/wp-content/uploads/guia_bt_anexo_2_sep03R1.pdf>:
+  - trifásico e = P·L/(γ·S·U), monofásico e = 2·P·L/(γ·S·U) (U = 400 V o 230 V),
+    despreciando la reactancia hasta 120 mm²; por encima, X ≈ 0,15 R (150), 0,20 R (185) y
+    0,25 R (240): ΔU = (R + X·tg φ)·P/U;
+  - conductividad del cobre γ = 56 / 48 / 44 m/(Ω·mm²) a 20 / 70 / 90 °C.
+- **GUÍA-BT-22** (oct. 2005, rev. 1),
+  <https://www.plcmadrid.es/wp-content/uploads/rebt/itc22/guia_bt_22_oct05R1.pdf>:
+  protección contra sobrecargas con **Ib ≤ In ≤ Iz** e **I2 ≤ 1,45·Iz**; con interruptores
+  UNE-EN 60898 o 61009, I2 = 1,45·In (la segunda condición se cumple sola). Curvas B
+  (3–5 In), **C (5–10 In)** y **D (10–20 In, arranque de motores)**.
+- **Calibres de interruptores automáticos**: catálogo de aparamenta modular de General
+  Electric (ElfaPlus EP60/EP100/EP250)
+  (<https://documentacion.generadordeprecios.info/documentaciontecnica/generalelectric/ge_aparam_modular.pdf>):
+  6, 10, 13, 16, 20, 25, 32, 40, 50, 63, 80, 100 y 125 A (modular), 160 A (caja moldeada).
+
+## Criterios elegidos
+- **Cable** por defecto RZ1-K 0,6/1 kV (XLPE) multipolar en **bandeja perforada** (método
+  E), con el factor de agrupamiento de la tabla E por el número de líneas de la bandeja;
+  también tubo en superficie (B2) o sobre pared (C).
+- **Caída de tensión** con γ del cobre a 90 °C (XLPE) o 70 °C (PVC), del lado de la
+  seguridad; límite del 5 % (6,5 % con transformador propio) **sumando la de la línea que
+  alimenta el subcuadro**.
+- **Sección**: la menor normalizada que cumple Iz·factor ≥ In (que ya es ≥ Ib) y la caída
+  de tensión; motores con Ib al 125 % (ITC-BT-47).
+- **Protección**: magnetotérmico de la serie de calibres, curva D en motores (bombas,
+  ventiladores, compresores) y C en el resto; diferencial por salida.
