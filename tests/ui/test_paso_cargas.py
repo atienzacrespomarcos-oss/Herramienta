@@ -115,13 +115,12 @@ def test_guia_sin_leer_pide_calcular(ventana):
     assert "Zona D3" in v.pagina_cargas.resumen.text()
 
 
-def test_paso_solo_en_encargos_con_diseno(ventana):
+def test_paso_tambien_en_oferta_para_recalcular(ventana):
     v, _ = ventana
     assert "cargas" in _pasos(v)
-    v.proyecto.ejecutar(CambiarEncargo("presupuesto"))
+    v.proyecto.ejecutar(CambiarEncargo("oferta"))
     v.refrescar()
-    assert "cargas" not in _pasos(v)
-    assert not v.menu_cargas.menuAction().isVisible()
+    assert "cargas" in _pasos(v) and v.menu_cargas.menuAction().isVisible()
 
 
 def test_dialogo_clima_real(qtbot):

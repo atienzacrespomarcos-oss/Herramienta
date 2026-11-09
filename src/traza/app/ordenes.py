@@ -418,10 +418,13 @@ class ResolverPendiente(Orden):
 # --- Tipo de encargo ----------------------------------------------------------------
 
 #: Tipos de encargo del usuario (06-11-2026). Deciden qué pasos del proyecto se muestran.
+#: Tipos de encargo (decisión del usuario, 09-11-2026; docs/modules/flujo.md). Sustituyen a
+#: «diseño + presupuesto + instalación», «presupuesto + instalación» y «solo instalación»;
+#: la migración V10 pasa los dos últimos a «oferta».
 ENCARGOS = {
-    "diseno": "Diseño + presupuesto + instalación",
-    "presupuesto": "Presupuesto + instalación",
-    "instalacion": "Solo instalación",
+    "diseno": "Diseño (plano del cliente)",
+    "oferta": "Oferta de un proyecto ajeno",
+    "ampliacion": "Ampliación de una instalación existente",
 }
 
 

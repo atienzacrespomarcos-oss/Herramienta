@@ -145,8 +145,7 @@ class Proyecto:
     @property
     def encargo(self) -> str:
         fila = self._con.execute("SELECT valor FROM meta WHERE clave='encargo'").fetchone()
-        # Proyectos creados antes de existir el tipo de encargo: se tratan como diseño
-        # completo, que es el que muestra todos los pasos (no oculta nada).
+        # Proyectos creados antes de existir el tipo de encargo: se tratan como diseño.
         return fila[0] if fila else "diseno"
 
     def copia_de_seguridad(self) -> Path:

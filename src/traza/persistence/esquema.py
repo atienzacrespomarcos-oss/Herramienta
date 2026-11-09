@@ -321,5 +321,12 @@ CREATE TABLE subcuadro (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9)
+# V10 (09-11-2026): tipos de encargo Diseño · Oferta · Ampliación (docs/modules/flujo.md).
+# «Presupuesto + instalación» y «solo instalación» pasan a Oferta, el más parecido.
+V10 = """
+UPDATE meta SET valor = 'oferta'
+    WHERE clave = 'encargo' AND valor IN ('presupuesto', 'instalacion');
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)
 VERSION_ACTUAL = len(MIGRACIONES)
