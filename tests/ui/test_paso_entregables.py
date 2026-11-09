@@ -125,3 +125,20 @@ def test_solo_la_justificacion(ventana, tmp_path):
     v.pagina_entregables.a_memoria.trigger()
     assert not q.avisos, q.avisos
     assert (tmp_path / "J.docx").exists()
+
+
+def test_nombres_de_los_pasos_iguales_en_pantalla_y_en_los_avisos():
+    from traza.app.flujo import NOMBRES
+    from traza.ui.ventana import PASOS
+
+    rotulos = {clave: texto for clave, texto, _ in PASOS}
+    assert {k: rotulos[k] for k in NOMBRES} == NOMBRES
+
+
+def test_menu_entregables_oculto_en_oferta(ventana):
+    v, _, _ = ventana
+    assert v.menu_entregables.menuAction().isVisible()
+    v.proyecto.ejecutar(CambiarEncargo("oferta"))
+    v.refrescar()
+    assert not v.menu_entregables.menuAction().isVisible()
+    assert not v.pagina_entregables.a_generar.isEnabled()

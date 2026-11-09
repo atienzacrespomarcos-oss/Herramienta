@@ -140,3 +140,134 @@ def test_proyecto_sin_calculos(proyecto, tmp_path):
     assert "No hay ningún cálculo hecho en el proyecto." in texto
     _, hechos = proyecto.generar_entregables(tmp_path)
     assert [n for n, _, _ in hechos] == ["Justificación de cálculos (Word)"]
+
+
+def test_numeros_exactos_para_datos_y_redondeados_para_resultados():
+    from traza.io.memoria import _n
+
+    assert _n(0.25) == "0,25" and _n(2.75) == "2,75" and _n(0.37) == "0,37"
+    assert _n(47.53219) == "47,5" and _n(1000.0) == "1000" and _n(3) == "3"
+
+
+def test_dato_de_partida_tal_cual_en_la_justificacion(completo, tmp_path):
+    from traza.app.ordenes import FijarAlturaEspacio
+
+    p = completo
+    ofi = next(e for e in p.espacios() if e["nombre"] == "OFICINAS")
+    p.ejecutar(FijarAlturaEspacio(ofi["id"], "propia", altura=2.75))
+    texto = _texto(p.exportar_memoria(tmp_path / "J"))
+    assert "2,75" in texto
+
+
+def test_comprobacion_de_los_subcuadros_se_calcula():
+    from types import SimpleNamespace
+
+    from traza.io.memoria import comprobacion
+
+    bien = SimpleNamespace(
+        intensidad_diseno_a=95.5, calibre_a=100, admisible_a=123.3, caida_total_pct=1.1
+    )
+    assert comprobacion(bien, 5.0)
+    assert not comprobacion(SimpleNamespace(**{**vars(bien), "admisible_a": 90}), 5.0)
+    assert not comprobacion(SimpleNamespace(**{**vars(bien), "caida_total_pct": 5.2}), 5.0)
+
+
+def test_un_error_cualquiera_no_corta_los_entregables(completo, tmp_path, monkeypatch):
+    p = completo
+
+    def roto(*_a, **_k):
+        raise KeyError("dato roto")
+
+    monkeypatch.setattr(p, "exportar_unifilar", roto)
+    monkeypatch.setattr(p, "calcular_sistema_hidraulico", roto)
+    carpeta, hechos = p.generar_entregables(tmp_path)
+    errores = {n: e for n, _, e in hechos if e}
+    assert errores["Subcuadro «SC Clima» (unifilar DXF)"].startswith("KeyError")
+    assert "Justificación de cálculos (Word)" not in errores
+    texto = _texto(next(carpeta.glob("*.docx")))
+    assert "Sin calcular: Sistema «Clima»: KeyError" in texto
+
+
+def test_nombres_de_fichero_que_chocan_no_se_pisan(red, tmp_path):  # noqa: F811
+    from tests.integration.test_redes_proyecto import _nave_con_conductos
+
+    p, red_id, plano_id, nivel_id = red
+    # Otro plano con el mismo nombre de fichero, desde otra carpeta.
+    otra = tmp_path / "otra"
+    otra.mkdir()
+    p.leer_plano(
+        p.incorporar_documento(_nave_con_conductos(otra)), "mm", ["A-ESPACIOS"], [], ["A-TEXTOS"]
+    )
+    # Dos redes cuyos nombres solo difieren en caracteres que Windows no admite.
+    for titulo in ("Impulsión A/B", "impulsión A:B"):
+        p.definir_red(
+            titulo=titulo,
+            tipo="impulsion",
+            plano_id=plano_id,
+            capa_ejes="M-IMPULSION",
+            bloques_terminales=["DIFUSOR"],
+            bloque_equipo="UTA",
+            nivel_id=nivel_id,
+        )
+    carpeta, hechos = p.generar_entregables(tmp_path)
+    rutas = [r for _, rs, _ in hechos for r in rs]
+    assert len(rutas) == len(set(rutas)) == len(list(carpeta.iterdir()))
+    nombres = {r.name for r in rutas}
+    assert {"Plano Nave.xlsx", "Plano Nave (2).xlsx"} <= nombres
+    assert {"Red Impulsión A-B.xlsx", "Red impulsión A-B (2).xlsx"} <= nombres
+
+
+def test_red_sin_dimensionar_y_cargas_que_faltan_se_dicen(completo, tmp_path, monkeypatch):
+    import dataclasses
+
+    p = completo
+    original = p.calcular_red
+    monkeypatch.setattr(
+        p, "calcular_red", lambda rid: dataclasses.replace(original(rid), calculo=None)
+    )
+    texto = _texto(p.exportar_memoria(tmp_path / "J"))
+    assert "No se ha podido dimensionar la red" in texto
+    assert "Sin calcular: Red «Impulsión oficinas»: no se ha podido dimensionar" in texto
+    assert "Dimensionado: pérdida de carga constante" not in texto
+
+
+def test_cargas_sin_clima_se_dicen(proyecto, tmp_path):
+    from tests.integration.test_redes_proyecto import _nave_con_conductos
+
+    from traza.app.ordenes import CrearNivel
+
+    p = proyecto
+    plano_id = p.leer_plano(
+        p.incorporar_documento(_nave_con_conductos(tmp_path)),
+        "mm",
+        ["A-ESPACIOS"],
+        [],
+        ["A-TEXTOS"],
+    )
+    nivel = CrearNivel("PB", 0.0, 3.0)
+    p.ejecutar(nivel)
+    prop = p.propuestas(plano_id)[0]
+    p.confirmar_contorno(plano_id, prop.handle, nivel.id, nombre="X")
+    texto = _texto(p.exportar_memoria(tmp_path / "J"))
+    assert "Sin calcular: Cargas: falta el clima y la obra" in texto
+
+
+def test_propiedades_del_documento(completo, tmp_path):
+    doc = Document(str(completo.exportar_memoria(tmp_path / "J")))
+    assert doc.core_properties.title == f"Justificación de cálculos — {completo.nombre}"
+    assert doc.core_properties.author == ""
+
+
+def test_plantilla_dotx_con_extension_docx(completo, tmp_path):
+    docx = _plantilla(tmp_path)
+    renombrada = tmp_path / "Aliter2.docx"
+    with zipfile.ZipFile(docx) as zin, zipfile.ZipFile(renombrada, "w") as zout:
+        for item in zin.infolist():
+            datos = zin.read(item.filename)
+            if item.filename == "[Content_Types].xml":
+                datos = datos.replace(
+                    b"wordprocessingml.document.main+xml", b"wordprocessingml.template.main+xml"
+                )
+            zout.writestr(item, datos)
+    ruta = completo.exportar_memoria(tmp_path / "J", renombrada)
+    assert Document(str(ruta)).sections[0].header.paragraphs[0].text.startswith("ALITER")

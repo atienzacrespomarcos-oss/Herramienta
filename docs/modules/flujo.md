@@ -144,13 +144,20 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloques 1 y 2 imp
   - de cada sistema hidráulico, Excel y esquema de principio DXF;
   - de cada subcuadro, el unifilar DXF;
   - la justificación de cálculos en Word.
-  Al terminar dice cuántos ficheros y, de lo que no se ha podido generar, el motivo (una
-  red sin calcular no impide lo demás).
+  Al terminar dice cuántos ficheros y, de lo que no se ha podido generar, el motivo. Un
+  error en uno, del tipo que sea, se apunta y no impide los demás.
+- Nombres sin repetir: si dos entregables darían el mismo fichero (dos planos «Planta.dxf»
+  de carpetas distintas, redes «A/B» y «A:B», mayúsculas, que Windows no distingue), el
+  segundo lleva « (2)». Nunca se pisa uno con otro.
+- El menú Entregables solo se ve en Diseño y Ampliación, como el paso.
 - Si hay pasos **⚠ desactualizados**, pregunta antes de generar; la justificación lo dice
   en «Estado al generar este documento».
 - Si la guía del IDAE no está leída en la sesión, se lee (en segundo plano) antes.
 - **Solo la justificación de cálculos (Word)…**: el documento suelto, donde se elija.
 - Nombres de fichero válidos en Windows (`core/ficheros.nombre_valido`).
+- Coste: genera en el hilo de la ventana y recalcula cargas por cada entregable; con los
+  proyectos de prueba es inmediato. Si con un proyecto real tarda, se calculará una vez y
+  se mostrará el avance.
 
 ### Justificación de cálculos (`io/memoria.py`)
 - Documento de **apoyo** («nada oficial»): por cálculo, datos de partida con su procedencia,
@@ -167,7 +174,17 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloques 1 y 2 imp
   subcuadros resumen «Criterios elegidos» de `electricidad.md`.
 - Números con **coma decimal** (también en las hipótesis de los Excel, que antes salían
   con punto).
-- Lo que no se puede calcular se dice («Sin calcular: …»), nunca se omite en silencio.
+- Lo que no se puede calcular se dice («Sin calcular: …»), nunca se omite en silencio:
+  cargas sin clima o sin espacios, una red que no se puede dimensionar (sus avisos, sin
+  describir un método que no se ha aplicado), un error inesperado de cualquier cálculo.
+- **Cifras**: un número con hasta 3 decimales (un dato de partida: 0,25; 2,75 m;
+  0,37 kW) se escribe tal cual se usó; con más (un resultado), a 1 decimal.
+- **Subcuadros**: método de instalación y longitud de cada línea, para poder rehacer el
+  cálculo; la columna «Comprobación» se **calcula** con los valores de la línea (I diseño
+  ≤ In ≤ Iz y caída total ≤ límite), no se lee de un indicador.
+- Propiedades del documento (título, fecha) propias, no las de la plantilla; sin autor.
+- Se escribe aparte y se sustituye: un fallo a medias no deja un .docx roto.
+- Una plantilla .dotx renombrada a .docx también se abre.
 - **Plantilla**: «Entregables → Plantilla de Word…» (.docx o .dotx). Se recuerda en el
   equipo, no en el proyecto (es la de Aliter para todos). Se conservan sus estilos,
   encabezado, pie y página, y se vacía su cuerpo. Si a la plantilla le falta un estilo

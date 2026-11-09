@@ -21,9 +21,10 @@ DEPENDE: dict[str, tuple[str, ...]] = {
     "subcuadros": ("redes", "hidronica"),
 }
 #: Cómo se nombran los pasos de cálculo en los avisos.
+#: Los mismos que la lista de pasos de la ventana (ui/ventana.PASOS; un test lo vigila).
 NOMBRES = {
-    "planos": "Planos",
-    "cargas": "Cargas",
+    "planos": "Planos y espacios",
+    "cargas": "Cargas y ventilación",
     "redes": "Redes de aire",
     "hidronica": "Sistema hidráulico",
     "subcuadros": "Subcuadros de clima",

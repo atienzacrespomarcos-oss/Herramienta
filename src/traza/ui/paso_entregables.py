@@ -14,16 +14,23 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from traza.app import flujo
+from traza.core.ficheros import nombre_valido
 
 #: La plantilla es del usuario, no del proyecto: se recuerda en este equipo.
 CLAVE_PLANTILLA = "memoria/plantilla"
+
+
+def ajustes_por_defecto() -> QSettings:
+    """Los ajustes de este equipo. Las pruebas lo sustituyen (tests/conftest.py) para no
+    leer ni escribir los del usuario."""
+    return QSettings("TRAZA", "TRAZA")
 
 
 class PaginaEntregables(QWidget):
     def __init__(self, ventana, ajustes: QSettings | None = None) -> None:
         super().__init__()
         self.v = ventana
-        self.ajustes = ajustes or QSettings("TRAZA", "TRAZA")
+        self._ajustes = ajustes
         from traza.ui.ventana import _barra
 
         m = self.v.menu_entregables
@@ -46,6 +53,12 @@ class PaginaEntregables(QWidget):
     @property
     def proyecto(self):
         return self.v.proyecto
+
+    @property
+    def ajustes(self) -> QSettings:
+        if self._ajustes is None:
+            self._ajustes = ajustes_por_defecto()
+        return self._ajustes
 
     def plantilla(self) -> Path | None:
         valor = self.ajustes.value(CLAVE_PLANTILLA, "")
@@ -88,10 +101,8 @@ class PaginaEntregables(QWidget):
         self.v.preguntas.informacion("Entregables", texto)
 
     def accion_memoria(self) -> None:
-        from traza.ui.paso_redes import _archivo
-
-        sugerido = (
-            Path.home() / f"{_archivo(self.proyecto.nombre)} - Justificación de cálculos.docx"
+        sugerido = Path.home() / nombre_valido(
+            f"{self.proyecto.nombre} - Justificación de cálculos.docx", "TRAZA"
         )
         destino = self.v.preguntas.destino_word(sugerido)
         if destino is None or not self._preparar("Justificación de cálculos"):
@@ -152,5 +163,10 @@ class PaginaEntregables(QWidget):
         self.resumen.setText("Se generan, en una carpeta nueva: " + "; ".join(partes) + ".")
 
     def actualizar_estado(self, hay: bool) -> None:
+        from traza.ui.ventana import CON_ENTREGABLES
+
+        # Solo en Diseño y Ampliación, como el paso (en Oferta, el menú no se ve).
+        con = hay and self.proyecto.encargo in CON_ENTREGABLES
+        self.v.menu_entregables.menuAction().setVisible(not hay or con)
         for a in (self.a_generar, self.a_memoria, self.a_plantilla, self.a_sin_plantilla):
-            a.setEnabled(hay)
+            a.setEnabled(con)

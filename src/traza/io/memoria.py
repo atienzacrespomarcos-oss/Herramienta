@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import zipfile
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -26,9 +26,8 @@ from docx.shared import Pt
 
 from traza.engines.hidraulica import SERVICIOS
 from traza.io import informe_cargas, informe_hidronica, informe_redes
-from traza.rules import electricidad as re
-
-MCA = 9806.65
+from traza.io.informe_hidronica import MCA
+from traza.rules import electricidad as elec
 
 TIPOS_PLANTILLA = (".docx", ".dotx")
 
@@ -46,7 +45,8 @@ class DatosMemoria:
     subcuadros: list[tuple[str, Any]] = field(default_factory=list)  # (nombre, resultado)
     #: Lo que no se ha podido calcular, para decirlo en el documento (nunca se omite).
     sin_calcular: list[str] = field(default_factory=list)
-    #: Pasos que no están hechos al generar (paso, estado, texto).
+    #: Pasos desactualizados al generar (paso, estado, texto): los pendientes no se listan
+    #: aquí, porque lo que les falta ya sale en «Sin calcular».
     pasos_no_hechos: list[tuple[str, str, str]] = field(default_factory=list)
 
 
@@ -58,7 +58,12 @@ class PlantillaNoValida(ValueError):
 
 
 def _n(v: Any, dec: int = 1) -> str:
-    """Coma decimal, sin separador de miles (como el resto de la herramienta)."""
+    """Coma decimal, sin separador de miles (como el resto de la herramienta).
+
+    Un número con hasta 3 decimales (un dato de partida: 0,25; 2,75 m; 0,37 kW) se escribe
+    entero, tal cual se usó; uno con más (un resultado), redondeado a `dec`. Revisión
+    09-11-2026: redondear todo a 1 decimal escribía «0,2» para un dato de 0,25 en la
+    tabla de procedencia, una cifra que no es la que se usó."""
     if v is None:
         return "—"
     if isinstance(v, bool):
@@ -66,7 +71,11 @@ def _n(v: Any, dec: int = 1) -> str:
     if isinstance(v, int):
         return str(v)
     if isinstance(v, float):
-        return f"{v:.{dec}f}".replace(".", ",")
+        if abs(v - round(v, 3)) < 1e-9:
+            texto = f"{round(v, 3):.3f}".rstrip("0").rstrip(".")
+        else:
+            texto = f"{v:.{dec}f}"
+        return texto.replace(".", ",")
     return str(v)
 
 
@@ -77,10 +86,11 @@ def _abrir(plantilla: Path | None):
     if plantilla.suffix.lower() not in TIPOS_PLANTILLA:
         raise PlantillaNoValida("La plantilla tiene que ser un documento de Word (.docx o .dotx).")
     try:
-        if plantilla.suffix.lower() == ".dotx":
-            doc = _abrir_dotx(plantilla)
-        else:
+        try:
             doc = Document(str(plantilla))
+        except ValueError:
+            # Una plantilla (.dotx), aunque se llame .docx: python-docx solo abre documentos.
+            doc = _abrir_dotx(plantilla)
     except (zipfile.BadZipFile, PackageNotFoundError, KeyError, ValueError, OSError) as exc:
         raise PlantillaNoValida(
             f"No se puede abrir la plantilla «{plantilla.name}»: {exc}"
@@ -173,6 +183,13 @@ def escribir(destino: Path, d: DatosMemoria, plantilla: Path | None = None) -> P
     if destino.suffix.lower() != ".docx":
         destino = destino.with_name(destino.name + ".docx")
     doc = _abrir(plantilla)
+    # Propiedades del documento: las suyas, no las de la plantilla (o «python-docx», 2013).
+    props = doc.core_properties
+    props.title = f"Justificación de cálculos — {d.proyecto}"
+    props.subject = "Documento de apoyo"
+    props.author = props.last_modified_by = ""
+    props.created = props.modified = datetime.now()
+    props.revision = 1
     w = _Escritor(doc)
     w.titulo("Justificación de cálculos", 0)
     w.parrafo(f"Proyecto: {d.proyecto}")
@@ -208,7 +225,10 @@ def escribir(destino: Path, d: DatosMemoria, plantilla: Path | None = None) -> P
         _subcuadros(w, n, d.subcuadros)
     if n == 0:
         w.parrafo("No hay ningún cálculo hecho en el proyecto.", cursiva=True)
-    doc.save(str(destino))
+    # Se escribe aparte y se sustituye: un fallo a medias no deja un .docx roto.
+    temporal = destino.with_name(destino.name + ".parcial")
+    doc.save(str(temporal))
+    temporal.replace(destino)
     return destino
 
 
@@ -282,6 +302,12 @@ def _redes(w: _Escritor, n: int, redes: list[Any]) -> None:
                 ["Potencia eléctrica máxima del ventilador", r.potencia_maxima_w, "W"],
             ]
         w.tabla(["Concepto", "Valor", "Unidad"], filas, numericas=(1,))
+        if c is None:
+            # Sin dimensionar, los criterios de dimensionado no se han aplicado: se dice por
+            # qué (sus avisos), no se describe un método que no se ha usado.
+            w.parrafo("No se ha podido dimensionar la red:", cursiva=True)
+            w.vinetas([f"Aviso: {a}" for a in r.avisos] or ["sin más detalle"])
+            continue
         w.vinetas(informe_redes.hipotesis(r))
         if c is not None:
             w.tabla(
@@ -368,26 +394,41 @@ def _hidraulica(w: _Escritor, n: int, sistemas: list[Any]) -> None:
         )
 
 
-#: Criterios de los subcuadros: los de docs/modules/electricidad.md («Criterios elegidos»).
 def hipotesis_subcuadro(r: Any) -> list[str]:
+    """Criterios de los subcuadros: los de docs/modules/electricidad.md («Criterios
+    elegidos») y los que aplica engines/subcuadro.py."""
     return [
-        f"{re.REBT} y guías técnicas de aplicación del Ministerio. Cable de cobre.",
-        "Intensidad admisible: GUÍA-BT-19, tabla A (UNE 20460-5-523 tabla A.52-1 bis) por "
-        "método de instalación y aislamiento, con el factor de agrupamiento de la tabla E.",
-        "Motores: intensidad de diseño al 125 % (ITC-BT-47); en la alimentación, 125 % del "
-        "motor mayor más el resto.",
-        f"Caída de tensión: GUÍA-BT Anexo 2 (γ del cobre a la temperatura del aislamiento); "
-        f"límite del {_n(r.limite_pct)} % sumando la línea que alimenta el subcuadro "
-        "(ITC-BT-19 2.2.2).",
-        "Protección: magnetotérmico con Ib ≤ In ≤ Iz (GUÍA-BT-22); curva D en motores de "
-        "arranque directo y C en el resto; por encima de 160 A, caja moldeada a definir.",
+        f"{elec.REBT} y guías técnicas de aplicación del Ministerio. Cable de cobre RZ1-K "
+        "0,6/1 kV (XLPE, 90 °C).",
+        "Intensidad admisible Iz: GUÍA-BT-19, tabla A (UNE 20460-5-523 tabla A.52-1 bis) por "
+        "método de instalación, con el factor de agrupamiento de la tabla E por el número de "
+        "líneas.",
+        "Motores: intensidad de diseño al 125 % (ITC-BT-47). Alimentación del subcuadro: "
+        "suma de las salidas (las monofásicas cuentan 1/3, repartidas entre las tres fases) "
+        "más el 25 % del motor mayor.",
+        f"Caída de tensión: GUÍA-BT Anexo 2 (γ del cobre a 90 °C); límite del "
+        f"{_n(r.limite_pct)} % sumando la línea que alimenta el subcuadro (ITC-BT-19 2.2.2).",
+        "Protección: magnetotérmico con I diseño ≤ In ≤ Iz (GUÍA-BT-22; en motores, I diseño "
+        "= 125 % de Ib); curva D en motores de arranque directo y C en el resto; por encima "
+        "de 160 A, caja moldeada a definir.",
         "Diferencial por salida (GUÍA-BT-24): 30 mA en monofásicas hasta 32 A y 300 mA en el "
         "resto; tipo B con variador trifásico, F con convertidor monofásico, A en el resto; "
         "en esquema TT, RA·Ia ≤ 50 V.",
         "Conductor de protección: ITC-BT-19 tabla 2.",
-        f"Factor de potencia a falta de dato: {_n(re.COS_PHI_DEFECTO, 2)} (GUÍA-BT Anexo 2).",
+        f"Factor de potencia a falta de dato: {_n(elec.COS_PHI_DEFECTO, 2)} (GUÍA-BT Anexo 2).",
         *(f"Aviso: {a}" for a in r.avisos),
     ]
+
+
+def comprobacion(x: Any, limite_pct: float) -> bool:
+    """CUMPLE se calcula aquí con los valores de la línea, no se lee de un indicador: I
+    diseño ≤ In ≤ Iz (sin calibre, caja moldeada: I diseño ≤ Iz) y caída total ≤ límite."""
+    protegida = (
+        x.intensidad_diseno_a <= x.calibre_a <= x.admisible_a
+        if x.calibre_a
+        else x.intensidad_diseno_a <= x.admisible_a
+    )
+    return protegida and x.caida_total_pct <= limite_pct + 1e-9
 
 
 def _subcuadros(w: _Escritor, n: int, subcuadros: list[tuple[str, Any]]) -> None:
@@ -398,6 +439,8 @@ def _subcuadros(w: _Escritor, n: int, subcuadros: list[tuple[str, Any]]) -> None
         w.tabla(
             [
                 "Línea",
+                "Método",
+                "L (m)",
                 "P (kW)",
                 "Ib (A)",
                 "I diseño (A)",
@@ -407,11 +450,13 @@ def _subcuadros(w: _Escritor, n: int, subcuadros: list[tuple[str, Any]]) -> None
                 "Diferencial",
                 "ΔU (%)",
                 "ΔU total (%)",
-                "Cumple",
+                "Comprobación",
             ],
             [
                 [
                     x.nombre,
+                    x.metodo,
+                    x.longitud_m,
                     x.potencia_kw,
                     x.intensidad_a,
                     x.intensidad_diseno_a,
@@ -421,9 +466,9 @@ def _subcuadros(w: _Escritor, n: int, subcuadros: list[tuple[str, Any]]) -> None
                     f"{x.diferencial_ma} mA tipo {x.diferencial_tipo}" if x.diferencial_ma else "—",
                     x.caida_pct,
                     x.caida_total_pct,
-                    "CUMPLE" if x.cumple else "NO CUMPLE",
+                    "CUMPLE" if comprobacion(x, r.limite_pct) else "NO CUMPLE",
                 ]
                 for x in (r.alimentacion, *r.salidas)
             ],
-            numericas=(1, 2, 3, 5, 8, 9),
+            numericas=(2, 3, 4, 5, 7, 10, 11),
         )

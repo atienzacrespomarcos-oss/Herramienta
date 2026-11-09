@@ -29,3 +29,17 @@ def pdf_3_paginas(tmp_path: Path) -> Path:
     doc.save(ruta)
     doc.close()
     return ruta
+
+
+@pytest.fixture(autouse=True)
+def _ajustes_aislados(tmp_path: Path, monkeypatch):
+    """Ninguna prueba lee ni escribe los ajustes reales del equipo (la plantilla de Word)."""
+    from PySide6.QtCore import QSettings
+
+    from traza.ui import paso_entregables
+
+    monkeypatch.setattr(
+        paso_entregables,
+        "ajustes_por_defecto",
+        lambda: QSettings(str(tmp_path / "ajustes_traza.ini"), QSettings.IniFormat),
+    )
