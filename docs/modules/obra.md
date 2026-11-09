@@ -1,7 +1,7 @@
 # Obra: control de venta, costes, certificaciones y previsión
 
-Estado: **en diseño** (09-11-2026). Falta ver los documentos reales del usuario («DOCS
-OBRA») para decidir cómo se lee cada uno; nada se construye antes.
+Estado: **en diseño** (09-11-2026). Documentos vistos; diseño propuesto pendiente de
+la revisión del usuario.
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -50,20 +50,63 @@ importes). Lo que importa es su estructura:
   descuento y entregas): referencias de su forma de trabajar. Cargas y conductos ya los
   cubre TRAZA; la comparativa de equipos es del fabricante (VRF fuera de alcance).
 
-## Propuesta de núcleo (a confirmar con los documentos)
+## Decisiones del usuario tras ver los documentos (09-11-2026)
 
-| Parte | Sale de | Da |
-|---|---|---|
-| Venta | Presupuesto contratado (BC3/Excel/PDF) + modificados aprobados | Venta por partida |
-| Coste objetivo | Excel de Presto agrupado por el usuario: objetivo por partida y su reparto en paquetes | Coste por partida y por paquete, margen previsto |
-| Certificaciones | Ejecutado cada mes, a origen por partida | Importe del mes y a origen, % ejecutado |
-| Coste real | Por **paquete de coste** (como en su comparativo): facturas y estado abierto/cerrado | Desviación por paquete y total |
-| Previsión a fin de obra | Lo anterior | Venta, coste y margen finales |
-| Futuribles | Ofertas y modificados pendientes de aprobar | Escenario sin ellos y con los marcados |
+| Pregunta | Decisión |
+|---|---|
+| Coste real | **Por paquete con facturas**: cada paquete del comparativo con sus facturas (proveedor, nº, fecha, importe) y su estado abierto/cerrado. |
+| Certificaciones | «Certifico yo lo que creo, no TRAZA. Solo informo»: TRAZA **registra** lo que el usuario certifica; no calcula la certificación. |
+| Venta | **BC3 o Excel de Presto, y también PDF** del cliente (con Claude Code y las comprobaciones de ADR-0013). |
+| Justificación de cálculos | **Con el formato de sus informes** cuando la plantilla no trae estilos de título (cambio aparte de Obra). |
+
+## Diseño propuesto (para revisar con el usuario antes de construir)
+
+### Crear obra
+- Tipo de encargo nuevo **Obra**. Se crea desde cero o **pasando una Oferta a Obra**
+  (hereda sus documentos, partidas leídas y modificados).
+- Pasos: Documentación · **Venta** · **Coste objetivo** · **Coste real** ·
+  **Certificaciones** · **Previsión** (y Planos, Cargas… si se quieren usar).
+
+### Venta
+- El **presupuesto contratado**: una medición ya leída (BC3, Excel o PDF) marcada como
+  contratada. Se suman los **modificados aprobados** (los de «Modificados»).
+- Por partida: código, resumen, cantidad, precio e importe de venta.
+
+### Coste objetivo (Excel de Presto del usuario)
+- Se importa tal cual: partidas con su objetivo (cantidad, precio, importe) y su reparto
+  en **paquetes** (cada grupo de columnas con nombre en la fila de títulos).
+- Comprobación al leer: la suma de los paquetes de cada partida = su objetivo, con un
+  céntimo de tolerancia; si no, se avisa (recurso sin repartir). Los textos en lugar de
+  precio («NO INCLUIDO …») se guardan como nota, no como cero.
+- Partidas de venta y de coste se enlazan por **código**; las que no casan se listan.
+
+### Coste real (por paquete)
+- Facturas por paquete: proveedor, nº, fecha, importe (sin IVA), documento opcional.
+- Estado del paquete: **abierto** o **cerrado** (cerrar y reabrir quedan registrados).
+
+### Certificaciones (las hace el usuario)
+- Registro: nº, fecha, **importe certificado del mes** (sin IVA) y documento opcional.
+  TRAZA suma el certificado **a origen** y lo compara con la venta (% certificado).
+
+### Previsión a fin de obra
+- **Venta prevista** = contratado + modificados aprobados.
+- **Coste previsto** por paquete: cerrado → lo facturado; abierto → el mayor entre su
+  objetivo y lo ya facturado (un paquete abierto no se da por más barato de lo que va
+  costando). Total = suma de paquetes.
+- **Margen previsto** (importe y % sobre venta), y desviación frente al objetivo.
+- **Pendiente de certificar** = venta prevista − certificado a origen.
+
+### Futuribles (escenarios sí/no)
+- Ofertas o modificados pendientes de aprobar, con su **venta** y su **coste estimado**.
+- La previsión se muestra **sin** futuribles y **con** los marcados.
+
+### Salidas
+- En pantalla, lo que decide: venta, coste, margen y certificado (previsto y actual).
+- Excel de control de la obra con todo el detalle (venta, objetivo por partida y paquete,
+  facturas, certificaciones, previsión y futuribles).
 
 ## Pendiente
 
-- Ver los documentos de «DOCS OBRA» (presupuesto contratado, Excel de Presto agrupado,
-  una certificación y lo que se use para el coste real) y decidir la lectura de cada uno.
-- Construir por bloques: crear obra y núcleo → certificaciones → costes y previsión →
-  futuribles.
+- Revisión del diseño por el usuario.
+- Construir por bloques: (1) crear obra, venta y coste objetivo; (2) coste real,
+  certificaciones y previsión; (3) futuribles y Excel de control.
