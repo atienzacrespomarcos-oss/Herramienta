@@ -146,8 +146,12 @@ class DialogoCertificacion(QDialog):
         super().__init__(padre)
         self.setWindowTitle("Importar certificación")
         self.resultado: dict | None = None
-        texto = QLabel(explicacion)
-        texto.setWordWrap(True)
+        from PySide6.QtWidgets import QPlainTextEdit
+
+        # Con muchos avisos, una etiqueta se salía de la pantalla: texto con barra.
+        texto = QPlainTextEdit(explicacion)
+        texto.setReadOnly(True)
+        texto.setMinimumSize(560, 220)
         self.numero = QSpinBox()
         self.numero.setRange(1, 999)
         self.numero.setValue(numero)

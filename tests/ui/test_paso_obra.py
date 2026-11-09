@@ -24,6 +24,10 @@ def ventana(qtbot, tmp_path):
     bc3.write_bytes(BC3_VENTA.encode("cp1252"))
     p.leer_medicion(p.incorporar_documento(bc3), "presupuesto")
     p.incorporar_documento(comparativo(tmp_path / "Costes.xlsx"))
+    # Las pruebas nunca llaman a la IA real.
+    from tests.integration.test_obra_certificaciones import sin_ia
+
+    p.mapeador_ia = sin_ia
     v._usar_proyecto(p)
     yield v, q
     if v.proyecto is not None:
@@ -168,7 +172,7 @@ def test_prevision_en_pantalla(ventana):
     assert filas["Venta"] == ["26.500,00 €", "—", "27.000,00 €"]
     assert filas["Coste"] == ["23.200,00 €", "0,00 €", "24.000,00 €"]
     assert filas["Margen"] == ["3.300,00 €", "—", "3.000,00 €"]
-    assert "La venta real (lo certificado) llegará con las certificaciones" in pp.resumen.text()
+    assert "Sin certificaciones: la venta real sale de" in pp.resumen.text()
 
 
 def test_importar_certificacion_desde_la_ventana(ventana, tmp_path):

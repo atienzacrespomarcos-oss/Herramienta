@@ -221,6 +221,23 @@ Cómo está hecho (`io/certificacion_excel.py`, `app/obra.cruzar_certificacion`)
   si una partida supera su venta (más del 100 %), si un código se repite y si la suma no
   cuadra con la fila TOTAL del Excel. Si ningún código casa, se rechaza («¿es la
   certificación de esta obra?»).
+- **Revisión independiente (09-11-2026)**, corregido:
+  - un título con «%» («% anterior», «% actual», «Origen %») ni de cantidades o unidades
+    («Uds. a origen») se toma nunca por un importe en euros; un % a origen tiene que decir
+    que es un porcentaje; su escala (tanto por uno o por ciento) la da el formato de la
+    celda y, sin formato, el mayor valor de las filas con código;
+  - las líneas **sin código** con importe se listan como «no son partidas de la venta» con
+    su importe (no se descartan en silencio); se avisa de las partidas de la venta sin
+    código (no se pueden certificar desde el Excel);
+  - con **varias hojas** se lee la que más partidas casa con la venta, y se dice;
+  - la fila TOTAL puede estar en la columna de código; un «Total con IVA» o «Total
+    capítulo» no es el total certificado;
+  - el mapa de la IA se comprueba con las mismas reglas (título que vale para su dato,
+    columnas distintas, números bajo una columna de importe);
+  - si todas las partidas de la venta están a 0 € (fórmulas sin resultado guardado), se
+    rechaza; un código repetido en la venta suma todas sus líneas;
+  - en la lista de certificaciones se anota la que sigue a números saltados (incluye lo de
+    las que faltan) y la que baja respecto a la anterior.
 - Cada certificación guarda su número, fecha, el importe a origen por partida, el total y
   el mapa con que se leyó. Lo de cada certificación = a origen − la anterior. La **venta
   real** es el total a origen de la última. Esquema V13.

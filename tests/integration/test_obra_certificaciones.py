@@ -51,10 +51,18 @@ PORCENTAJE = [
 ]
 
 
+def sin_ia(_texto):
+    """Las pruebas nunca llaman a la IA real: si hiciera falta, «no disponible»."""
+    from traza.ai.claude_code import IaNoDisponible
+
+    raise IaNoDisponible("IA no disponible en las pruebas")
+
+
 @pytest.fixture
 def venta(obra):  # noqa: F811
     p, med_id = obra
     p.fijar_venta_contratada(med_id)
+    p.mapeador_ia = sin_ia
     return p
 
 
@@ -130,6 +138,7 @@ def test_certificaciones_suman_la_venta_real(venta, tmp_path):
 
 def test_rechazos(obra, tmp_path, pdf_3_paginas):  # noqa: F811
     p, med_id = obra
+    p.mapeador_ia = sin_ia
     ruta = excel(tmp_path / "C.xlsx", PORCENTAJE)
     with pytest.raises(OrdenRechazada, match="presupuesto contratado"):
         _leer(p, ruta)
@@ -145,3 +154,119 @@ def test_por_encima_del_100_se_avisa(venta, tmp_path):
     mas = [["Código", "Descripción", "Importe a origen"], ["UTA01", "UTA", 21000]]
     _, r = _leer(venta, excel(tmp_path / "Mas.xlsx", mas))
     assert any("UTA01" in a and "más del 100 %" in a for a in r.avisos)
+
+
+# --- Revisión independiente (09-11-2026) ------------------------------------------------
+
+
+def test_titulos_con_porcentaje_no_son_euros(venta, tmp_path):
+    """«% anterior», «% actual», «Origen %» o «% del mes» no son importes."""
+    pct = [
+        ["Código", "Resumen", "Presupuesto", "% Anterior", "% Actual", "% Origen"],
+        ["UTA01", "UTA", 20000, 0.3, 0.2, 0.5],
+        ["CND01", "Conducto", 6000, 0.25, 0.1, 0.35],
+    ]
+    mapa, r = _leer(venta, excel(tmp_path / "P.xlsx", pct))
+    assert "importe_anterior" not in mapa.columnas and "importe_mes" not in mapa.columnas
+    assert r.total == 10000 + 2100  # % origen × presupuesto, no 0,30 + 0,20 €
+    otros = [
+        ["Código", "Resumen", "Presupuesto", "Origen %", "% del mes", "Uds. a origen"],
+        ["UTA01", "UTA", 20000, 50, 20, 1],
+    ]
+    mapa, r = _leer(venta, excel(tmp_path / "O.xlsx", otros))
+    assert set(mapa.columnas) == {"codigo", "resumen", "importe_presupuesto", "porcentaje_origen"}
+    assert r.total == 10000  # ni «% del mes» ni «Uds. a origen» pasan por importes
+    solo_pct = [["Código", "Resumen", "% del mes", "Uds. a origen"], ["UTA01", "UTA", 20, 1]]
+    with pytest.raises(OrdenRechazada, match="no ha podido preguntar a la IA"):
+        _leer(venta, excel(tmp_path / "SP.xlsx", solo_pct))  # sin importes: no se inventa
+
+
+def test_lineas_sin_codigo_se_listan(venta, tmp_path):
+    sin = [
+        ["Código", "Descripción", "Importe a origen"],
+        ["UTA01", "UTA", 10000],
+        [None, "Partida añadida a mano", 8000],
+        [None, "TOTAL", 18000],
+    ]
+    _, r = _leer(venta, excel(tmp_path / "S.xlsx", sin))
+    assert r.total == 10000
+    assert r.no_casan == [(3, "«Partida añadida a mano»", "Partida añadida a mano", 8000)]
+    assert any("8000,00 €" in a for a in r.avisos)
+
+
+def test_varias_hojas_lee_la_que_casa_con_la_venta(venta, tmp_path):
+    wb = Workbook()
+    resumen = wb.active
+    resumen.title = "Resumen"
+    for f in (["Código", "Descripción", "Importe a origen"], ["01", "Climatización", 12100]):
+        resumen.append(f)
+    detalle = wb.create_sheet("Detalle")
+    for f in (["Código", "Descripción", "Importe a origen"], ["UTA01", "UTA", 10000],
+              ["CND01", "Conducto", 2100]):  # fmt: skip
+        detalle.append(f)
+    wb.save(tmp_path / "Hojas.xlsx")
+    mapa, r = _leer(venta, tmp_path / "Hojas.xlsx")
+    assert mapa.hoja == "Detalle" and r.total == 12100
+    assert any("«Resumen»" in a for a in r.avisos)
+
+
+def test_total_en_la_columna_de_codigo_y_total_con_iva(venta, tmp_path):
+    filas = [
+        ["Código", "Descripción", "Importe a origen"],
+        ["UTA01", "UTA", 10000],
+        ["TOTAL", None, 10000],
+        [None, "Total con IVA", 12100],
+    ]
+    _, r = _leer(venta, excel(tmp_path / "T.xlsx", filas))
+    assert r.total_excel == (3, 10000) and not r.no_casan
+    assert not any("no coincide" in a for a in r.avisos)
+
+
+def test_porcentaje_con_formato_de_celda(venta, tmp_path):
+    ruta = excel(tmp_path / "F.xlsx", [
+        ["Código", "Resumen", "Presupuesto", "% a origen"],
+        ["UTA01", "UTA", 20000, 0.01],  # 1 % con formato de porcentaje
+    ])  # fmt: skip
+    from openpyxl import load_workbook
+
+    wb = load_workbook(ruta)
+    wb.active["D2"].number_format = "0%"
+    wb.save(ruta)
+    _, r = _leer(venta, ruta)
+    assert r.total == 200  # no 20000 × 1 / 1 = 20000
+
+
+def test_mapa_de_la_ia_se_comprueba_con_las_mismas_reglas(venta, tmp_path):
+    raro = [["A", "B", "Ritmo %", "D"], ["UTA01", "UTA", 50, 8000]]
+    ruta = excel(tmp_path / "R.xlsx", raro)
+    doc = venta.incorporar_documento(ruta)
+    # Un «%» como importe, o el mismo código e importe en una columna: se descartan.
+    for columnas in (
+        {"codigo": "A", "importe_origen": "C"},
+        {"codigo": "A", "importe_origen": "A"},
+    ):
+        venta.mapeador_ia = lambda t, c=columnas: {"hoja": "Cert", "fila_titulos": 1, "columnas": c}
+        with pytest.raises(OrdenRechazada, match="importe certificado a origen"):
+            venta.leer_certificacion(doc)
+    venta.mapeador_ia = lambda t: {"hoja": "Cert", "fila_titulos": 1,
+                                   "columnas": {"codigo": "A", "importe_origen": "D"}}  # fmt: skip
+    _, r = venta.leer_certificacion(doc)
+    assert r.total == 8000
+
+
+def test_todo_a_cero_se_rechaza(venta, tmp_path):
+    cero = [["Código", "Descripción", "Importe a origen"], ["UTA01", "UTA", 0], ["CND01", "C", 0]]
+    with pytest.raises(OrdenRechazada, match="fórmulas sin el resultado guardado"):
+        _leer(venta, excel(tmp_path / "Z.xlsx", cero))
+
+
+def test_numeros_saltados_y_bajadas_se_anotan(venta, tmp_path):
+    p = venta
+    for n, filas, nombre in ((1, CLIENTE, "A"), (3, PORCENTAJE, "B")):
+        doc = p.incorporar_documento(excel(tmp_path / f"{nombre}.xlsx", filas))
+        mapa, r = p.leer_certificacion(doc)
+        p.importar_certificacion(doc, n, "2026-11-30", mapa, r)
+    c1, c3 = p.certificaciones()
+    assert c1["nota"] == ""
+    assert "incluye lo de las que faltan" in c3["nota"] and "menor que la anterior" in c3["nota"]
+    assert c3["del_mes"] == 12100 - 12600

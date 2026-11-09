@@ -459,7 +459,11 @@ class PaginaPrevision(QWidget):
             [
                 "Margen (%)",
                 _pct(100 * margen_obj / f.venta if margen_obj is not None and f.venta else None),
-                "—",
+                _pct(
+                    100 * f.margen_real / f.certificado
+                    if f.margen_real is not None and f.certificado
+                    else None
+                ),
                 _pct(f.margen_previsto_pct),
             ],
         ]
@@ -471,7 +475,7 @@ class PaginaPrevision(QWidget):
             else "Aún no has puesto tu previsión: «Obra → Actualizar mi previsión…»."
         )
         if f.certificado is None:
-            texto += " La venta real (lo certificado) llegará con las certificaciones."
+            texto += " Sin certificaciones: la venta real sale de «Obra → Importar certificación»."
         self.resumen.setText(texto)
 
     def actualizar_estado(self, hay: bool) -> None:
@@ -584,7 +588,8 @@ class PaginaCertificaciones(QWidget):
                     else "."
                 )
             )
-            self.avisos.setText("\n".join(f"⚠ {a}" for a in ultima["avisos"]))
+            notas = [f"Nº {c['numero']}: {c['nota']}." for c in certs if c["nota"]]
+            self.avisos.setText("\n".join(f"⚠ {a}" for a in [*notas, *ultima["avisos"]]))
         _llenar(
             self.tabla,
             [

@@ -60,11 +60,14 @@ SINONIMOS: tuple[tuple[str, tuple[str, ...]], ...] = (
         (
             "% origen",
             "% a origen",
+            "origen %",
             "porcentaje origen",
             "% acumulado",
+            "acumulado %",
             "% ejecutado",
-            "% cert",
+            "ejecutado %",
             "% total",
+            "porcentaje ejecutado",
         ),
     ),  # fmt: skip
     (
@@ -88,11 +91,13 @@ SINONIMOS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "certificacion actual",
             "certificado actual",
             "importe actual",
+            "importe del mes",
+            "importe mes",
+            "cert mes",
             "actual",
             "del mes",
             "mes",
             "periodo",
-            "parcial",
         ),
     ),  # fmt: skip
     (
@@ -108,9 +113,19 @@ SINONIMOS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-#: Un título con estas palabras es de cantidades o precios, no de importes: «Cantidad a
-#: origen» no es el importe a origen.
-NO_IMPORTE = ("cantidad", "cant ", "medicion", "precio", "unitario")
+#: Un título con estas palabras es de cantidades, unidades, precios o porcentajes, no de
+#: importes en euros: «Cantidad a origen», «Uds. a origen» o «% anterior» no son el importe
+#: (revisión 09-11-2026: «% anterior» y «% actual» se leían como euros).
+NO_IMPORTE = ("%", "cantidad", "cant ", "medicion", "precio", "unitario", "unidades", "uds ",
+              "ud ", "porcentaje")  # fmt: skip
+
+
+def _vale_para(rol: str, titulo_normalizado: str) -> bool:
+    t = titulo_normalizado + " "
+    if rol.startswith("importe") and any(n in t for n in NO_IMPORTE):
+        return False
+    # Un % a origen tiene que decir que es un porcentaje.
+    return rol != "porcentaje_origen" or "%" in t or "porcentaje" in t
 
 
 class CertificacionNoReconocida(ValueError):
@@ -145,7 +160,7 @@ class Mapa:
 @dataclass(frozen=True)
 class Fila:
     fila: int
-    codigo: str
+    codigo: str  # «» en una línea sin código (se lista, no se descarta)
     resumen: str
     naturaleza: str
     importe_origen: float | None  # None: la fila no tiene importe
@@ -176,11 +191,13 @@ def _libros(ruta: Path):
         ) from exc
 
 
-def mapear(ruta: Path) -> Mapa | None:
-    """Columnas por sus títulos. None si ninguna hoja tiene un mapa completo."""
+def mapas(ruta: Path) -> list[Mapa]:
+    """Columnas por sus títulos: el mejor mapa completo de cada hoja (puede haber varias,
+    p. ej. resumen y detalle; quien llama elige la que casa con la venta)."""
     wv, _ = _libros(Path(ruta))
-    mejor: Mapa | None = None
+    salida = []
     for ws in wv.worksheets:
+        mejor: Mapa | None = None
         for r in range(1, min(ws.max_row, 40) + 1):
             columnas: dict[str, str] = {}
             titulos: dict[str, str] = {}
@@ -189,9 +206,7 @@ def mapear(ruta: Path) -> Mapa | None:
                 if not t:
                     continue
                 for rol, sinonimos in SINONIMOS:
-                    if rol in columnas:
-                        continue
-                    if rol.startswith("importe") and any(n in t + " " for n in NO_IMPORTE):
+                    if rol in columnas or not _vale_para(rol, t):
                         continue
                     if any(s == t or (len(s) > 3 and s in t) for s in sinonimos):
                         columnas[rol] = get_column_letter(c)
@@ -200,7 +215,15 @@ def mapear(ruta: Path) -> Mapa | None:
             m = Mapa(ws.title, r, columnas, "títulos", titulos)
             if m.completo() and (mejor is None or len(columnas) > len(mejor.columnas)):
                 mejor = m
-    return mejor
+        if mejor is not None:
+            salida.append(mejor)
+    return salida
+
+
+def mapear(ruta: Path) -> Mapa | None:
+    """El primer mapa completo (compatibilidad); `mapas` da todos."""
+    todos = mapas(ruta)
+    return todos[0] if todos else None
 
 
 def volcado_titulos(ruta: Path, filas: int = 25) -> str:
@@ -222,8 +245,11 @@ def volcado_titulos(ruta: Path, filas: int = 25) -> str:
 
 
 def mapa_de_ia(ruta: Path, propuesta: dict[str, Any]) -> Mapa:
-    """Comprueba lo que propone la IA contra el fichero: la hoja existe, cada columna tiene
-    título en la fila de títulos. Lo que no cuadra se descarta (no se adivina)."""
+    """Comprueba lo que propone la IA contra el fichero, con las mismas reglas que los
+    títulos (ADR-0013: la IA propone, TRAZA comprueba): la hoja y la fila existen; cada
+    columna tiene título en esa fila y vale para su dato (un «%» o una cantidad no es un
+    importe); dos datos no comparten columna; una columna de importe tiene números debajo.
+    Lo que no cuadra se descarta (no se adivina)."""
     wv, _ = _libros(Path(ruta))
     if propuesta.get("hoja") not in wv.sheetnames:
         raise CertificacionNoReconocida(f"La hoja «{propuesta.get('hoja')}» no está en el Excel.")
@@ -232,6 +258,7 @@ def mapa_de_ia(ruta: Path, propuesta: dict[str, Any]) -> Mapa:
     if not 1 <= fila <= ws.max_row:
         raise CertificacionNoReconocida("La fila de títulos propuesta no existe.")
     columnas, titulos = {}, {}
+    usadas: set[int] = set()
     for rol, letra in (propuesta.get("columnas") or {}).items():
         if rol not in ROLES or not letra:
             continue
@@ -240,8 +267,13 @@ def mapa_de_ia(ruta: Path, propuesta: dict[str, Any]) -> Mapa:
         except ValueError:
             continue
         titulo = ws.cell(fila, c).value
-        if titulo in (None, ""):
-            continue  # una columna sin título en la fila de títulos no se acepta
+        if titulo in (None, "") or c in usadas or not _vale_para(rol, normalizar(titulo)):
+            continue
+        if rol.startswith(("importe", "porcentaje")) and not any(
+            _numero(ws.cell(r, c).value) is not None for r in range(fila + 1, ws.max_row + 1)
+        ):
+            continue  # una columna de importe sin ningún número no es de importes
+        usadas.add(c)
         columnas[rol], titulos[rol] = get_column_letter(c), str(titulo).strip()
     m = Mapa(ws.title, fila, columnas, "IA", titulos)
     if not m.completo():
@@ -252,51 +284,81 @@ def mapa_de_ia(ruta: Path, propuesta: dict[str, Any]) -> Mapa:
     return m
 
 
+#: Filas de total que NO son el total certificado de la obra.
+_OTROS_TOTALES = ("iva", "capitulo", "cap ", "con impuestos", "liquido", "a pagar")
+
+
 def leer(ruta: Path, mapa: Mapa) -> Leido:
     wv, wf = _libros(Path(ruta))
-    ws = wv[mapa.hoja]
+    ws, wsf = wv[mapa.hoja], wf[mapa.hoja]
     col = {rol: column_index_from_string(letra) for rol, letra in mapa.columnas.items()}
 
     def valor(r: int, rol: str) -> Any:
         return ws.cell(r, col[rol]).value if rol in col else None
 
-    # % en tanto por uno o por ciento: se decide una vez, por el mayor valor de la columna.
-    escala = 1.0
-    if "porcentaje_origen" in col:
-        pcts = [
-            _numero(valor(r, "porcentaje_origen")) or 0.0
-            for r in range(mapa.fila_titulos + 1, ws.max_row + 1)
-        ]
-        escala = 100.0 if max(pcts, default=0.0) > 1.5 else 1.0
+    def sin_resultado(r: int, rol: str) -> bool:
+        if rol not in col or valor(r, rol) is not None:
+            return False
+        celda = wsf.cell(r, col[rol]).value
+        return isinstance(celda, str) and celda.startswith("=")
+
+    escala = _escala_porcentaje(ws, col, mapa)
     filas: list[Fila] = []
     total_excel = None
     avisos: list[str] = []
     for r in range(mapa.fila_titulos + 1, ws.max_row + 1):
         codigo = str(valor(r, "codigo") or "").strip()
         resumen = str(valor(r, "resumen") or "").strip()
+        usados: tuple[str, ...]
         if "importe_origen" in col:
+            usados = ("importe_origen",)
             origen = _numero(valor(r, "importe_origen"))
         elif "importe_anterior" in col and "importe_mes" in col:
+            usados = ("importe_anterior", "importe_mes")
             ant, mes = _numero(valor(r, "importe_anterior")), _numero(valor(r, "importe_mes"))
             origen = None if ant is None and mes is None else (ant or 0.0) + (mes or 0.0)
         else:
+            usados = ("porcentaje_origen", "importe_presupuesto")
             pct = _numero(valor(r, "porcentaje_origen"))
             pres = _numero(valor(r, "importe_presupuesto"))
             origen = None if pct is None or pres is None else pres * pct / escala
-        texto = normalizar(resumen or codigo)
-        if not codigo and texto.startswith("total") and origen is not None:
-            total_excel = (r, origen)
+        # TOTAL: sin código (o con «TOTAL» en la columna de código), con importe, y que no
+        # sea un total de capítulo ni con IVA (revisión 09-11-2026).
+        texto = normalizar(codigo or resumen)
+        es_total = texto.startswith("total") and (
+            not codigo or normalizar(codigo).startswith("total")
+        )
+        if es_total and origen is not None:
+            if not any(o in texto + " " for o in _OTROS_TOTALES):
+                total_excel = (r, origen)
             continue
-        if not codigo:
-            continue
-        if origen is None and "importe_origen" in col:
-            celda = wf[mapa.hoja].cell(r, col["importe_origen"]).value
-            if isinstance(celda, str) and celda.startswith("="):
-                avisos.append(f"{codigo} (fila {r}): fórmula sin resultado guardado (cuenta 0).")
+        malas = [rol for rol in usados if sin_resultado(r, rol)]
+        if malas:
+            avisos.append(
+                f"{codigo or resumen} (fila {r}): fórmula sin resultado guardado (cuenta 0)."
+            )
+        if not codigo and not origen:
+            continue  # sin código ni importe: un título, una línea en blanco…
         filas.append(Fila(r, codigo, resumen, str(valor(r, "naturaleza") or "").strip(), origen))
-    if not filas:
+    if not any(f.codigo for f in filas):
         raise CertificacionNoReconocida("No hay ninguna fila con código bajo los títulos.")
     return Leido(mapa, filas, total_excel, avisos)
+
+
+def _escala_porcentaje(ws, col: dict[str, int], mapa: Mapa) -> float:
+    """% en tanto por uno o por ciento: manda el formato de la celda («0%» es tanto por
+    uno); sin formato, el mayor valor de las filas con código (> 1,5 → por ciento)."""
+    if "porcentaje_origen" not in col:
+        return 1.0
+    valores = []
+    for r in range(mapa.fila_titulos + 1, ws.max_row + 1):
+        celda = ws.cell(r, col["porcentaje_origen"])
+        if _numero(celda.value) is None or not ws.cell(r, col["codigo"]).value:
+            continue
+        if "%" in (celda.number_format or ""):
+            return 1.0
+        valores.append(celda.value)
+    return 100.0 if max(valores, default=0.0) > 1.5 else 1.0
 
 
 def descripcion(mapa: Mapa) -> str:

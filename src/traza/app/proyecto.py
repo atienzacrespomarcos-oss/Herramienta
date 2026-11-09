@@ -682,7 +682,19 @@ class Proyecto:
             )
         ruta = self.ruta_documento(documento_id)
         try:
-            mapa = certificacion_excel.mapear(ruta)
+            candidatos = certificacion_excel.mapas(ruta)
+            mapa = None
+            if candidatos:
+                # Varias hojas con columnas de certificación (resumen y detalle, una por
+                # capítulo…): se lee la que más partidas casa con la venta, y se dice.
+                mapa, leido, resultado = self._mejor_hoja(ruta, candidatos, venta["id"])
+                if len(candidatos) > 1:
+                    otras = ", ".join(f"«{m.hoja}»" for m in candidatos if m is not mapa)
+                    resultado.avisos.append(
+                        f"Se ha leído la hoja «{mapa.hoja}», la que más casa con la venta; "
+                        f"hay más hojas con columnas de certificación: {otras}."
+                    )
+                return mapa, resultado
             if mapa is None:
                 texto = certificacion_excel.volcado_titulos(ruta)
                 esperar = esperar or (lambda f: f())
@@ -699,6 +711,22 @@ class Proyecto:
         except (certificacion_excel.CertificacionNoReconocida, ValueError) as exc:
             raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
         return mapa, resultado
+
+    def _mejor_hoja(self, ruta, candidatos, venta_id):
+        partidas = self.partidas(venta_id)
+        mejor, error = None, None
+        for m in candidatos:
+            try:
+                leido = certificacion_excel.leer(ruta, m)
+                r = calculo_obra.cruzar_certificacion(leido, partidas)
+            except (certificacion_excel.CertificacionNoReconocida, ValueError) as exc:
+                error = error or exc
+                continue
+            if mejor is None or len(r.por_partida) > len(mejor[2].por_partida):
+                mejor = (m, leido, r)
+        if mejor is None:
+            raise error
+        return mejor
 
     def importar_certificacion(
         self,
@@ -729,17 +757,28 @@ class Proyecto:
         return orden.id
 
     def certificaciones(self) -> list[dict[str, Any]]:
-        """Por número, con el importe del mes (a origen menos la anterior)."""
+        """Por número, con el importe de cada una (a origen menos la anterior) y una nota si
+        abarca varias (números saltados) o baja (a origen menor que la anterior)."""
         filas = self._filas(
             "SELECT c.*, d.nombre_original AS documento_nombre FROM certificacion c"
             " JOIN documento d ON d.id = c.documento_id ORDER BY c.numero"
         )
-        anterior = 0.0
+        anterior, numero = 0.0, 0
         for f in filas:
             for clave in ("partidas", "mapa", "avisos"):
                 f[clave] = json.loads(f[clave])
             f["del_mes"] = round(f["total_origen"] - anterior, 2)
-            anterior = f["total_origen"]
+            notas = []
+            if f["numero"] != numero + 1:
+                notas.append(
+                    f"tras la nº {numero}: incluye lo de las que faltan"
+                    if numero
+                    else f"es la primera registrada: incluye lo anterior a la nº {f['numero']}"
+                )
+            if f["del_mes"] < 0:
+                notas.append("a origen menor que la anterior (corrección a la baja)")
+            f["nota"] = "; ".join(notas)
+            anterior, numero = f["total_origen"], f["numero"]
         return filas
 
     def quitar_certificacion(self, certificacion_id: str) -> None:
