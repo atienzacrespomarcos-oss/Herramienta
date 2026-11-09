@@ -488,6 +488,9 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
     q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     textos = [v.lista_pasos.item(i).text() for i in range(v.lista_pasos.count())]
+    # Proyecto nuevo: todo pendiente (○) salvo Equipos, que no tiene estado.
+    assert all(x.startswith("○ ") for x in textos[:-1]) and textos[-1].startswith("9. ")
+    textos = [x.removeprefix("○ ") for x in textos]
     assert textos == [
         "1. Documentación",
         "2. Planos y espacios",
@@ -499,6 +502,7 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
         "8. Modificados",
         "9. Equipos",
     ]
+    assert v.lista_pasos.item(1).toolTip() == "Falta: leer el plano DXF"
     assert v.paso_actual() == "documentacion"
     v.ir_a_paso("equipos")
     assert v.paginas.currentWidget() is v._pagina["equipos"]
@@ -791,3 +795,33 @@ def test_dialogo_de_cambio_distingue_partidas_iguales(qtbot):
     d.partida.setEditText(textos[2])
     d._aceptar()
     assert d.resultado.partida_id == "c"
+
+
+def test_paso_desactualizado_se_marca_y_se_da_por_revisado(ventana, tmp_path, monkeypatch):
+    from traza.app.flujo import DESACTUALIZADO, EstadoPaso
+
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "diseno"))
+    v.a_nuevo.trigger()
+    p = v.proyecto
+    original = p.estado_paso
+    revisados: list[str] = []
+
+    def estado(paso):
+        if paso == "redes" and not revisados:
+            return EstadoPaso(DESACTUALIZADO, "Ha cambiado Cargas: revisa y da por revisado")
+        return original(paso)
+
+    monkeypatch.setattr(p, "estado_paso", estado)
+    monkeypatch.setattr(p, "dar_por_revisado", revisados.append)
+    v.refrescar()
+    v.ir_a_paso("planos")
+    v.a_revisado.trigger()
+    assert q.informaciones[-1] == "Este paso no está desactualizado." and not revisados
+    v.ir_a_paso("redes")
+    item = v.lista_pasos.currentItem()
+    assert item.text() == "⚠ 4. Redes de aire"
+    assert item.toolTip() == "Ha cambiado Cargas: revisa y da por revisado"
+    v.a_revisado.trigger()
+    assert revisados == ["redes"]
+    assert v.lista_pasos.currentItem().text() == "○ 4. Redes de aire"

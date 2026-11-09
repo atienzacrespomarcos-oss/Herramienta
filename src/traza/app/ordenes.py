@@ -442,6 +442,21 @@ class CambiarEncargo(Orden):
         return [Delta("meta", antes, despues)]
 
 
+@dataclass
+class DarPorRevisado(Orden):
+    """El usuario ha revisado un paso que estaba desactualizado (docs/modules/flujo.md)."""
+
+    paso: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        # La marca es el último número del registro de cambios en el momento de revisar:
+        # lo anterior queda revisado. Se guarda en la tabla (no se lee del registro)
+        # porque el registro solo crece y deshacer la revisión también escribe en él.
+        ultimo = con.execute("SELECT COALESCE(MAX(n), 0) FROM cambio").fetchone()[0]
+        antes = leer(con, "paso_revisado", {"paso": self.paso})
+        return [Delta("paso_revisado", antes, {"paso": self.paso, "marca": str(ultimo)})]
+
+
 # --- Mediciones, ofertas y presupuestos ----------------------------------------------
 
 CLASES_MEDICION = {"medicion": "Medición", "oferta": "Oferta", "presupuesto": "Presupuesto"}

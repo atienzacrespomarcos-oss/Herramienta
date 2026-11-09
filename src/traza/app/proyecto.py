@@ -13,8 +13,8 @@ from typing import Any
 
 from traza.ai import claude_code
 from traza.app import cargas as calculo_cargas
+from traza.app import flujo, lectura_ia
 from traza.app import hidronica as calculo_hidronica
-from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
 from traza.app import planos as calculo_planos
 from traza.app import redes as calculo_redes
@@ -28,6 +28,7 @@ from traza.app.ordenes import (
     CambiarPlano,
     ConfirmarContorno,
     CrearPendiente,
+    DarPorRevisado,
     DefinirRed,
     DefinirSistemaHidraulico,
     DefinirSubcuadro,
@@ -1197,6 +1198,13 @@ class Proyecto:
             return calculo_hidronica.calcular(sistema, cargas)
         except ValueError as exc:
             raise OrdenRechazada(str(exc)) from exc
+
+    # --- Estado de los pasos (docs/modules/flujo.md) ------------------------------------
+    def estado_paso(self, paso: str) -> flujo.EstadoPaso:
+        return flujo.estado(self, paso)
+
+    def dar_por_revisado(self, paso: str) -> None:
+        self.ejecutar(DarPorRevisado(paso))
 
     # --- Subcuadros de clima (Etapa 8, docs/modules/electricidad.md) -------------------
     def subcuadros(self) -> list[dict[str, Any]]:

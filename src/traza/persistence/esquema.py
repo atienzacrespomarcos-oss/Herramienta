@@ -323,9 +323,14 @@ CREATE TABLE subcuadro (
 
 # V10 (09-11-2026): tipos de encargo Diseño · Oferta · Ampliación (docs/modules/flujo.md).
 # «Presupuesto + instalación» y «solo instalación» pasan a Oferta, el más parecido.
+# También: «dar por revisado» un paso desactualizado (marca que cambia en cada revisión).
 V10 = """
 UPDATE meta SET valor = 'oferta'
     WHERE clave = 'encargo' AND valor IN ('presupuesto', 'instalacion');
+CREATE TABLE paso_revisado (
+    paso TEXT PRIMARY KEY,
+    marca TEXT NOT NULL
+);
 """
 
 MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)
