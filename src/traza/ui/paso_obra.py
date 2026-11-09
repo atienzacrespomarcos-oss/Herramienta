@@ -725,7 +725,9 @@ class PaginaFuturibles(QWidget):
         if f.modificado_id and all(m["id"] != f.modificado_id for m in modificados):
             # Ya no es del presupuesto contratado: se ofrece igual, para que el vínculo no se
             # pierda en silencio (guardarlo se rechaza y lo explica).
-            modificados.append(self.proyecto.modificado(f.modificado_id))
+            mod = self.proyecto.modificado(f.modificado_id)
+            if mod is not None:
+                modificados.append(mod)
         datos = self.v.preguntas.futurible(modificados, actual)
         if datos is not None:
             self.proyecto.guardar_futurible(**datos)

@@ -251,11 +251,12 @@ Cómo está hecho (`io/certificacion_excel.py`, `app/obra.cruzar_certificacion`)
   **calculada siempre al día** (si el modificado cambia, el futurible le sigue; no se
   copia una cifra). El coste lo estima el usuario: TRAZA no lo inventa.
 - Venta y coste pueden ser negativos (un modificado o una oferta pueden quitar alcance).
-- Un modificado solo puede ser un futurible; no se borra un modificado del que sale la
+- Un modificado solo puede estar en un futurible; no se borra un modificado del que sale la
   venta de un futurible. Su venta **no consta** (no se suma, ni como 0) y se dice cuando
   el modificado aún no tiene cambios, tiene cambios sin cantidad o sin precio, o ya no es
   del presupuesto contratado (se eligió otro). Un marcado sin venta deja el escenario sin
-  cifra («—»), con el aviso en Previsión y en el resumen del Excel (revisión 09-11-2026).
+  cifra («—»), con el aviso en Previsión (si hay previsión) y en el resumen del Excel
+  (revisión 09-11-2026).
 - **Escenario sí/no**: cada futurible se marca o no (doble clic o «Sí / no en el
   escenario»). «Con futuribles marcados» = **tu previsión + la venta y el coste estimado de
   los marcados**. Tu previsión nunca cambia por ellos («no confundir con ampliaciones»).
