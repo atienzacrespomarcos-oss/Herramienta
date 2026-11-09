@@ -20,6 +20,14 @@ DEPENDE: dict[str, tuple[str, ...]] = {
     "hidronica": ("planos", "cargas"),
     "subcuadros": ("redes", "hidronica"),
 }
+#: Cómo se nombran los pasos de cálculo en los avisos.
+NOMBRES = {
+    "planos": "Planos",
+    "cargas": "Cargas",
+    "redes": "Redes de aire",
+    "hidronica": "Sistema hidráulico",
+    "subcuadros": "Subcuadros de clima",
+}
 #: Qué cambios del registro son «del paso»: solo los que cambian datos de cálculo.
 #: `{t}` es el alias de la tabla `cambio`. Planos: la geometría confirmada y los niveles,
 #: espacios y obstáculos con sus propiedades (alturas, cotas); NO la tabla `plano` (capas,
@@ -160,13 +168,11 @@ def estado(p: Any, paso: str) -> EstadoPaso:
         propio = max(_ultimo(con, paso, ancestros), _revisado(con, paso))
         cambiados = [a for a in ancestros if _ultimo(con, a) > propio]
         if cambiados:
-            nombres = {"planos": "Planos", "cargas": "Cargas", "redes": "Redes de aire",
-                       "hidronica": "Sistema hidráulico"}  # fmt: skip
             orden = [k for k in DEPENDE if k in cambiados]
             return EstadoPaso(
                 DESACTUALIZADO,
                 "Ha cambiado "
-                + ", ".join(nombres[k] for k in orden)
+                + ", ".join(NOMBRES[k] for k in orden)
                 + ": revisa y da por revisado",
             )
     return EstadoPaso(HECHO)

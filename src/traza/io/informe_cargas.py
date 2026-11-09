@@ -15,6 +15,7 @@ import pymupdf
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
+from traza.core.numeros import escribir_numero as _es
 from traza.engines.cargas import NOTAS_INVIERNO, NOTAS_VERANO
 from traza.io.excel import FORMATO_NUMERO, _hoja
 from traza.rules.cerramientos import TIPOS
@@ -50,9 +51,9 @@ def _resumen(proyecto: str, r: Any) -> list[tuple[str, Any, str]]:
     e = r.estacion
     filas: list[tuple[str, Any, str]] = [
         ("Proyecto", proyecto, ""),
-        ("Estación climática", f"{e.nombre} ({e.provincia}), {e.altitud_m:g} m", ""),
+        ("Estación climática", f"{e.nombre} ({e.provincia}), {_es(e.altitud_m)} m", ""),
         ("Fuente del clima", f"{GUIA}, p. {e.pagina}", ""),
-        ("Obra", f"{r.provincia}, {r.altitud_obra_m:g} m", ""),
+        ("Obra", f"{r.provincia}, {_es(r.altitud_obra_m)} m", ""),
         ("Zona climática (CTE DB HE, Anejo B)", r.zona, ""),
         ("Tipo de construcción", TIPOS.get(r.tipo_construccion, r.tipo_construccion), ""),
         ("Mes de proyecto (verano)", MESES[r.mes - 1], ""),
@@ -236,8 +237,8 @@ def hipotesis(r: Any) -> list[str]:
         "apartado 5.2 (cobertura normal TS 99 % / TS 1 %; alta TS 99,6 % / TS 0,4 %); obra a "
         "otra cota según el anexo 7.3.",
         f"Cerramientos ({TIPOS.get(r.tipo_construccion, r.tipo_construccion)}): {env.fuente}. "
-        f"U muro {env.u_muro:.2f}, cubierta {env.u_cubierta:.2f} W/m²K.",
-        f"Huecos: U {env.hueco.u:.2f} W/m²K, factor solar {env.hueco.factor_solar:.2f} "
+        f"U muro {_es2(env.u_muro)}, cubierta {_es2(env.u_cubierta)} W/m²K.",
+        f"Huecos: U {_es2(env.hueco.u)} W/m²K, factor solar {_es2(env.hueco.factor_solar)} "
         f"({env.hueco.fuente}).",
         "Ocupación, calor de las personas, iluminación y equipos: valores de diseño de ASHRAE "
         "por tipo de espacio, salvo lo cambiado por el usuario (hoja «Datos y fuentes»).",
@@ -375,3 +376,8 @@ def exportar_pdf(destino: Path, proyecto: str, r: Any) -> Path:
     finally:
         writer.close()
     return destino
+
+
+def _es2(v: float) -> str:
+    """Dos decimales con coma (U, factor solar): como el resto de la herramienta."""
+    return f"{v:.2f}".replace(".", ",")

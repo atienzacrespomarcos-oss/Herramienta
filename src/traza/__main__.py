@@ -46,6 +46,11 @@ def _autoprueba() -> int:
                 raise AssertionError("deshacer no revirtió la aprobación")
             if p.rehacer() != "Aprobar" or p.elemento(o.id)["estado"] != "aprobado":
                 raise AssertionError("rehacer no repuso la aprobación")
+            # La justificación en Word: python-docx necesita su plantilla interna, que
+            # PyInstaller solo empaqueta con --collect-data docx.
+            word = p.exportar_memoria(Path(tmp) / "autoprueba")
+            if not word.exists() or word.stat().st_size == 0:
+                raise AssertionError("no se generó la justificación en Word")
         finally:
             p.cerrar()
         _autoprueba_dxf(Path(tmp))

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from traza.app.ordenes import TIPOS_RED, OrdenRechazada
+from traza.core.ficheros import nombre_valido
 from traza.core.numeros import escribir_numero
 from traza.engines.conductos import SFP
 from traza.ui.visor_plano import VisorPlano
@@ -33,20 +34,8 @@ COLOR_CRITICO = QColor(200, 40, 40)
 COLOR_ELEGIDO = QColor(230, 126, 34)
 
 
-_RESERVADOS_WINDOWS = {"CON", "PRN", "AUX", "NUL"} | {
-    f"{base}{n}" for base in ("COM", "LPT") for n in range(1, 10)
-}
-
-
 def _archivo(texto: str) -> str:
-    """Nombre válido en Windows para sugerir (revisión 08-11-2026): sin < > : " / \\ | ? *
-    ni caracteres de control, sin punto ni espacio al final (Windows los quita sin avisar)
-    y sin nombres reservados (CON, NUL, COM1…)."""
-    limpio = "".join("-" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in texto)
-    limpio = limpio.strip().rstrip(". ")
-    if limpio.split(".")[0].strip().upper() in _RESERVADOS_WINDOWS:
-        limpio = f"red {limpio}"
-    return limpio or "red"
+    return nombre_valido(texto, "red")
 
 
 def _n(v, decimales: int = 1) -> str:

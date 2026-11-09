@@ -123,6 +123,8 @@ TODOS = frozenset(ENCARGOS)
 #: los de cálculo, en los tres (en Oferta, para recalcular el proyecto ajeno); Mediciones y
 #: Modificados, solo en Oferta.
 OFERTA = frozenset({"oferta"})
+#: Entregables de un diseño (usuario, 09-11-2026): en Diseño y Ampliación.
+CON_ENTREGABLES = frozenset({"diseno", "ampliacion"})
 #: Marca del estado de cada paso en la lista (el detalle, en el tooltip).
 MARCA_ESTADO = {"hecho": "✓ ", "pendiente": "○ ", "desactualizado": "⚠ "}
 PASOS = [
@@ -135,6 +137,7 @@ PASOS = [
     ("mediciones", "Mediciones y ofertas", OFERTA),
     ("modificados", "Modificados", OFERTA),
     ("equipos", "Equipos", TODOS),
+    ("entregables", "Entregables", CON_ENTREGABLES),
 ]
 
 
@@ -198,10 +201,13 @@ def _fecha(iso: str) -> str:
 
 
 class VentanaPrincipal(QMainWindow):
-    def __init__(self, preguntas: Preguntas | None = None) -> None:
+    def __init__(self, preguntas: Preguntas | None = None, ajustes=None) -> None:
         super().__init__()
         self.proyecto: Proyecto | None = None
         self.preguntas = preguntas or Preguntas(self)
+        #: Ajustes de este equipo (QSettings): la plantilla de Word. Las pruebas pasan uno
+        #: en un fichero temporal para no tocar los del usuario.
+        self._ajustes = ajustes
         self.resize(1400, 850)
         self._construir()
         self._actualizar_estado()
@@ -398,6 +404,10 @@ class VentanaPrincipal(QMainWindow):
         from traza.ui.paso_subcuadros import PaginaSubcuadros
 
         self.pagina_subcuadros = PaginaSubcuadros(self)
+        # Paso Entregables: módulo propio (ui/paso_entregables.py).
+        from traza.ui.paso_entregables import PaginaEntregables
+
+        self.pagina_entregables = PaginaEntregables(self, self._ajustes)
         self._pagina = {
             "documentacion": doc,
             "planos": self.pagina_planos,
@@ -408,6 +418,7 @@ class VentanaPrincipal(QMainWindow):
             "mediciones": med,
             "modificados": mo,
             "equipos": eq,
+            "entregables": self.pagina_entregables,
         }
         for p in self._pagina.values():
             self.paginas.addWidget(p)
@@ -593,6 +604,8 @@ class VentanaPrincipal(QMainWindow):
         self.menu_hidronica = mb.addMenu("&Agua")
         # Menú del paso Subcuadros de clima: lo llena ui/paso_subcuadros.PaginaSubcuadros.
         self.menu_subcuadros = mb.addMenu("E&lectricidad")
+        # Menú del paso Entregables: lo llena ui/paso_entregables.PaginaEntregables.
+        self.menu_entregables = mb.addMenu("E&ntregables")
 
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
@@ -627,6 +640,8 @@ class VentanaPrincipal(QMainWindow):
             self.pagina_hidronica.actualizar_estado(hay)
         if hasattr(self, "pagina_subcuadros"):
             self.pagina_subcuadros.actualizar_estado(hay)
+        if hasattr(self, "pagina_entregables"):
+            self.pagina_entregables.actualizar_estado(hay)
         el = self.elemento_seleccionado() if hay else None
         aprobado = el is not None and el["estado"] == Estado.APROBADO
         for a in (
@@ -685,6 +700,7 @@ class VentanaPrincipal(QMainWindow):
         self.pagina_redes.refrescar()
         self.pagina_hidronica.refrescar()
         self.pagina_subcuadros.refrescar()
+        self.pagina_entregables.refrescar()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()

@@ -17,6 +17,7 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
+from traza.core.numeros import escribir_numero as _es
 from traza.engines.conductos import FUENTE_VELOCIDAD, VELOCIDAD_MAXIMA
 from traza.io.excel import FORMATO_NUMERO, _hoja
 from traza.rules.accesorios_conductos import FUENTE, FUENTE_TERMINAL
@@ -37,9 +38,10 @@ def hipotesis(r: Any) -> list[str]:
     return [
         "Rozamiento: Darcy-Weisbach con Colebrook, chapa galvanizada (ε = 0,09 mm); en "
         "rectangulares, diámetro equivalente de Huebscher (manual Climaver, 6.2.1).",
-        f"Dimensionado: pérdida de carga constante de {red['friccion_objetivo']:g} Pa/m con "
-        f"velocidad máxima {VELOCIDAD_MAXIMA['principal']:g} / {VELOCIDAD_MAXIMA['ramal']:g} / "
-        f"{VELOCIDAD_MAXIMA['terminal']:g} m/s (principal / ramal / a terminal) — "
+        f"Dimensionado: pérdida de carga constante de {_es(red['friccion_objetivo'])} Pa/m con "
+        f"velocidad máxima {_es(VELOCIDAD_MAXIMA['principal'])} / "
+        f"{_es(VELOCIDAD_MAXIMA['ramal'])} / {_es(VELOCIDAD_MAXIMA['terminal'])} m/s "
+        "(principal / ramal / a terminal) — "
         f"{FUENTE_VELOCIDAD}.",
         "Secciones: rectangulares con lados múltiplos de 50 mm, relación ≤ 4"
         + (f" y alto ≤ {red['alto_maximo'] * 1000:.0f} mm" if red["alto_maximo"] else "")
@@ -53,13 +55,13 @@ def hipotesis(r: Any) -> list[str]:
         + {
             "volumen": "con las renovaciones/h de la tabla 3.6 según su volumen (Soler & "
             "Palau, Manual práctico de ventilación, cap. 3) y nunca menos que su aire exterior.",
-            "renovaciones": f"con {red.get('renovaciones') or 0:g} renovaciones/h (tabla 3.5 "
+            "renovaciones": f"con {_es(red.get('renovaciones') or 0)} renovaciones/h (tabla 3.5 "
             "de Soler & Palau como guía) y nunca menos que su aire exterior.",
         }.get(
             red.get("criterio_caudal") or "cargas",
             "con el aire exterior del espacio (cargas)."
             if red["tipo"] == "extraccion"
-            else f"de las cargas, con ΔT de impulsión {red['salto_impulsion']:g} K.",
+            else f"de las cargas, con ΔT de impulsión {_es(red['salto_impulsion'])} K.",
         ),
         "Presión necesaria: la del camino crítico de la red (sin el equipo: filtros, baterías "
         "y atenuadores los da su fabricante).",

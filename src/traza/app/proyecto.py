@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,7 @@ from traza.app.ordenes import (
     nuevo_id,
 )
 from traza.core.estados import Estado
+from traza.core.ficheros import nombre_valido
 from traza.core.geometria import Contorno, Vertice
 from traza.core.procedencia import Origen, Procedencia
 from traza.io import (
@@ -58,6 +60,7 @@ from traza.io import (
     informe_cargas,
     informe_hidronica,
     informe_redes,
+    memoria,
     salida_autocad,
     unifilar_dxf,
 )
@@ -1394,6 +1397,122 @@ class Proyecto:
                 f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en Excel? "
                 "Ciérralo o elige otro nombre."
             ) from exc
+
+    # --- Entregables (docs/modules/flujo.md, bloque 2) ---------------------------------
+
+    def datos_memoria(self) -> memoria.DatosMemoria:
+        """Lo que entra en la justificación de cálculos: cada cálculo que se puede hacer; lo
+        que no, se dice (nunca se omite en silencio)."""
+        d = memoria.DatosMemoria(
+            self.nombre, ENCARGOS.get(self.encargo, self.encargo), date.today()
+        )
+        if self.cargas_config() is not None and self.espacios():
+            try:
+                d.cargas = self.calcular_cargas()
+            except OrdenRechazada as exc:
+                d.sin_calcular.append(f"Cargas: {exc}")
+        for nombre_lista, filas, calcular, destino in (
+            ("Red", self.redes(), self.calcular_red, d.redes),
+            ("Sistema", self.sistemas_hidraulicos(), self.calcular_sistema_hidraulico, d.sistemas),
+        ):
+            for f in filas:
+                try:
+                    destino.append(calcular(f["id"]))
+                except OrdenRechazada as exc:
+                    d.sin_calcular.append(f"{nombre_lista} «{f['nombre']}»: {exc}")
+        for f in self.subcuadros():
+            try:
+                d.subcuadros.append((f["nombre"], self.calcular_subcuadro(f["id"])))
+            except OrdenRechazada as exc:
+                d.sin_calcular.append(f"Subcuadro «{f['nombre']}»: {exc}")
+        for paso in flujo.DEPENDE:
+            e = self.estado_paso(paso)
+            if e.estado == flujo.DESACTUALIZADO:
+                d.pasos_no_hechos.append((flujo.NOMBRES[paso], "desactualizado", e.texto))
+        return d
+
+    def exportar_memoria(self, destino: Path, plantilla: Path | None = None) -> Path:
+        try:
+            return memoria.escribir(Path(destino), self.datos_memoria(), plantilla)
+        except memoria.PlantillaNoValida as exc:
+            raise OrdenRechazada(str(exc)) from exc
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en Word? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
+
+    def generar_entregables(
+        self, carpeta: Path, plantilla: Path | None = None
+    ) -> tuple[Path, list[tuple[str, list[Path], str | None]]]:
+        """Todo lo del diseño a una carpeta nueva dentro de `carpeta` (nunca sobrescribe):
+        planos (Excel), cargas (Excel y PDF), redes (DXF, LISP y Excel), hidráulica (Excel y
+        esquema DXF), subcuadros (unifilar DXF) y la justificación en Word. Devuelve la
+        carpeta y, por entregable, sus ficheros o el motivo por el que no se ha generado."""
+        base = Path(carpeta) / nombre_valido(
+            f"{self.nombre} - Entregables {datetime.now():%Y-%m-%d %H%M}"
+        )
+        sub, n = base, 1
+        while sub.exists():
+            n += 1
+            sub = base.with_name(f"{base.name} ({n})")
+        sub.mkdir(parents=True)
+        hechos: list[tuple[str, list[Path], str | None]] = []
+
+        def hacer(nombre: str, funcion) -> None:
+            try:
+                r = funcion()
+            except OrdenRechazada as exc:
+                hechos.append((nombre, [], str(exc)))
+                return
+            rutas = list(r) if isinstance(r, tuple) else [r]
+            hechos.append((nombre, rutas, None))
+
+        def f(texto: str) -> Path:
+            return sub / nombre_valido(texto, "TRAZA")
+
+        for pl in self.planos():
+            hacer(
+                f"Plano «{pl['documento_nombre']}» (Excel)",
+                lambda pl=pl: self.exportar_plano_excel(
+                    pl["id"], f(f"Plano {Path(pl['documento_nombre']).stem}")
+                ),
+            )
+        if self.cargas_config() is not None and self.espacios():
+            hacer("Cargas (Excel)", lambda: self.exportar_cargas_excel(f("Cargas")))
+            hacer("Cargas (PDF)", lambda: self.exportar_cargas_pdf(f("Cargas")))
+        for red in self.redes():
+            hacer(
+                f"Red «{red['nombre']}» (DXF y LISP)",
+                lambda red=red: self.exportar_red_autocad(red["id"], f(f"Red {red['nombre']}")),
+            )
+            hacer(
+                f"Red «{red['nombre']}» (Excel)",
+                lambda red=red: self.exportar_red_excel(red["id"], f(f"Red {red['nombre']}")),
+            )
+        for s in self.sistemas_hidraulicos():
+            hacer(
+                f"Sistema «{s['nombre']}» (Excel)",
+                lambda s=s: self.exportar_sistema_hidraulico_excel(
+                    s["id"], f(f"Hidráulica {s['nombre']}")
+                ),
+            )
+            hacer(
+                f"Sistema «{s['nombre']}» (esquema DXF)",
+                lambda s=s: self.exportar_esquema_hidraulico(
+                    s["id"], f(f"Esquema hidráulico {s['nombre']}")
+                ),
+            )
+        for c in self.subcuadros():
+            hacer(
+                f"Subcuadro «{c['nombre']}» (unifilar DXF)",
+                lambda c=c: self.exportar_unifilar(c["id"], f(f"Unifilar {c['nombre']}")),
+            )
+        hacer(
+            "Justificación de cálculos (Word)",
+            lambda: self.exportar_memoria(f("Justificación de cálculos"), plantilla),
+        )
+        return sub, hechos
 
 
 def _codigo_libre(propuesto: str, usados: set[str]) -> str:

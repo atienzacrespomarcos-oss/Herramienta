@@ -36,7 +36,9 @@ se documentan en la ficha del módulo.
   qué falta), adaptados al **tipo de encargo**: **Diseño · Oferta · Ampliación**
   (09-11-2026; ficha `docs/modules/flujo.md`). **Solo se ven los pasos que funcionan.**
   Planos revisados o de ampliación propuestos por el usuario: **se recalcula todo** lo que
-  depende de ellos. Entregables de un diseño: DXF/LISP, Excel y memoria en Word.
+  depende de ellos. Entregables de un diseño: DXF/LISP, Excel y la **justificación de
+  cálculos** en Word (de apoyo, «nada oficial», sobre la plantilla de Aliter que elige el
+  usuario; sin membrete de TRAZA).
 - Prioridad 1: **leer ofertas, presupuestos y mediciones** (BC3, Excel y PDF) y preparar
   **ampliaciones y modificaciones** (Excel y BC3). Ficha: `docs/modules/mediciones.md`.
 - **Pedidos: fuera** (09-11-2026: «Ya te dije que olvidaras pedidos»). No proponer Excel de
@@ -117,7 +119,7 @@ se documentan en la ficha del módulo.
 - CI (`.github/workflows/ci.yml`) repite todo en **Windows y Linux**.
 - Ejecutable: `.github/workflows/ejecutable.yml` genera TRAZA.exe (PyInstaller) y lo publica
   como artefacto solo si pasa `TRAZA.exe --autoprueba`. En local:
-  `uv run pyinstaller --noconfirm --windowed --name TRAZA --collect-data pint scripts/traza_exe.py`.
+  `uv run pyinstaller --noconfirm --windowed --name TRAZA --collect-data pint --collect-data docx scripts/traza_exe.py`.
 - Lanzar la app: `uv run python -m traza [carpeta.traza]`.
 
 ## Trampas conocidas
@@ -125,8 +127,8 @@ se documentan en la ficha del módulo.
 - La interfaz no abre diálogos directamente: todo pasa por `ui/dialogos.Preguntas`, que los
   tests sustituyen. Una acción nueva que llame a QMessageBox/QFileDialog directamente no se
   puede probar: añádela a `Preguntas`.
-- `--collect-data pint` es imprescindible en PyInstaller: sin él el .exe arranca y falla al
-  primer valor con unidad.
+- `--collect-data pint` y `--collect-data docx` son imprescindibles en PyInstaller: sin
+  ellos el .exe arranca y falla al primer valor con unidad o al generar el Word.
 - Una conexión SQLite abierta bloquea el fichero en Windows (no en Linux): cierra siempre
   ante error. El CI de Windows lo cazó el 06-11-2026.
 - Toda escritura en la base de datos pasa por `Proyecto.ejecutar` (órdenes) o por

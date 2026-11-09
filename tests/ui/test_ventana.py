@@ -67,6 +67,15 @@ class PreguntasPreparadas:
     def informacion(self, titulo, texto):
         self.informaciones.append(texto)
 
+    def carpeta_entregables(self):
+        return self._siguiente("carpeta_entregables")
+
+    def destino_word(self, sugerido):
+        return self._siguiente("destino_word")
+
+    def plantilla_word(self):
+        return self._siguiente("plantilla_word")
+
     def encargo(self, actual):
         return self._siguiente("encargo")
 

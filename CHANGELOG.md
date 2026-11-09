@@ -2,6 +2,16 @@
 
 ## [Sin publicar]
 
+### Flujo de trabajo · bloque 2: entregables (09-11-2026)
+- Paso **Entregables** (Diseño y Ampliación): genera de una vez, en una carpeta nueva,
+  los Excel de planos, cargas (Excel y PDF), redes (DXF, LISP y Excel), hidráulica (Excel
+  y esquema DXF), unifilares de los subcuadros y la justificación en Word.
+- **Justificación de cálculos en Word** (documento de apoyo): datos de partida con su
+  procedencia, criterios con su norma y resultados de cada cálculo, sobre la plantilla de
+  Word del usuario (se recuerda en el equipo).
+- Las hipótesis de los Excel, con coma decimal.
+- Dependencia: python-docx (MIT). TRAZA.exe con `--collect-data docx`.
+
 ### Flujo de trabajo · bloque 1 (09-11-2026)
 - Tipos de encargo **Diseño · Oferta · Ampliación** con sus pasos (docs/modules/flujo.md);
   los proyectos de «presupuesto + instalación» y «solo instalación» pasan a Oferta.
