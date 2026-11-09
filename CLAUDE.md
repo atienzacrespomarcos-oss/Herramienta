@@ -41,6 +41,10 @@ se documentan en la ficha del módulo.
   usuario; sin membrete de TRAZA).
 - Prioridad 1: **leer ofertas, presupuestos y mediciones** (BC3, Excel y PDF) y preparar
   **ampliaciones y modificaciones** (Excel y BC3). Ficha: `docs/modules/mediciones.md`.
+- **Obra** (09-11-2026, ficha `docs/modules/obra.md`): control **por obra** de venta, coste
+  objetivo (Excel de Presto agrupado por el usuario), certificaciones, coste real,
+  previsión a fin de obra y **futuribles en escenarios sí/no**. Nace desde cero o desde
+  una oferta. Los documentos reales del usuario no van al repositorio (es público).
 - **Pedidos: fuera** (09-11-2026: «Ya te dije que olvidaras pedidos»). No proponer Excel de
   pedidos ni enlazar el diseño con pedidos.
 
