@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 08-11-2026 (Etapa 7, sistema hidráulico).
+Última actualización: 09-11-2026 (Etapa 8, subcuadros de clima).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -23,8 +23,9 @@ declarados).
 | RF-104 | VRF / expansión directa | 3.5 | Pendiente | |
 | RF-105 | Hidrónico | 7 | Implementada (cálculo y elementos) | `docs/modules/hidronica.md`. Primario-secundario, 2 y 4 tubos, circuitos de las cargas; diámetros, bombas, colectores, inercia, vaso, presiones, válvulas y aislamiento con RITE e IDAE nº 18; lista completa de elementos y Excel. Probado con los ejemplos resueltos de la guía IDAE nº 18. Esquema de principio en DXF R2013 con leyenda (7.B). Falta validar con un proyecto real y abrir el esquema en el AutoCAD del usuario. |
 | RF-200…205 | DXF, LISP, listados, memoria | 3 | Pendiente | |
-| RF-110 | Electricidad BT | 4 | Pendiente | |
-| RF-120, 130, 140, 150 | Fontanería, saneamiento, PCI, control | 5 | Pendiente | |
+| RF-110 | Subcuadros eléctricos de clima | 8 | Implementada | `docs/modules/electricidad.md`. Solo subcuadros de clima (decisión del usuario): salidas desde los equipos dimensionados, secciones por intensidad admisible y caída de tensión, magnetotérmico, diferencial, conductor de protección y unifilar DXF. Probado con las tablas y ejemplos de las guías del REBT y un subcuadro calculado a mano. Falta un subcuadro real del usuario. |
+| RF-120, 140, 150 | Fontanería, PCI, control | 5 | Pendiente | |
+| RF-130 | Saneamiento | — | Fuera de alcance | Decisión del usuario (09-11-2026): «saneamiento me da igual, no quiero incorporarlo». |
 | RF-042…045 | Coordinación y trazados | 6 | Pendiente | |
 | RF-160 | Estructura (solo geometría) | 7 | Pendiente | Sin cálculo estructural (decisión del usuario). |
 | RF-024…029, 301, 302 | IA y documentos | 8 | Pendiente | Proveedor externo con permiso por envío. |

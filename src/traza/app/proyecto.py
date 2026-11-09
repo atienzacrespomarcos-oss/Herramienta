@@ -18,16 +18,19 @@ from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
 from traza.app import planos as calculo_planos
 from traza.app import redes as calculo_redes
+from traza.app import subcuadros as calculo_subcuadros
 from traza.app.ordenes import (
     ENCARGOS,
     BorrarRed,
     BorrarSistemaHidraulico,
+    BorrarSubcuadro,
     CambiarEstado,
     CambiarPlano,
     ConfirmarContorno,
     CrearPendiente,
     DefinirRed,
     DefinirSistemaHidraulico,
+    DefinirSubcuadro,
     DescartarPropuesta,
     FijarCargasEspacio,
     FijarCargasProyecto,
@@ -54,6 +57,7 @@ from traza.io import (
     informe_hidronica,
     informe_redes,
     salida_autocad,
+    unifilar_dxf,
 )
 from traza.io.bc3_escritura import Bc3EscrituraError, CapituloBc3, PartidaBc3, codigo_valido
 from traza.io.bc3_escritura import escribir as escribir_bc3
@@ -1194,6 +1198,61 @@ class Proyecto:
             return calculo_hidronica.calcular(sistema, cargas)
         except ValueError as exc:
             raise OrdenRechazada(str(exc)) from exc
+
+    # --- Subcuadros de clima (Etapa 8, docs/modules/electricidad.md) -------------------
+    def subcuadros(self) -> list[dict[str, Any]]:
+        filas = self._filas("SELECT * FROM subcuadro ORDER BY nombre")
+        for f in filas:
+            f["salidas"] = json.loads(f["salidas"])
+        return filas
+
+    def subcuadro(self, subcuadro_id: str) -> dict[str, Any]:
+        for s in self.subcuadros():
+            if s["id"] == subcuadro_id:
+                return s
+        raise OrdenRechazada("Ese subcuadro no existe.")
+
+    def definir_subcuadro(self, **datos: Any) -> str:
+        orden = DefinirSubcuadro(**datos)
+        self.ejecutar(orden)
+        return orden.id
+
+    def borrar_subcuadro(self, subcuadro_id: str) -> None:
+        self.ejecutar(BorrarSubcuadro(subcuadro_id))
+
+    def calcular_subcuadro(self, subcuadro_id: str):
+        try:
+            return calculo_subcuadros.calcular(self.subcuadro(subcuadro_id))
+        except ValueError as exc:
+            raise OrdenRechazada(str(exc)) from exc
+
+    def salidas_propuestas(self) -> list[dict[str, Any]]:
+        """Salidas de los equipos ya dimensionados (sistemas hidráulicos y redes de aire)
+        que se pueden calcular; los que no, se omiten."""
+        sistemas, redes = [], []
+        for s in self.sistemas_hidraulicos():
+            try:
+                sistemas.append(self.calcular_sistema_hidraulico(s["id"]))
+            except OrdenRechazada:
+                continue
+        for r in self.redes():
+            try:
+                redes.append(self.calcular_red(r["id"]))
+            except OrdenRechazada:
+                continue
+        return calculo_subcuadros.propuestas(sistemas, redes)
+
+    def exportar_unifilar(self, subcuadro_id: str, destino: Path) -> Path:
+        r = self.calcular_subcuadro(subcuadro_id)
+        try:
+            return unifilar_dxf.escribir_unifilar(
+                Path(destino), self.nombre, r, f"{subcuadro_id}:unifilar"
+            )
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en AutoCAD? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
 
     def exportar_esquema_hidraulico(self, sistema_id: str, destino: Path) -> Path:
         """Esquema de principio en DXF R2013 (docs/modules/hidronica.md)."""

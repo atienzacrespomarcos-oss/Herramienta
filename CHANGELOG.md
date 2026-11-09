@@ -2,6 +2,16 @@
 
 ## [Sin publicar]
 
+### Etapa 8 · subcuadros eléctricos de clima (09-11-2026)
+- Paso «Subcuadros de clima» (menú Electricidad): salidas propuestas desde los equipos ya
+  dimensionados; intensidades (ITC-BT-47 en motores), secciones por intensidad admisible
+  (GUÍA-BT-19, tablas A y E) y caída de tensión (Anexo 2, límite de la ITC-BT-19 sumando
+  la alimentación), magnetotérmico (GUÍA-BT-22), diferencial (GUÍA-BT-24) y conductor de
+  protección.
+- Esquema unifilar en DXF R2013 con leyenda.
+- Saneamiento, fuera de alcance por decisión del usuario.
+- Esquema V9: tabla `subcuadro`.
+
 ### Etapa 7.B · esquema de principio en DXF (08-11-2026)
 - «Agua → Exportar esquema de principio (DXF)…»: esquema R2013 sin escala con una banda
   por servicio (generador, primario, inercia, colectores, un ramal por circuito hasta sus

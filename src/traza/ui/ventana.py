@@ -128,6 +128,7 @@ PASOS = [
     ("cargas", "Cargas y ventilación", frozenset({"diseno"})),
     ("redes", "Redes de aire", frozenset({"diseno"})),
     ("hidronica", "Sistema hidráulico", frozenset({"diseno"})),
+    ("subcuadros", "Subcuadros de clima", frozenset({"diseno"})),
     ("mediciones", "Mediciones y ofertas", TODOS),
     ("modificados", "Modificados", TODOS),
     ("equipos", "Equipos", TODOS),
@@ -390,12 +391,17 @@ class VentanaPrincipal(QMainWindow):
         from traza.ui.paso_hidronica import PaginaHidronica
 
         self.pagina_hidronica = PaginaHidronica(self)
+        # Paso Subcuadros de clima: módulo propio (ui/paso_subcuadros.py).
+        from traza.ui.paso_subcuadros import PaginaSubcuadros
+
+        self.pagina_subcuadros = PaginaSubcuadros(self)
         self._pagina = {
             "documentacion": doc,
             "planos": self.pagina_planos,
             "cargas": self.pagina_cargas,
             "redes": self.pagina_redes,
             "hidronica": self.pagina_hidronica,
+            "subcuadros": self.pagina_subcuadros,
             "mediciones": med,
             "modificados": mo,
             "equipos": eq,
@@ -577,6 +583,8 @@ class VentanaPrincipal(QMainWindow):
         self.menu_redes = mb.addMenu("&Redes")
         # Menú del paso Sistema hidráulico: lo llena ui/paso_hidronica.PaginaHidronica.
         self.menu_hidronica = mb.addMenu("&Agua")
+        # Menú del paso Subcuadros de clima: lo llena ui/paso_subcuadros.PaginaSubcuadros.
+        self.menu_subcuadros = mb.addMenu("E&lectricidad")
 
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
@@ -608,6 +616,8 @@ class VentanaPrincipal(QMainWindow):
             self.pagina_redes.actualizar_estado(hay)
         if hasattr(self, "pagina_hidronica"):
             self.pagina_hidronica.actualizar_estado(hay)
+        if hasattr(self, "pagina_subcuadros"):
+            self.pagina_subcuadros.actualizar_estado(hay)
         el = self.elemento_seleccionado() if hay else None
         aprobado = el is not None and el["estado"] == Estado.APROBADO
         for a in (
@@ -664,6 +674,7 @@ class VentanaPrincipal(QMainWindow):
         self.pagina_cargas.refrescar()
         self.pagina_redes.refrescar()
         self.pagina_hidronica.refrescar()
+        self.pagina_subcuadros.refrescar()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()

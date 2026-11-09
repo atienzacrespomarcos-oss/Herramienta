@@ -462,6 +462,12 @@ class Preguntas:
         d = DialogoSistema(self.v, espacios, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def subcuadro(self, propuestas, actual: dict | None):
+        from traza.ui.dialogos_subcuadros import DialogoSubcuadro
+
+        d = DialogoSubcuadro(self.v, propuestas, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def destino_dxf(self, sugerido: Path) -> Path | None:
         ruta, _ = QFileDialog.getSaveFileName(
             self.v, "Exportar a AutoCAD (DXF y LISP)", str(sugerido), "DXF (*.dxf)"

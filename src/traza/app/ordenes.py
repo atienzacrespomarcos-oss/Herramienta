@@ -1730,6 +1730,97 @@ class BorrarSistemaHidraulico(Orden):
 
 
 @dataclass
+class DefinirSubcuadro(Orden):
+    """Crea un subcuadro de clima o cambia el que tiene `id` (docs/modules/electricidad.md).
+    `salidas`: [{nombre, potencia_kw, fases, longitud_m, motor, variador, cos_phi, metodo}]."""
+
+    titulo: str
+    salidas: list[dict]
+    suministro: str = "compania"
+    longitud_alimentacion_m: float = 20.0
+    metodo_alimentacion: str = "E"
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        from traza.rules import electricidad as re
+
+        titulo = self.titulo.strip()
+        if not titulo:
+            raise OrdenRechazada("El subcuadro necesita un nombre (p. ej. «SC Clima»).")
+        if self.suministro not in re.SUMINISTROS:
+            raise OrdenRechazada(f"Suministro no previsto: «{self.suministro}».")
+        if self.metodo_alimentacion not in re.METODOS:
+            raise OrdenRechazada("Método de instalación de la alimentación no previsto.")
+        alim = _finito("Longitud de la alimentación", self.longitud_alimentacion_m)
+        if not 0 < alim <= 1000:
+            raise OrdenRechazada("La alimentación mide de 0 a 1.000 m.")
+        if not self.salidas:
+            raise OrdenRechazada("El subcuadro necesita al menos una salida.")
+        salidas, nombres = [], set()
+        for s in self.salidas:
+            nombre = str(s.get("nombre", "")).strip()
+            if not nombre or nombre.casefold() in nombres:
+                raise OrdenRechazada("Cada salida necesita un nombre propio.")
+            nombres.add(nombre.casefold())
+            potencia = _finito(f"{nombre}, potencia", s.get("potencia_kw"))
+            longitud = _finito(f"{nombre}, longitud", s.get("longitud_m"))
+            cos_phi = _finito(f"{nombre}, cos φ", s.get("cos_phi", re.COS_PHI_DEFECTO))
+            fases = s.get("fases")
+            if fases not in (1, 3) or isinstance(fases, bool):
+                raise OrdenRechazada(f"{nombre}: 1 o 3 fases.")
+            if not 0 < potencia <= 1000:
+                raise OrdenRechazada(
+                    f"{nombre}: pon la potencia eléctrica de la ficha del equipo (0–1.000 kW)."
+                )
+            if not 0 < longitud <= 1000 or not 0.5 <= cos_phi <= 1:
+                raise OrdenRechazada(f"{nombre}: longitud 0–1.000 m y cos φ 0,5–1.")
+            metodo = s.get("metodo", "E")
+            if metodo not in re.METODOS:
+                raise OrdenRechazada(f"{nombre}: método de instalación no previsto.")
+            salidas.append(
+                {
+                    "nombre": nombre,
+                    "potencia_kw": potencia,
+                    "fases": fases,
+                    "longitud_m": longitud,
+                    "motor": bool(s.get("motor", True)),
+                    "variador": bool(s.get("variador", False)),
+                    "cos_phi": cos_phi,
+                    "metodo": metodo,
+                }
+            )
+        otro = con.execute(
+            "SELECT id FROM subcuadro WHERE nombre = ? AND id <> ?", (titulo, self.id)
+        ).fetchone()
+        if otro:
+            raise OrdenRechazada(f"Ya hay un subcuadro llamado «{titulo}».")
+        antes = leer(con, "subcuadro", {"id": self.id})
+        despues = {
+            "id": self.id,
+            "nombre": titulo,
+            "suministro": self.suministro,
+            "longitud_alimentacion_m": alim,
+            "metodo_alimentacion": self.metodo_alimentacion,
+            "salidas": json.dumps(salidas, ensure_ascii=False),
+            "creado": antes["creado"] if antes else ahora(),
+        }
+        if antes == despues:
+            raise OrdenRechazada("No hay cambios en el subcuadro.")
+        return [Delta("subcuadro", antes, despues)]
+
+
+@dataclass
+class BorrarSubcuadro(Orden):
+    subcuadro_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "subcuadro", {"id": self.subcuadro_id})
+        if antes is None:
+            raise OrdenRechazada("Ese subcuadro no existe.")
+        return [Delta("subcuadro", antes, None)]
+
+
+@dataclass
 class BorrarRed(Orden):
     red_id: str
 

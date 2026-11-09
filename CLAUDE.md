@@ -94,6 +94,8 @@ se documentan en la ficha del módulo.
   AutoLISP/Visual LISP solo con funciones existentes en 2013 (lista blanca con test).
 - Sin DWG (ODA File Converter: no comercial salvo miembros).
 - Estructura: **solo geometría**, sin cálculo estructural.
+- Fuera de alcance (decisión del usuario): **saneamiento** (09-11-2026); diseño de **VRF** y
+  selección de **ventiladores** («cada fabricante tiene su software», 08-11-2026).
 - Validación: el usuario **no tiene programas de cálculo**. Los motores se prueban con
   ejemplos resueltos publicados cuando existen y, si no, con casos de resultado conocido
   calculados a mano en la prueba (reglas en `docs/TESTING_STRATEGY.md` §0.2). El estado
