@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidg
 from traza.app.ordenes import OrdenRechazada
 from traza.core.numeros import escribir_numero
 from traza.io.unifilar_dxf import cable
+from traza.rules import electricidad as re
 from traza.ui.paso_redes import _archivo
 
 
@@ -65,6 +66,8 @@ class PaginaSubcuadros(QWidget):
             try:
                 sid = self.proyecto.definir_subcuadro(**r)
             except OrdenRechazada as exc:
+                if str(exc).startswith("No hay cambios"):  # Aceptar sin tocar nada: se cierra
+                    return
                 self.v.preguntas.aviso("Subcuadro de clima", str(exc))
                 actual = {**r, "nombre": r["titulo"], "id": r.get("id")}
                 continue
@@ -141,10 +144,12 @@ class PaginaSubcuadros(QWidget):
             self.resumen.setText(f"⚠ No se ha podido calcular el subcuadro: {m}")
             return
         a = r.alimentacion
+        # La RA máxima la marca el diferencial menos sensible (RA·Ia ≤ 50 V, GUÍA-BT-24).
+        ra = re.resistencia_tierra_maxima(max(s.diferencial_ma or 300 for s in r.salidas))
         texto = (
             f"Alimentación: {cable(a)} · {_n(a.longitud_m, 0)} m · IG {a.calibre_a or '>160'} A · "
             f"ΔU {_n(a.caida_pct, 2)} % · límite {_n(r.limite_pct)} % · "
-            + ("CUMPLE" if r.cumple else "NO CUMPLE")
+            f"tierra RA ≤ {_n(ra, 0)} Ω · " + ("CUMPLE" if r.cumple else "NO CUMPLE")
         )
         if r.avisos:
             texto += "\n⚠ " + "\n⚠ ".join(r.avisos)

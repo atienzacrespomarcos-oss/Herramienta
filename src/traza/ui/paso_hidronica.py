@@ -105,6 +105,8 @@ class PaginaHidronica(QWidget):
             try:
                 sid = self.proyecto.definir_sistema_hidraulico(**r)
             except OrdenRechazada as exc:
+                if str(exc).startswith("No hay cambios"):  # Aceptar sin tocar nada: se cierra
+                    return
                 self.v.preguntas.aviso("Sistema hidráulico", str(exc))
                 actual = {**r, "nombre": r["titulo"], "id": r.get("id")}
                 continue

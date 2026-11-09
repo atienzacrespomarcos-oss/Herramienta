@@ -2,8 +2,7 @@
 
 Calcula un subcuadro guardado y propone salidas desde los equipos ya dimensionados en la
 herramienta (sistemas hidráulicos y redes de aire). La potencia eléctrica la pone el
-usuario con la ficha del modelo elegido; la de los ventiladores se propone con la máxima
-que permite su SFP (RITE IT 1.2.4.2.5).
+usuario con la ficha del modelo elegido (también la de los ventiladores).
 """
 
 from __future__ import annotations
@@ -76,7 +75,7 @@ def propuestas(sistemas: list, redes: list) -> list[dict[str, Any]]:
             for c in s.circuitos:
                 add(f"Bomba {c.datos.nombre} {sufijo}", variador=True)
                 add(
-                    f"Unidades {c.datos.nombre} {sufijo} ({c.datos.unidades} ud)",
+                    f"Unidades {c.datos.nombre} {sufijo}",  # sin el número: «Proponer» la duplicaba
                     fases=1,
                     motor=False,
                     variador=True,
@@ -84,10 +83,9 @@ def propuestas(sistemas: list, redes: list) -> list[dict[str, Any]]:
     for r in redes:
         if r.calculo is None:
             continue
-        add(
-            f"Ventilador {r.red['nombre']}",
-            r.potencia_maxima_w / 1000 if r.potencia_maxima_w else 0,
-        )
+        # Potencia de la ficha del ventilador elegido, no la máxima de la SFP (una cota que
+        # se quedaba sin revisar; revisión 09-11-2026).
+        add(f"Ventilador {r.red['nombre']}")
     # Nombres únicos (la orden los exige).
     vistos: dict[str, int] = {}
     for s in salidas:

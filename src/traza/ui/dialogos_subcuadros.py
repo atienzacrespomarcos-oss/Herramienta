@@ -118,8 +118,8 @@ class DialogoSubcuadro(QDialog):
             item.setCheckState(Qt.Checked if s.get(clave, defecto) else Qt.Unchecked)
             self.tabla.setItem(fila, col, item)
         combo = QComboBox()
-        for k in METODOS:
-            combo.addItem(k, k)
+        for k, texto in METODOS.items():
+            combo.addItem(texto, k)
         combo.setCurrentIndex(max(combo.findData(s.get("metodo", "E")), 0))
         self.tabla.setCellWidget(fila, 7, combo)
 
@@ -147,9 +147,12 @@ class DialogoSubcuadro(QDialog):
         try:
             if not self.nombre.text().strip():
                 raise ValueError("El subcuadro necesita un nombre.")
-            salidas = []
+            salidas, nombres = [], set()
             for fila in range(self.tabla.rowCount()):
                 nombre = self._texto(fila, 0)
+                if not nombre or nombre.casefold() in nombres:
+                    raise ValueError(f"Fila {fila + 1}: cada salida necesita un nombre propio.")
+                nombres.add(nombre.casefold())
                 if not self._texto(fila, 1):
                     raise ValueError(f"{nombre}: pon la potencia eléctrica (kW) de su ficha.")
                 fases = self._texto(fila, 2)

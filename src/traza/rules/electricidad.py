@@ -81,7 +81,9 @@ def factor_agrupamiento(metodo: str, circuitos: int) -> float:
 CONDUCTIVIDAD_CU = {20: 56.0, 70: 48.0, 90: 44.0}
 TEMPERATURA_SERVICIO = {"XLPE": 90, "PVC": 70}
 #: GUÍA-BT Anexo 2, tabla 1: reactancia aproximada en fracción de R (0 hasta 120 mm²).
-REACTANCIA = {150: 0.15, 185: 0.20, 240: 0.25, 300: 0.25}
+REACTANCIA = {150: 0.15, 185: 0.20, 240: 0.25}
+#: Anexo 2: «en ausencia de datos se puede estimar la reactancia como 0,1 Ω/km» (300 mm²).
+REACTANCIA_OHM_KM = 0.1
 
 
 def caida_tension_v(potencia_w, longitud_m, seccion, fases, cos_phi, aislamiento="XLPE"):
@@ -90,7 +92,12 @@ def caida_tension_v(potencia_w, longitud_m, seccion, fases, cos_phi, aislamiento
     gamma = CONDUCTIVIDAD_CU[TEMPERATURA_SERVICIO[aislamiento]]
     r = longitud_m / (gamma * seccion)
     sen = (1 - cos_phi**2) ** 0.5
-    x = REACTANCIA.get(seccion, 0.0) * r
+    if seccion in REACTANCIA:
+        x = REACTANCIA[seccion] * r
+    elif seccion > 240:
+        x = REACTANCIA_OHM_KM * longitud_m / 1000
+    else:
+        x = 0.0
     termino = (r + x * sen / cos_phi) * potencia_w
     if fases == 3:
         return termino / TENSION_TRIFASICA_V
@@ -132,3 +139,8 @@ def diferencial(fases: int, calibre_a: int, variador: bool) -> tuple[int, str]:
 
 #: Tensión límite convencional (GUÍA-BT-24): 50 V; 24 V en locales húmedos.
 TENSION_LIMITE_V = 50.0
+
+
+def resistencia_tierra_maxima(sensibilidad_ma: int, tension_v: float = TENSION_LIMITE_V) -> float:
+    """Esquema TT, RA·Ia ≤ U (GUÍA-BT-24): la RA máxima (Ω) con ese diferencial."""
+    return tension_v / (sensibilidad_ma / 1000)

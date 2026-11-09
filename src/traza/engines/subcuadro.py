@@ -56,6 +56,7 @@ class ResultadoSubcuadro:
     salidas: tuple[Linea, ...]
     limite_pct: float
     avisos: tuple[str, ...] = field(default=())
+    suministro: str = "compania"
 
     @property
     def cumple(self) -> bool:
@@ -81,7 +82,7 @@ def _validar(s: Salida) -> None:
 
 
 def _elegir(nombre, fases, potencia_kw, cos_phi, i_servicio, i_diseno, longitud, metodo,
-            circuitos, limite_linea_pct, caida_previa_pct, motor):  # fmt: skip
+            circuitos, limite_linea_pct, caida_previa_pct, motor, variador=False):  # fmt: skip
     """Menor sección con In ≤ Iz·factor y caída total ≤ límite. None si ninguna cumple."""
     factor = re.factor_agrupamiento(metodo, circuitos)
     conductores = 3 if fases == 3 else 2
@@ -91,17 +92,26 @@ def _elegir(nombre, fases, potencia_kw, cos_phi, i_servicio, i_diseno, longitud,
         if iz is None:
             continue
         iz *= factor
-        if cal is None or cal > iz + 1e-9:
+        # Por encima de 160 A no hay calibre modular: la sección se elige con la intensidad
+        # de diseño y el interruptor (caja moldeada) queda a definir (revisión 09-11-2026:
+        # antes una salida de > 160 A tumbaba todo el subcuadro).
+        if (cal if cal is not None else i_diseno) > iz + 1e-9:
             continue
         u = re.TENSION_TRIFASICA_V if fases == 3 else re.TENSION_MONOFASICA_V
         caida = re.caida_tension_v(potencia_kw * 1000, longitud, s, fases, cos_phi) / u * 100
         if caida_previa_pct + caida <= limite_linea_pct + 1e-9:
             return Linea(
                 nombre, fases, potencia_kw, i_servicio, i_diseno, s,
-                re.seccion_proteccion(s), iz, cal, "D" if motor else "C", caida,
+                re.seccion_proteccion(s), iz, cal, _curva(motor, variador), caida,
                 caida_previa_pct + caida, metodo, longitud,
             )  # fmt: skip
     return None
+
+
+def _curva(motor: bool, variador: bool) -> str:
+    """D para motores con arranque directo (10–20 In, GUÍA-BT-22); con variador no hay punta
+    de arranque y basta la C (revisión 09-11-2026)."""
+    return "D" if motor and not variador else "C"
 
 
 def calcular(
@@ -123,10 +133,14 @@ def calcular(
     # Alimentación (trifásica): 125 % del motor mayor más el resto (ITC-BT-47); la potencia
     # de cálculo de la caída, la suma de todas (todas pueden funcionar a la vez).
     corrientes = [intensidad(s.potencia_kw, s.fases, s.cos_phi) for s in salidas]
-    motores = [i for i, s in zip(corrientes, salidas, strict=True) if s.motor]
-    i_alim = sum(corrientes) + (0.25 * max(motores) if motores else 0.0)
+    # En la alimentación trifásica, una monofásica carga una sola fase: con el reparto
+    # equilibrado entre fases (ITC-BT-19 2.5) cuenta un tercio por línea (revisión
+    # 09-11-2026: se sumaba entera).
+    en_linea = [i / 3 if s.fases == 1 else i for i, s in zip(corrientes, salidas, strict=True)]
+    motores = [i for i, s in zip(en_linea, salidas, strict=True) if s.motor]
+    i_alim = sum(en_linea) + (0.25 * max(motores) if motores else 0.0)
     p_total = sum(s.potencia_kw for s in salidas)
-    cos_alim = p_total * 1000 / (math.sqrt(3) * re.TENSION_TRIFASICA_V * sum(corrientes))
+    cos_alim = p_total * 1000 / (math.sqrt(3) * re.TENSION_TRIFASICA_V * sum(en_linea))
     cos_alim = min(max(cos_alim, 0.5), 1.0)
     por_metodo: dict[str, int] = {}
     for s in salidas:
@@ -135,11 +149,11 @@ def calcular(
     # Menor sección de la alimentación con la que todas las salidas cumplen (ficha,
     # «Reparto de la caída de tensión»).
     cal_alim = re.calibre(i_alim)
+    propia = None  # la menor sección que pide la alimentación por sí sola
+    falla = ""
     for s_alim in re.SECCIONES:
         iz = re.intensidad_admisible(s_alim, metodo_alimentacion, 3)
-        if iz is None or (cal_alim is not None and cal_alim > iz):
-            continue
-        if cal_alim is None and i_alim > iz:
+        if iz is None or (cal_alim if cal_alim is not None else i_alim) > iz:
             continue
         caida = (
             re.caida_tension_v(p_total * 1000, longitud_alimentacion_m, s_alim, 3, cos_alim)
@@ -148,19 +162,21 @@ def calcular(
         )
         if caida > limite:
             continue
+        propia = propia or s_alim
         alim = Linea(
-            nombre, 3, p_total, sum(corrientes), i_alim, s_alim, re.seccion_proteccion(s_alim),
+            nombre, 3, p_total, sum(en_linea), i_alim, s_alim, re.seccion_proteccion(s_alim),
             iz, cal_alim, "C", caida, caida, metodo_alimentacion, longitud_alimentacion_m,
         )  # fmt: skip
         resultado = []
         for s, i in zip(salidas, corrientes, strict=True):
             linea = _elegir(
                 s.nombre, s.fases, s.potencia_kw, s.cos_phi, i, i * (1.25 if s.motor else 1.0),
-                s.longitud_m, s.metodo, por_metodo[s.metodo], limite, caida, s.motor,
+                s.longitud_m, s.metodo, por_metodo[s.metodo], limite, caida, s.motor, s.variador,
             )  # fmt: skip
             if linea is None:
+                falla = s.nombre
                 break
-            ma, tipo = re.diferencial(s.fases, linea.calibre_a, s.variador)
+            ma, tipo = re.diferencial(s.fases, linea.calibre_a or 999, s.variador)
             resultado.append(
                 Linea(**{**vars(linea), "diferencial_ma": ma, "diferencial_tipo": tipo})
             )
@@ -170,8 +186,27 @@ def calcular(
                     f"Alimentación de {i_alim:.0f} A: por encima de 160 A, interruptor de caja "
                     "moldeada a definir con el fabricante."
                 )
-            return ResultadoSubcuadro(alim, tuple(resultado), limite, tuple(avisos))
+            for linea in resultado:
+                if linea.calibre_a is None:
+                    avisos.append(
+                        f"{linea.nombre}: {linea.intensidad_diseno_a:.0f} A de diseño, por encima "
+                        "de 160 A: interruptor de caja moldeada a definir con el fabricante."
+                    )
+            if s_alim != propia:
+                # Revisión 09-11-2026: crecía en silencio.
+                avisos.append(
+                    f"La alimentación sube de {_sec(propia)} a {_sec(s_alim)} mm² para que todas "
+                    "las salidas cumplan la caída de tensión total."
+                )
+            return ResultadoSubcuadro(alim, tuple(resultado), limite, tuple(avisos), suministro)
     raise ValueError(
-        "Ninguna sección hasta 300 mm² cumple: revisa longitudes o potencias (o divide el "
-        "subcuadro)."
+        f"«{falla}» no cumple la caída de tensión ni con 300 mm²: revisa su longitud o su "
+        "potencia (o divide el subcuadro)."
+        if falla
+        else "La alimentación no cumple ni con 300 mm²: revisa su longitud o la potencia del "
+        "subcuadro."
     )
+
+
+def _sec(s: float) -> str:
+    return f"{s:g}".replace(".", ",")

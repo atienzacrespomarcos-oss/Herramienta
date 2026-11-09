@@ -130,7 +130,10 @@ def escribir_unifilar(destino: Path, proyecto: str, r: ResultadoSubcuadro, ident
     )
     # Embarrado.
     d.linea([(x0, yb), (x0 + ancho, yb)], ancho=0.8)
-    d.texto(f"Embarrado 3F+N+PE 400/230 V · {re.SUMINISTROS[_suministro(r)]}", x0, yb + 3, alto=1.6)
+    # A la derecha de la bajada de la alimentación (antes la cruzaba).
+    d.texto(
+        f"Embarrado 3F+N+PE 400/230 V · {re.SUMINISTROS[r.suministro]}", xa + 3, yb + 3, alto=1.6
+    )
     # Salidas.
     for i, s in enumerate(r.salidas):
         x = x0 + PASO / 2 + i * PASO
@@ -166,13 +169,11 @@ def escribir_unifilar(destino: Path, proyecto: str, r: ResultadoSubcuadro, ident
         f"ΔU: caída total desde el origen (alimentación + salida), límite {_n(r.limite_pct)} %",
         "Secciones por intensidad admisible (GUÍA-BT-19 tablas A y E) y caída de tensión",
         "(GUÍA-BT Anexo 2); protección Ib ≤ In ≤ Iz (GUÍA-BT-22); diferencial (GUÍA-BT-24)",
+        f"Tierra (TT, RA·Ia ≤ 50 V): RA ≤ {re.resistencia_tierra_maxima(300):.0f} Ω con 300 mA; "
+        f"≤ {re.resistencia_tierra_maxima(30):.0f} Ω con 30 mA",
     )
     for k, t in enumerate(notas):
         d.texto(t, xl, 60 - k * 5, "leyenda", 2.2 if k == 0 else 1.6)
     ezdxf.zoom.extents(doc.modelspace())
     doc.saveas(destino)
     return destino
-
-
-def _suministro(r: ResultadoSubcuadro) -> str:
-    return next(k for k, v in re.CAIDA_MAXIMA.items() if v == r.limite_pct)

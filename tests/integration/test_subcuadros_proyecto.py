@@ -45,9 +45,10 @@ def test_propuestas_desde_el_sistema_hidraulico(red):  # noqa: F811
     assert any(n.startswith("Bomba Oficinas") for n in nombres)
     assert any(n.startswith("Unidades Nave") for n in nombres)
     assert len(nombres) == len(set(nombres))
-    # La red de aire del proyecto propone su ventilador con la potencia máxima por SFP.
+    # La red de aire propone su ventilador; la potencia, la de su ficha (0 = la pone el usuario).
     vent = [s for s in p.salidas_propuestas() if s["nombre"].startswith("Ventilador")]
-    assert vent and vent[0]["potencia_kw"] > 0
+    assert vent and vent[0]["potencia_kw"] == 0
+    assert not any("ud)" in n for n in nombres)  # sin el número de unidades en el nombre
 
 
 def test_la_orden_rechaza_y_se_deshace(red):  # noqa: F811

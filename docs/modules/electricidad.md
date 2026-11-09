@@ -118,6 +118,25 @@ Estado: **en desarrollo**.
   salida por equipo con magnetotérmico, diferencial, cable rotulado y receptor; capas
   `TRAZA-E-*`, texto en Arial y leyenda con las fuentes.
 
+## Correcciones de la revisión independiente (09-11-2026)
+- **Salidas de más de 160 A** de diseño (p. ej. una enfriadora de 90 kW): la sección se
+  elige con su intensidad de diseño y el interruptor (caja moldeada) queda a definir, con
+  aviso. Antes tumbaban todo el subcuadro.
+- **Alimentación**: una salida monofásica carga una sola fase; con el reparto equilibrado
+  entre fases (ITC-BT-19 2.5) cuenta un tercio por línea. Si la alimentación tiene que
+  ser mayor que la que pide por sí sola para que una salida cumpla, se avisa.
+- **Curva D** solo en motores con arranque directo; con variador no hay punta de arranque
+  y basta la C.
+- **Reactancia de 300 mm²**: 0,1 Ω/km, la que el Anexo 2 da «en ausencia de datos».
+- **Tierra**: en pantalla y en el unifilar, la RA máxima con RA·Ia ≤ 50 V (166 Ω con
+  300 mA).
+- **Método B2** (multipolar en tubo en superficie): se toma cada circuito en su tubo,
+  agrupados sobre la pared (tabla E, «capa única sobre pared»).
+- **Propuestas**: el ventilador también con la potencia de su ficha (0 = la pone el
+  usuario); las unidades sin el número en el nombre.
+- Fuera del alcance de este bloque: la comprobación de la intensidad de cortocircuito
+  mínima al final de cada línea frente al disparo magnético.
+
 ## Pendiente
 - Validar con un subcuadro real del usuario.
 - Abrir el unifilar en su AutoCAD.
