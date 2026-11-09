@@ -180,6 +180,9 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
         if p.prevision() is None:
             return EstadoPaso(PENDIENTE, "Falta: tu previsión (venta y coste finales)")
         return None
+    if paso == "futuribles":
+        # No siempre hay ofertas pendientes: sin ninguno, sin marca; con alguno, ✓ hecho.
+        return None if p.futuribles() else EstadoPaso("")
     return EstadoPaso("")  # sin estado (p. ej. Equipos)
 
 

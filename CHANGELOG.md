@@ -2,6 +2,15 @@
 
 ## [Sin publicar]
 
+### Obra · bloque 3: futuribles y Excel de control (09-11-2026)
+- Paso **Futuribles**: ofertas y modificados pendientes de aprobar, con su venta y tu
+  coste estimado, marcados sí/no. La venta de un modificado de TRAZA se calcula al día.
+- **Previsión**: nueva columna «Con futuribles marcados» (tu previsión + los marcados);
+  tu previsión no cambia.
+- **Excel de control de la obra**: resumen, venta y objetivo por partida, paquetes,
+  facturas, certificaciones, lo certificado de cada partida y futuribles.
+- Esquema V14.
+
 ### Obra · bloque 2b: certificaciones desde cualquier Excel (09-11-2026)
 - Paso **Certificaciones**: importa el Excel de cada certificación, sea la plantilla del
   usuario o la de un cliente. Columnas por sus títulos o, si no se reconocen, la IA dice

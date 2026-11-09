@@ -41,15 +41,18 @@ from traza.app.ordenes import (
     FijarPrevision,
     FijarPropiedad,
     FijarVentaContratada,
+    GuardarFuturible,
     ImportarCertificacion,
     ImportarCosteObjetivo,
     ImportarMedicion,
     LeerPlano,
+    MarcarFuturible,
     Orden,
     OrdenRechazada,
     PartidaNueva,
     QuitarCertificacion,
     QuitarFactura,
+    QuitarFuturible,
     QuitarVentaContratada,
     RegistrarDocumento,
     RegistrarFactura,
@@ -69,6 +72,7 @@ from traza.io import (
     coste_presto,
     dxf,
     esquema_hidraulico_dxf,
+    excel_obra,
     informe_cargas,
     informe_hidronica,
     informe_redes,
@@ -797,6 +801,92 @@ class Proyecto:
             self.paquetes_cerrados(),
             self.certificado_a_origen(),
             self.prevision(),
+        )
+
+    # --- Obra, bloque 3: futuribles -------------------------------------------------------
+
+    def futuribles(self) -> list[calculo_obra.Futurible]:
+        """Por fecha de alta. La venta de uno atado a un modificado se calcula al día: la
+        diferencia de importe de sus cambios, línea a línea al céntimo (como la venta)."""
+        contratada = self.venta_contratada()
+        salida = []
+        # Por orden de alta (`creado` es al segundo: dentro del mismo segundo, el rowid).
+        for f in self._filas("SELECT * FROM futurible ORDER BY creado, rowid"):
+            venta, avisos, origen = f["venta"], [], "escrita por ti"
+            if f["modificado_id"] is not None:
+                mod = self.modificado(f["modificado_id"])
+                origen = f"modificado nº {mod['numero']} «{mod['titulo']}»"
+                # Lo que no consta no se suma como 0 (revisión 09-11-2026: un modificado sin
+                # cambios o de otro presupuesto sumaba en el escenario como si fuera real).
+                venta = None
+                if contratada is None or contratada["id"] != mod["medicion_id"]:
+                    avisos.append(
+                        "su venta no consta: su modificado ya no es del presupuesto contratado"
+                    )
+                elif not (cambios := self.resumen_modificado(mod["id"]).cambios):
+                    avisos.append("su venta no consta: el modificado aún no tiene cambios")
+                else:
+                    difs = [
+                        None
+                        if x.importe_contrato is None or x.importe_modificado is None
+                        else round(x.importe_modificado, 2) - round(x.importe_contrato, 2)
+                        for x in cambios
+                    ]
+                    if any(d is None for d in difs):
+                        avisos.append(
+                            "su venta no consta: hay cambios sin cantidad o sin precio en el "
+                            "modificado"
+                        )
+                    else:
+                        venta = round(sum(difs), 2)
+            salida.append(
+                calculo_obra.Futurible(
+                    f["id"],
+                    f["titulo"],
+                    venta,
+                    f["coste"],
+                    bool(f["marcado"]),
+                    origen,
+                    f["nota"],
+                    tuple(avisos),
+                    f["modificado_id"],
+                )
+            )
+        return salida
+
+    def guardar_futurible(self, **datos: Any) -> str:
+        orden = GuardarFuturible(**datos)
+        self.ejecutar(orden)
+        return orden.id
+
+    def marcar_futurible(self, futurible_id: str, marcado: bool) -> None:
+        self.ejecutar(MarcarFuturible(futurible_id, marcado))
+
+    def quitar_futurible(self, futurible_id: str) -> None:
+        self.ejecutar(QuitarFuturible(futurible_id))
+
+    def escenario(self) -> calculo_obra.Escenario:
+        return calculo_obra.Escenario(self.prevision(), self.futuribles())
+
+    def exportar_control_obra(self, destino: Path) -> Path:
+        """El Excel de control de la obra, con todo el detalle (io/excel_obra.py)."""
+        venta = self.venta_contratada()
+        if venta is None and self.coste_objetivo() is None:
+            raise OrdenRechazada(
+                "La obra aún no tiene presupuesto contratado ni coste objetivo: no hay nada "
+                "que controlar."
+            )
+        return excel_obra.exportar_control(
+            Path(destino),
+            self.nombre,
+            resumen=self.resumen_obra(),
+            foto=self.foto_obra(),
+            escenario=self.escenario(),
+            venta_por_codigo=(
+                calculo_obra.venta_por_codigo(self.partidas(venta["id"])) if venta else {}
+            ),
+            certificaciones=self.certificaciones(),
+            facturas=self.facturas(),
         )
 
     def mediciones(self) -> list[dict[str, Any]]:

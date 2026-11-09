@@ -142,6 +142,7 @@ PASOS = [
     ("certificaciones", "Certificaciones", OBRA),
     ("coste_real", "Coste real", OBRA),
     ("prevision", "Previsión", OBRA),
+    ("futuribles", "Futuribles", OBRA),
     ("modificados", "Modificados", OFERTA | OBRA),
     ("equipos", "Equipos", TODOS),
     ("entregables", "Entregables", CON_ENTREGABLES),
@@ -420,6 +421,7 @@ class VentanaPrincipal(QMainWindow):
             PaginaCertificaciones,
             PaginaCosteObjetivo,
             PaginaCosteReal,
+            PaginaFuturibles,
             PaginaPrevision,
             PaginaVenta,
         )
@@ -429,6 +431,7 @@ class VentanaPrincipal(QMainWindow):
         self.pagina_certificaciones = PaginaCertificaciones(self)
         self.pagina_coste_real = PaginaCosteReal(self)
         self.pagina_prevision = PaginaPrevision(self)
+        self.pagina_futuribles = PaginaFuturibles(self)
         self._pagina = {
             "documentacion": doc,
             "planos": self.pagina_planos,
@@ -445,6 +448,7 @@ class VentanaPrincipal(QMainWindow):
             "certificaciones": self.pagina_certificaciones,
             "coste_real": self.pagina_coste_real,
             "prevision": self.pagina_prevision,
+            "futuribles": self.pagina_futuribles,
         }
         for p in self._pagina.values():
             self.paginas.addWidget(p)
@@ -676,6 +680,7 @@ class VentanaPrincipal(QMainWindow):
             self.pagina_certificaciones.actualizar_estado(hay)
             self.pagina_coste_real.actualizar_estado(hay)
             self.pagina_prevision.actualizar_estado(hay)
+            self.pagina_futuribles.actualizar_estado(hay)
         el = self.elemento_seleccionado() if hay else None
         aprobado = el is not None and el["estado"] == Estado.APROBADO
         for a in (
@@ -740,6 +745,7 @@ class VentanaPrincipal(QMainWindow):
         self.pagina_certificaciones.refrescar()
         self.pagina_coste_real.refrescar()
         self.pagina_prevision.refrescar()
+        self.pagina_futuribles.refrescar()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()

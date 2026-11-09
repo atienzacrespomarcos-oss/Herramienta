@@ -404,5 +404,24 @@ CREATE TABLE certificacion (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13)
+# V14 (09-11-2026): futuribles de la obra (docs/modules/obra.md, bloque 3). Ofertas o
+# modificados pendientes de aprobar, con su venta y su coste estimado; `marcado`: entra en
+# el escenario «con futuribles» (sí/no, sin probabilidades: decisión del usuario).
+# - Atado a un modificado de TRAZA: su venta es la diferencia del modificado, calculada
+#   siempre al día (`venta` NULL); si no, la venta la escribe el usuario.
+V14 = """
+CREATE TABLE futurible (
+    id TEXT PRIMARY KEY,
+    titulo TEXT NOT NULL CHECK (length(trim(titulo)) > 0),
+    modificado_id TEXT UNIQUE REFERENCES modificado(id),
+    venta REAL,
+    coste REAL NOT NULL,
+    marcado INTEGER NOT NULL CHECK (marcado IN (0, 1)),
+    nota TEXT,
+    creado TEXT NOT NULL,
+    CHECK ((modificado_id IS NULL) <> (venta IS NULL))
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14)
 VERSION_ACTUAL = len(MIGRACIONES)
