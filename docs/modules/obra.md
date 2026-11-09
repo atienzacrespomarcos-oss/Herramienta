@@ -64,6 +64,7 @@ solo se toma la **estructura** y la forma de trabajar:
 | Previsión | «Quiero una **foto de lo real** (coste − venta hasta que yo actualice) y una **previsión que yo haga** de costes y posible certificación para saber». TRAZA no estima: muestra lo real y la previsión que introduce el usuario. |
 | Certificaciones (detalle) | «Lo que te daré será **mi Excel de certificación**. Saco el presupuesto de venta del Presto. Y por meses-certificaciones hago las certificaciones sobre el 100 % de cada capítulo, partida y subpartida». TRAZA lee ese Excel (por partida, a origen, por mes). Falta un ejemplo. |
 | Diseño | Aprobado el resto («Sí, construye»). |
+| Previsión (nivel) | «Cuando te hablo de previsión, yo lo quiero como un **número total**. El tema de hacerlo por paquetes a mí me sirve para ver qué partidas se me están descuadrando, en caso de que se me descuadren o viceversa, pero yo al final lo que quiero son números totales». |
 
 ## Diseño propuesto (para revisar con el usuario antes de construir)
 
@@ -100,9 +101,11 @@ solo se toma la **estructura** y la forma de trabajar:
 - **Foto de lo real** (a la fecha de la última actualización): venta certificada a origen,
   coste facturado, y su diferencia (margen real hasta hoy); por paquete, objetivo frente
   a facturado.
-- **Previsión**: la introduce el usuario (coste y certificación previstos). TRAZA no la
-  estima; la muestra junto a lo real y al objetivo (granularidad por concretar al
-  construir el bloque 2).
+- **Previsión**: la introduce el usuario como **dos totales**: coste previsto a fin de obra
+  y certificación prevista a fin de obra (con su fecha de actualización). TRAZA no la
+  estima; la muestra junto a lo real y al objetivo, con el margen previsto que resulta.
+- **Paquetes**: sirven para **ver dónde se descuadra** (objetivo frente a facturado de cada
+  paquete, en más o en menos), no para la previsión.
 
 ### Futuribles (escenarios sí/no)
 - Ofertas o modificados pendientes de aprobar, con su **venta** y su **coste estimado**.
