@@ -108,3 +108,34 @@ def test_dar_por_revisado_rechaza_un_paso_sin_dependencias(proyecto):
 
     with pytest.raises(OrdenRechazada, match="no depende"):
         proyecto.dar_por_revisado("equipos")
+
+
+def test_aprobar_no_marca_y_quitar_un_espacio_si(red):  # noqa: F811
+    from traza.app.ordenes import Aprobar
+
+    p, _, _, _ = red
+    p.ejecutar(Aprobar(p.espacios()[0]["id"], "Medido"))
+    assert p.estado_paso("cargas").estado == HECHO
+    assert p.estado_paso("redes").estado == HECHO
+    # Quitar un espacio (sin aprobar) sí cambia las cargas.
+    from traza.app.ordenes import QuitarDePlano
+
+    otro = next(e for e in p.espacios() if e["estado"] != "aprobado")
+    p.ejecutar(QuitarDePlano(otro["id"]))
+    e = p.estado_paso("cargas")
+    assert e.estado == DESACTUALIZADO and "Planos" in e.texto
+
+
+def test_un_plano_sustituido_no_admite_ordenes(red, tmp_path):  # noqa: F811
+    import pytest
+    from tests.integration.test_plano_revisado import ALMACEN, OFICINAS_GRANDES, _revisado
+
+    from traza.app.ordenes import DescartarPropuesta, OrdenRechazada
+
+    p, _, plano_id, _ = red
+    doc = p.incorporar_documento(
+        _revisado(tmp_path, [("ALMACÉN", ALMACEN), ("OFICINAS", OFICINAS_GRANDES)])
+    )
+    p.revisar_plano(plano_id, doc)
+    with pytest.raises(OrdenRechazada, match="sustituido"):
+        p.ejecutar(DescartarPropuesta(plano_id, "1F"))

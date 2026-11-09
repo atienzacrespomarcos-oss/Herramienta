@@ -31,8 +31,14 @@ _ELEMENTO_DEL_CAMBIO = (
 )
 FILTROS: dict[str, str] = {
     "planos": (
-        "({t}.entidad = 'geometria' OR ({t}.entidad IN ('elemento', 'propiedad') AND "
+        "({t}.entidad = 'geometria' OR ({t}.entidad IN ('elemento', 'propiedad')"
+        # Aprobar o reabrir solo cambia el estado: no es un dato de cálculo (segunda
+        # revisión 09-11-2026: aprobar un espacio marcaba Cargas y Redes).
+        " AND coalesce({t}.campo, '') NOT IN ('estado', 'modificado', 'estado,modificado')"
+        " AND "
         + _ELEMENTO_DEL_CAMBIO
+        # Mira los elementos que existen hoy: quitar un espacio u obstáculo cuenta por su
+        # geometría; quitar un nivel (vacío, si no, no se puede) no cambia ningún cálculo.
         + " IN (SELECT id FROM elemento WHERE tipo IN ('nivel', 'espacio', 'obstaculo'))))"
     ),
     "cargas": "{t}.entidad IN ('cargas_proyecto', 'cargas_espacio')",
@@ -138,7 +144,8 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
     if paso == "mediciones":
         return None if p.mediciones() else EstadoPaso(PENDIENTE, "Falta: leer una medición")
     if paso == "modificados":
-        # Un modificado no siempre hace falta: sin ninguno, el paso no tiene estado.
+        # Un modificado no siempre hace falta: sin ninguno, el paso no tiene marca; con
+        # alguno, ✓ hecho.
         return None if p.modificados() else EstadoPaso("")
     return EstadoPaso("")  # sin estado (p. ej. Equipos)
 

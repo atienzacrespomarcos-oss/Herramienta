@@ -201,29 +201,31 @@ TOLERANCIA_VERTICE = 0.001
 
 
 def mismo_contorno(a: Contorno, b: Contorno, tol: float = TOLERANCIA_VERTICE) -> bool:
-    """Misma forma en el mismo sitio: los mismos vértices (a menos de `tol`), empiece donde
-    empiece el contorno y en cualquier sentido, con los mismos arcos. Un contorno desplazado
+    """Misma forma en el mismo sitio: la misma SECUENCIA de vértices (a menos de `tol`) y de
+    arcos, empiece donde empiece el contorno y en cualquier sentido. Un contorno desplazado
     o girado, aunque conserve superficie y perímetro, NO es el mismo (revisión 09-11-2026:
-    un espacio aprobado podía cambiar de forma sin reabrirlo)."""
-    if len(a.vertices) != len(b.vertices):
+    un espacio aprobado podía cambiar de forma sin reabrirlo). Se compara en orden, no como
+    conjunto de puntos: los mismos puntos unidos en otro orden son otra figura (segunda
+    revisión 09-11-2026)."""
+    n = len(a.vertices)
+    if n != len(b.vertices):
         return False
-    libres = list(b.vertices)
-    for v in a.vertices:
-        # En sentido contrario el bulge cambia de signo: se compara su valor absoluto.
-        i = next(
-            (
-                k
-                for k, w in enumerate(libres)
-                if abs(w.x - v.x) <= tol
-                and abs(w.y - v.y) <= tol
-                and abs(abs(w.bulge) - abs(v.bulge)) <= 1e-6
-            ),
-            None,
-        )
-        if i is None:
-            return False
-        libres.pop(i)
-    return True
+    va = a.vertices
+    vb = b.vertices
+    # En sentido contrario el arco de cada tramo pasa al otro extremo y cambia de signo: el
+    # tramo k del recorrido inverso va de vb[n-1-k] a vb[n-2-k], el tramo n-2-k al revés.
+    inverso = tuple(
+        Vertice(vb[n - 1 - k].x, vb[n - 1 - k].y, -vb[(n - 2 - k) % n].bulge) for k in range(n)
+    )
+
+    def igual(v: Vertice, w: Vertice) -> bool:
+        return abs(v.x - w.x) <= tol and abs(v.y - w.y) <= tol and abs(v.bulge - w.bulge) <= 1e-6
+
+    return any(
+        all(igual(va[k], seq[(r + k) % n]) for k in range(n))
+        for seq in (vb, inverso)
+        for r in range(n)
+    )
 
 
 @functools.lru_cache(maxsize=256)  # entradas, no bytes: pocas, que un contorno grande pesa

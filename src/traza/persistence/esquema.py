@@ -325,7 +325,8 @@ CREATE TABLE subcuadro (
 # «Presupuesto + instalación» y «solo instalación» pasan a Oferta, el más parecido.
 # También: «dar por revisado» un paso desactualizado (`marca`: último número del registro de
 # cambios al revisar) y plano revisado (`sustituido_por`: el plano que lo sustituye; sus
-# espacios, obstáculos y redes pasan al nuevo).
+# espacios, obstáculos y redes pasan al nuevo). Índice por orden: el estado de los pasos
+# busca qué más cambió cada orden (app/flujo.py).
 V10 = """
 UPDATE meta SET valor = 'oferta'
     WHERE clave = 'encargo' AND valor IN ('presupuesto', 'instalacion');
@@ -334,6 +335,7 @@ CREATE TABLE paso_revisado (
     marca TEXT NOT NULL
 );
 ALTER TABLE plano ADD COLUMN sustituido_por TEXT REFERENCES plano(id);
+CREATE INDEX cambio_orden ON cambio(orden_id);
 """
 
 MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)

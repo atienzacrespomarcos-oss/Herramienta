@@ -73,3 +73,21 @@ def test_un_espacio_partido_en_dos_se_queda_con_el_mas_parecido():
     r = emparejar(viejos, revisado)
     assert [(x.antes.elemento_id, x.despues.handle) for x in r.cambiados] == [("A", "izq")]
     assert [p.handle for p in r.nuevas] == ["der"]
+
+
+def test_mismos_puntos_en_otro_orden_no_son_el_mismo_contorno():
+    # Una L de 6 vértices y la misma con dos vértices contiguos intercambiados.
+    l_ = [(0, 0), (20, 0), (20, 10), (10, 10), (10, 20), (0, 20)]
+    otra = [(0, 0), (20, 0), (10, 10), (20, 10), (10, 20), (0, 20)]
+    assert not mismo_contorno(_c(l_), _c(otra))
+
+
+def test_arco_en_sentido_contrario_es_el_mismo():
+    # Un solo tramo curvo (del primer al segundo vértice), recorrido al revés.
+    ida = Contorno((Vertice(0, 0, 0.5), Vertice(10, 0, 0), Vertice(10, 10, 0), Vertice(0, 10, 0)))
+    vuelta = Contorno(
+        (Vertice(0, 10, 0), Vertice(10, 10, 0), Vertice(10, 0, -0.5), Vertice(0, 0, 0))
+    )
+    assert vuelta.area == ida.area
+    assert mismo_contorno(ida, vuelta)
+    assert not mismo_contorno(ida, Contorno(tuple(Vertice(v.x, v.y, 0) for v in ida.vertices)))

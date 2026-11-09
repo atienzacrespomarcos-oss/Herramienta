@@ -62,7 +62,7 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
 
 ### Estado de cada paso (`app/flujo.py`)
 - Marca en la lista de pasos: **✓** hecho, **○** pendiente, **⚠** desactualizado; al
-  pasar el ratón, lo que falta o lo que ha cambiado. Equipos no tiene estado.
+  pasar el ratón, lo que falta o lo que ha cambiado. Equipos no tiene estado; Modificados, solo ✓ cuando hay alguno.
 - **Pendiente**: le faltan datos («Falta: leer el plano DXF», «Falta: el clima y la obra»,
   «Falta: definir un sistema hidráulico»…) o un elemento no se calcula (««Nave» no se
   calcula: …»).
@@ -72,7 +72,8 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
   puede deshacer).
 - Lo que cuenta como «cambio» sale del registro de cambios, y solo si cambia datos de
   cálculo: en Planos, la geometría confirmada y los niveles, espacios y obstáculos con sus
-  propiedades (alturas, cotas); no las capas, los descartes ni leer otro DXF. En los demás,
+  propiedades (alturas, cotas); no las capas, los descartes, leer otro DXF ni aprobar o
+  reabrir. En los demás,
   su propia tabla (cargas del proyecto y de cada espacio, redes, sistemas, subcuadros).
 - Un cambio hecho por la misma
   orden que cambió un paso anterior no cuenta como revisión del paso (al revisar el plano,
@@ -99,6 +100,11 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
   (empiece donde empiece el contorno y en cualquier sentido) y los mismos arcos
   (`core/geometria.mismo_contorno`). El resumen y la orden usan el mismo criterio. Un
   contorno desplazado o girado cambia aunque conserve superficie y perímetro.
+  Se compara la secuencia (los mismos puntos unidos en otro orden son otra figura).
+  Un contorno «sin cambios» se guarda con los vértices del revisado (diferencias de menos
+  de 1 mm por redondeo) y conserva su superficie y su registro.
+- Sustituir el plano, aunque sea por el mismo dibujo guardado otra vez, cuenta como cambio
+  de Planos: lo que depende queda para revisar (se ha cargado un plano nuevo).
 - Al aceptar, una sola orden (se deshace entera): plano nuevo con las mismas capas; cada
   elemento conserva su identidad (cargas, circuitos y redes siguen apuntándole) con su
   contorno nuevo, y su superficie y perímetro recalculados con registro nuevo (el anterior
