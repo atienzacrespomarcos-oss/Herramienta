@@ -306,5 +306,20 @@ CREATE TABLE sistema_hidraulico (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8)
+# V9 (09-11-2026): subcuadros eléctricos de clima (docs/modules/electricidad.md). Las
+# salidas van en JSON dentro del subcuadro; los resultados se calculan cada vez.
+V9 = """
+CREATE TABLE subcuadro (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
+    suministro TEXT NOT NULL CHECK (suministro IN ('compania', 'ct')),
+    longitud_alimentacion_m REAL NOT NULL CHECK (longitud_alimentacion_m > 0),
+    metodo_alimentacion TEXT NOT NULL CHECK (metodo_alimentacion IN ('E', 'B2', 'C')),
+    salidas TEXT NOT NULL,
+    creado TEXT NOT NULL,
+    UNIQUE (nombre)
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9)
 VERSION_ACTUAL = len(MIGRACIONES)
