@@ -463,6 +463,17 @@ class FijarVentaContratada(Orden):
 
 
 @dataclass
+class QuitarVentaContratada(Orden):
+    """Deja la obra sin presupuesto contratado (p. ej. para volver a leer su documento)."""
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "meta", {"clave": "venta_medicion"})
+        if antes is None:
+            raise OrdenRechazada("La obra no tiene presupuesto contratado.")
+        return [Delta("meta", antes, None)]
+
+
+@dataclass
 class ImportarCosteObjetivo(Orden):
     """El coste objetivo de la obra, leído del Excel de Presto del usuario (io/coste_presto).
     Uno por obra: importar otro (la versión nueva del Excel) sustituye al anterior, y se
@@ -643,7 +654,8 @@ class QuitarMedicion(Orden):
         venta = leer(con, "meta", {"clave": "venta_medicion"})
         if venta is not None and venta["valor"] == self.medicion_id:
             raise OrdenRechazada(
-                "Es el presupuesto contratado de la obra: elige otro antes de quitarla."
+                "Es el presupuesto contratado de la obra: quítalo antes como contratado "
+                "(«Obra → Quitar presupuesto contratado») o elige otro."
             )
         usada = con.execute(
             "SELECT m.titulo FROM modificado m WHERE m.medicion_id = ?"

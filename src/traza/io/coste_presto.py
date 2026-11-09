@@ -91,6 +91,18 @@ def _es_formula(v: Any) -> bool:
     return isinstance(v, str) and v.startswith("=")
 
 
+def _es_nombre(v: Any) -> bool:
+    """El nombre de un grupo es un texto: no un número ni una fórmula (un total escrito
+    encima de una columna no puede pasar por el nombre del paquete)."""
+    if not isinstance(v, str) or not v.strip() or _es_formula(v):
+        return False
+    try:
+        float(v.replace(",", "."))
+    except ValueError:
+        return True
+    return False
+
+
 def _cabecera(ws) -> tuple[int, dict[str, int], list[tuple[str, int, int, int]]]:
     """Fila de títulos, columnas fijas y grupos (nombre, col Can, col Pr, col Imp)."""
     for r in range(1, min(ws.max_row, 30) + 1):
@@ -105,8 +117,8 @@ def _cabecera(ws) -> tuple[int, dict[str, int], list[tuple[str, int, int, int]]]
                     nombre = ""
                     for fila in range(r - 1, 0, -1):  # el nombre, encima de cualquiera de las 3
                         nombre = next(
-                            (_texto(ws.cell(fila, k).value) for k in (c, c + 1, c + 2)
-                             if _texto(ws.cell(fila, k).value)),
+                            (ws.cell(fila, k).value.strip() for k in (c, c + 1, c + 2)
+                             if _es_nombre(ws.cell(fila, k).value)),
                             "",
                         )  # fmt: skip
                         if nombre:
@@ -143,35 +155,50 @@ def _leer_hoja(wv, wf) -> CosteObjetivo:
         raise CosteNoReconocido("No hay columnas «CanObj · PrObj · ImpObj» de objetivo.")
     objetivo, *paquetes = grupos
     nombres = [g[0] or f"Paquete {i}" for i, g in enumerate(paquetes, start=1)]
-    if len(set(nombres)) != len(nombres):
-        raise CosteNoReconocido("Hay dos paquetes con el mismo nombre en la fila de títulos.")
+    repetidos = sorted({n for n in nombres if nombres.count(n) > 1})
+    if repetidos:
+        raise CosteNoReconocido(
+            f"El paquete «{repetidos[0]}» está dos veces en la fila de títulos: cambia el "
+            "nombre de uno."
+        )
     r = CosteObjetivo(wv.title, nombres)
+    sin_nombre = [n for n, g in zip(nombres, paquetes, strict=True) if not g[0]]
+    if sin_nombre:
+        r.avisos.append(f"Grupos de columnas sin nombre encima: se llaman {', '.join(sin_nombre)}.")
     c_cod, c_nat = fijas["Código"], fijas["Nat"]
     c_ud, c_res = fijas.get("Ud"), fijas["Resumen"]
     capitulo = ""
-    sin_valor = 0
+    sin_valor: list[int] = []
+    con_error: list[int] = []
+    vistos: dict[str, int] = {}  # código de partida o capítulo → primera fila
+    total_excel: tuple[int, float] | None = None
     for fila in range(fila0 + 1, wv.max_row + 1):
         codigo = _texto(wv.cell(fila, c_cod).value)
         nat = _texto(wv.cell(fila, c_nat).value)
         resumen = _texto(wv.cell(fila, c_res).value)
+        imp_v = wv.cell(fila, objetivo[3]).value
+        if not nat and resumen.upper().startswith("TOTAL") and _numero(imp_v) is not None:
+            total_excel = (fila, _numero(imp_v))  # la última fila de TOTAL, para contrastar
+            continue
         if nat == "Capítulo":
             capitulo = f"{codigo} {resumen}".strip()
+            vistos.setdefault(codigo.casefold(), fila)
             continue
-        # Línea añadida a mano: sin código ni naturaleza y con el PRECIO escrito (el
-        # importe puede ser una fórmula Can × Pr). Las filas de cierre y de total tienen
-        # el precio calculado (suma de recursos o de partidas).
-        manual = (
-            not codigo
-            and not nat
-            and resumen
-            and _numero(wf.cell(fila, objetivo[2]).value) is not None
-        )
+        manual = nat == "" and _es_manual(wf, fila, objetivo, codigo, resumen, vistos)
         if nat != "Partida" and not manual:
             continue
-        importe = _numero(wv.cell(fila, objetivo[3]).value)
+        if nat == "Partida" and codigo.casefold() in vistos:
+            r.avisos.append(
+                f"{codigo} (fila {fila}) ya estaba en la fila {vistos[codigo.casefold()]}: se "
+                "cuentan las dos."
+            )
+        vistos.setdefault(codigo.casefold(), fila)
+        importe = _numero(imp_v)
         if importe is None:
-            if _es_formula(wf.cell(fila, objetivo[3]).value):
-                sin_valor += 1
+            if isinstance(imp_v, str) and imp_v.startswith("#"):
+                con_error.append(fila)  # #¡VALOR!, #REF!…: un error de la hoja
+            elif imp_v is None and _es_formula(wf.cell(fila, objetivo[3]).value):
+                sin_valor.append(fila)
             importe = 0.0
         precio_bruto = wv.cell(fila, objetivo[2]).value
         nota = precio_bruto.strip() if isinstance(precio_bruto, str) else ""
@@ -180,31 +207,73 @@ def _leer_hoja(wv, wf) -> CosteObjetivo:
             v = _numero(wv.cell(fila, c_imp).value)
             if v:
                 reparto[nombre] = v
-        r.partidas.append(
-            PartidaCoste(
-                codigo=codigo,
-                resumen=resumen,
-                unidad=_texto(wv.cell(fila, c_ud).value) if c_ud else "",
-                capitulo=capitulo if not manual else "Añadido fuera de Presto",
-                cantidad=_numero(wv.cell(fila, objetivo[1]).value),
-                precio=_numero(precio_bruto),
-                importe=importe,
-                paquetes=reparto,
-                nota=nota,
-                fila=fila,
-            )
+        partida = PartidaCoste(
+            codigo=codigo,
+            resumen=resumen,
+            unidad=_texto(wv.cell(fila, c_ud).value) if c_ud else "",
+            capitulo=capitulo if not manual else "Añadido fuera de Presto",
+            cantidad=_numero(wv.cell(fila, objetivo[1]).value),
+            precio=_numero(precio_bruto),
+            importe=importe,
+            paquetes=reparto,
+            nota=nota,
+            fila=fila,
         )
+        r.partidas.append(partida)
+        if manual:
+            # Toda inferencia se declara (CLAUDE.md, línea roja 9).
+            r.avisos.append(
+                f"Línea añadida a mano (fila {fila}): «{resumen}», {_eur(importe)}. Cuenta en "
+                "el coste objetivo."
+            )
+        if importe < 0 or any(v < 0 for v in reparto.values()):
+            r.avisos.append(f"{codigo or resumen} (fila {fila}): importe negativo.")
     if not r.partidas:
         raise CosteNoReconocido("La hoja no tiene ninguna partida («Nat» = Partida).")
     if sin_valor:
         r.avisos.append(
-            f"{sin_valor} partida(s) con fórmula sin resultado guardado: abre el Excel en "
-            "Excel y guárdalo para que se lean sus importes."
+            f"Fórmula sin resultado guardado en la(s) fila(s) {_filas(sin_valor)}: abre el "
+            "Excel en Excel y guárdalo para que se lean sus importes (cuentan 0)."
+        )
+    if con_error:
+        r.avisos.append(
+            f"Error de la hoja (#…) en el importe de la(s) fila(s) {_filas(con_error)}: "
+            "corrígelo en el Excel (cuentan 0)."
         )
     for p in r.partidas:
-        if abs(p.sin_repartir) > CENTIMO:
+        if round(abs(p.sin_repartir), 2) > CENTIMO:
             r.avisos.append(
-                f"{p.codigo or p.resumen} (fila {p.fila}): {p.sin_repartir:.2f} € del objetivo "
-                "sin repartir en paquetes."
+                f"{p.codigo or p.resumen} (fila {p.fila}): {_eur(p.sin_repartir)} del "
+                "objetivo sin repartir en paquetes."
             )
+    # Contraste con el TOTAL del propio Excel: si no cuadra, algo se ha contado dos veces o
+    # se ha perdido (revisión 09-11-2026).
+    if total_excel is None:
+        r.avisos.append(
+            "El Excel no tiene una fila de TOTAL con importe: la suma no se ha podido contrastar."
+        )
+    elif round(abs(total_excel[1] - r.total), 2) > CENTIMO:
+        r.avisos.append(
+            f"La suma leída ({_eur(r.total)}) no coincide con el TOTAL del Excel "
+            f"({_eur(total_excel[1])}, fila {total_excel[0]}): revisa las líneas leídas."
+        )
     return r
+
+
+def _es_manual(wf, fila: int, objetivo, codigo: str, resumen: str, vistos) -> bool:
+    """Línea añadida a mano fuera de Presto: sin naturaleza, con resumen, y con el precio
+    escrito (o, sin precio, el importe escrito). No lo son las filas de cierre (su resumen
+    es el código de la partida o del capítulo que cierran) ni las de total."""
+    if not resumen or resumen.casefold() in vistos or (codigo and codigo.casefold() in vistos):
+        return False
+    precio = wf.cell(fila, objetivo[2]).value
+    importe = wf.cell(fila, objetivo[3]).value
+    return _numero(precio) is not None or (precio is None and _numero(importe) is not None)
+
+
+def _eur(v: float) -> str:
+    return f"{v:.2f} €".replace(".", ",")
+
+
+def _filas(filas: list[int]) -> str:
+    return ", ".join(map(str, filas[:10])) + (" …" if len(filas) > 10 else "")

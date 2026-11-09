@@ -45,6 +45,7 @@ from traza.app.ordenes import (
     Orden,
     OrdenRechazada,
     PartidaNueva,
+    QuitarVentaContratada,
     RegistrarDocumento,
     RevisarPlano,
     ahora,
@@ -608,8 +609,13 @@ class Proyecto:
     def resumen_obra(self) -> calculo_obra.ResumenObra:
         venta = self.venta_contratada()
         return calculo_obra.resumir(
-            self.partidas(venta["id"]) if venta is not None else None, self.coste_objetivo()
+            self.partidas(venta["id"]) if venta is not None else None,
+            self.coste_objetivo(),
+            venta,
         )
+
+    def quitar_venta_contratada(self) -> None:
+        self.ejecutar(QuitarVentaContratada())
 
     def mediciones(self) -> list[dict[str, Any]]:
         filas = self._filas(

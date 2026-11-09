@@ -119,21 +119,39 @@ importes). Lo que importa es su estructura:
 - **Venta**: «Obra → Presupuesto contratado…» elige una medición ya leída (BC3, Excel o
   PDF, en «Mediciones y ofertas»). Se guarda en `meta` («venta_medicion»); esa medición
   no se puede quitar mientras sea la contratada. En pantalla: venta total y por capítulo
-  de primer nivel. Las partidas sin cantidad o sin precio no suman y se avisa.
+  de primer nivel. Cada línea se redondea al céntimo (como Presto). Se avisa de lo que
+  puede dejar la venta corta o sin comprobar: partidas sin cantidad o sin precio, partidas
+  «a revisar», partidas sin código (no se enlazan), líneas del documento no convertidas y
+  diferencia con el total que declara el documento. Sin ninguna partida con importe, la
+  venta **no consta** (no «0 €»). «Obra → Quitar presupuesto contratado» lo deja sin
+  elegir (para releer su documento); se puede deshacer.
 - **Coste objetivo** (`io/coste_presto.py`): «Obra → Importar coste objetivo (Excel de
   Presto)…» con el Excel incorporado en Documentación.
   - Se busca la fila con «Código», «Nat», «Resumen»; cada grupo `CanObj · PrObj ·
     ImpObj` toma el nombre escrito encima de cualquiera de sus tres columnas. El primero es
     el OBJETIVO; los demás, los paquetes.
   - Cuentan las filas `Nat = Partida` (con sus importes por grupo) y las **líneas añadidas a
-    mano**: sin código ni naturaleza, con resumen y el **precio escrito** (no calculado).
-    Filas de recursos, cierres y totales no cuentan (su precio es una fórmula).
+    mano**: sin naturaleza, con resumen (y código, si lo tienen) y el **precio escrito** (o,
+    sin precio, el importe escrito). No lo son las filas de cierre (su resumen es el código
+    de la partida o capítulo que cierran, aunque el Excel venga pegado como valores) ni las
+    de TOTAL. **Cada línea contada como añadida a mano se declara** en los avisos.
+  - **Contraste con el TOTAL del propio Excel** (la última fila cuyo resumen empieza por
+    «TOTAL»): si la suma leída no coincide al céntimo, se avisa; si no hay TOTAL, se dice
+    que no se ha podido contrastar.
+  - Se avisa también: códigos de partida repetidos (se cuentan los dos), importes
+    negativos, grupos sin nombre (se llaman «Paquete N»), errores de la hoja (#…). Un
+    nombre de paquete repetido rechaza el Excel diciendo cuál. El nombre de un grupo es un
+    texto: un número o una fórmula encima de una columna no pasa por nombre.
   - Se leen los resultados guardados por Excel; una fórmula sin resultado se avisa.
   - Un texto en lugar de precio («NO INCLUIDO …») se guarda como nota, con importe 0.
   - Comprobación: objetivo − suma de paquetes > 1 céntimo → aviso «sin repartir».
   - Comprobado con el comparativo real del usuario (fuera del repositorio): el total leído
     coincide al céntimo con su fila de TOTAL, incluida su línea añadida a mano.
   - Uno por obra: importar otro lo sustituye (se puede deshacer). Esquema V11.
+- **Revisión independiente (09-11-2026)**: la regla de la línea añadida a mano podía contar
+  dos veces un cierre en valores o perder una línea con código; corregido como se describe
+  arriba, con pruebas de cada caso. También: división por cero con objetivo 0, céntimo
+  exacto que avisaba, importes en el formato del resto de la aplicación («1.234,50 €»).
 - **Comparación** (`app/obra.py`): margen previsto = venta − objetivo, y su % sobre la
   venta. Partidas enlazadas por código (sin espacios a los lados ni mayúsculas); las que
   no casan se cuentan en pantalla.

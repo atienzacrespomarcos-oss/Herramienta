@@ -27,7 +27,15 @@ BC3_VENTA = (
 GRUPOS = ("OBJETIVO", "EQUIPOS", "CHAPA", "MANO DE OBRA")
 
 
-def comparativo(ruta, *, sin_repartir=False, formula_sin_valor=False):
+def comparativo(
+    ruta,
+    *,
+    sin_repartir=False,
+    formula_sin_valor=False,
+    cierre_en_valores=False,
+    total=23200,
+    extra=None,
+):
     """Un comparativo como el del usuario. Las partidas llevan sus valores escritos (en el
     del usuario son fórmulas con su resultado guardado por Excel, que se lee igual)."""
     wb = Workbook()
@@ -57,7 +65,10 @@ def comparativo(ruta, *, sin_repartir=False, formula_sin_valor=False):
           "MANO DE OBRA": (1, 400, 400)})  # fmt: skip
     fila("PUTA", "Material", "", "", {"OBJETIVO": (1, 18000, 18000)})
     fila("OHO", "Mano de obra", "", "", {"OBJETIVO": (10, 40, 400)})
-    ws.append([None, None, None, "UTA01", 1, "=SUM(G7:G8)", "=ROUND(F9*E9,2)"])  # cierre
+    if cierre_en_valores:  # el Excel pegado como valores: el cierre lleva el precio escrito
+        ws.append([None, None, None, "UTA01", 1, 18400, 18400])
+    else:
+        ws.append([None, None, None, "UTA01", 1, "=SUM(G7:G8)", "=ROUND(F9*E9,2)"])  # cierre
     # Conducto: chapa 30 + mano de obra 12 = 42 €/m2 × 100 m2.
     mo = None if sin_repartir else (100, 12, 1200)
     fila("CND01", "Partida", "m2", "Conducto de chapa galvanizada",
@@ -72,7 +83,10 @@ def comparativo(ruta, *, sin_repartir=False, formula_sin_valor=False):
     ws.append([None, None, None, "CAP01", 1, "=G6+G10", "=ROUND(F15*E15,2)"])  # total
     # Línea añadida a mano (fuera de Presto): precio escrito, en OBJETIVO y en EQUIPOS.
     ws.append([None, None, None, "ELEVACIÓN DE EQUIPOS", 1, 600, 600, 1, 600, 600])
-    ws.append([None, None, None, "TOTAL OBRA DE PRUEBA", 1, "=G15+G16", "=ROUND(F17*E17,2)"])
+    for fila_extra in extra or ():
+        ws.append(fila_extra)
+    # El TOTAL con su resultado (en el del usuario, la fórmula con el valor guardado).
+    ws.append([None, None, None, "TOTAL OBRA DE PRUEBA", 1, total, total])
     wb.save(ruta)
     return ruta
 
@@ -94,15 +108,74 @@ def test_lector_del_comparativo(tmp_path):
     assert elev.capitulo == "Añadido fuera de Presto"
     assert r.total == pytest.approx(18400 + 4200 + 600)
     assert r.por_paquete() == {"EQUIPOS": 18600, "CHAPA": 3000, "MANO DE OBRA": 1600}
-    assert r.avisos == []
+    # Toda inferencia se declara: la línea añadida a mano sale en los avisos.
+    assert r.avisos == [
+        "Línea añadida a mano (fila 15): «ELEVACIÓN DE EQUIPOS», 600,00 €. Cuenta en el coste "
+        "objetivo."
+    ]
+
+
+def test_cierre_en_valores_no_se_cuenta_dos_veces(tmp_path):
+    r = coste_presto.leer(comparativo(tmp_path / "C.xlsx", cierre_en_valores=True))
+    assert r.total == pytest.approx(23200)
+    assert not any("no coincide" in a for a in r.avisos)
+
+
+def test_suma_que_no_cuadra_con_el_total_se_avisa(tmp_path):
+    r = coste_presto.leer(comparativo(tmp_path / "C.xlsx", total=25000))
+    assert any("no coincide con el TOTAL del Excel (25000,00 €" in a for a in r.avisos)
+
+
+def test_linea_a_mano_con_codigo_y_negativa(tmp_path):
+    extra = [["X1", None, None, "DESCUENTO PACTADO", 1, -300, -300, 1, -300, -300]]
+    r = coste_presto.leer(comparativo(tmp_path / "C.xlsx", extra=extra, total=22900))
+    x1 = next(p for p in r.partidas if p.codigo == "X1")
+    assert x1.importe == -300 and x1.capitulo == "Añadido fuera de Presto"
+    assert any("X1 (fila" in a and "negativo" in a for a in r.avisos)
+    assert not any("no coincide" in a for a in r.avisos)
 
 
 def test_objetivo_sin_repartir_y_formula_sin_valor_se_avisan(tmp_path):
     r = coste_presto.leer(
         comparativo(tmp_path / "C.xlsx", sin_repartir=True, formula_sin_valor=True)
     )
-    assert any("CND01" in a and "1200.00 €" in a and "sin repartir" in a for a in r.avisos)
+    assert any("CND01" in a and "1200,00 €" in a and "sin repartir" in a for a in r.avisos)
     assert any("sin resultado guardado" in a for a in r.avisos)
+
+
+def test_nombres_de_paquete(tmp_path):
+    """Nombre encima de CanObj o ImpObj, columnas vacías entre grupos, un número encima
+    (no es un nombre), un grupo sin nombre y dos con el mismo."""
+    from openpyxl.utils import get_column_letter as letra
+
+    def libro(nombres_y_columnas, ruta):
+        wb = Workbook()
+        ws = wb.active
+        cab = {1: "Código", 2: "Nat", 3: "Ud", 4: "Resumen"}
+        for col, (nombre, sobre) in nombres_y_columnas.items():
+            cab |= {col: "CanObj", col + 1: "PrObj", col + 2: "ImpObj"}
+            if nombre is not None:
+                ws[f"{letra(col + sobre)}2"] = nombre
+        for c, v in cab.items():
+            ws.cell(4, c, v)
+        ws.append(["P1", "Partida", "ud", "Una", 1, 10, 10])
+        wb.save(ruta)
+        return ruta
+
+    r = coste_presto.leer(
+        libro(
+            {5: ("OBJETIVO", 1), 9: ("ENCIMA DE CAN", 0), 13: ("ENCIMA DE IMP", 2), 17: (None, 0)},
+            tmp_path / "A.xlsx",
+        )
+    )
+    assert r.paquetes == ["ENCIMA DE CAN", "ENCIMA DE IMP", "Paquete 3"]
+    assert any("sin nombre" in a and "Paquete 3" in a for a in r.avisos)
+    r = coste_presto.leer(libro({5: ("OBJETIVO", 1), 8: ("12345.6", 0)}, tmp_path / "N.xlsx"))
+    assert r.paquetes == ["Paquete 1"]
+    with pytest.raises(coste_presto.CosteNoReconocido, match="«MISMO» está dos veces"):
+        coste_presto.leer(
+            libro({5: ("OBJETIVO", 1), 8: ("MISMO", 1), 11: ("MISMO", 1)}, tmp_path / "D.xlsx")
+        )
 
 
 def test_lo_que_no_es_un_comparativo_se_rechaza(tmp_path):
@@ -156,6 +229,9 @@ def test_importar_otro_sustituye_y_se_deshace(obra, tmp_path):
     assert p.resumen_obra().objetivo == pytest.approx(23200)
     p.deshacer()
     assert p.coste_objetivo()["documento_nombre"] == "C1.xlsx"
+    p.rehacer()
+    assert p.coste_objetivo()["documento_nombre"] == "C2.xlsx"
+    p.deshacer()
     p.deshacer()  # la incorporación del segundo Excel
     p.deshacer()  # la importación del primero
     assert p.coste_objetivo() is None
@@ -173,5 +249,41 @@ def test_rechazos(obra, tmp_path, pdf_3_paginas):
     p.fijar_venta_contratada(med_id)
     with pytest.raises(OrdenRechazada, match="Ya es el presupuesto contratado"):
         p.fijar_venta_contratada(med_id)
-    with pytest.raises(OrdenRechazada, match="presupuesto contratado"):
+    with pytest.raises(OrdenRechazada, match="Quitar presupuesto contratado"):
         p.ejecutar(QuitarMedicion(med_id))
+    # Se puede dejar sin contratado (para releer el documento) y deshacer.
+    p.quitar_venta_contratada()
+    assert p.venta_contratada() is None
+    p.ejecutar(QuitarMedicion(med_id))
+    p.deshacer()
+    p.deshacer()
+    assert p.venta_contratada()["id"] == med_id
+    p.quitar_venta_contratada()
+    with pytest.raises(OrdenRechazada, match="no tiene presupuesto contratado"):
+        p.quitar_venta_contratada()
+
+
+def test_avisos_de_la_venta():
+    from traza.app.obra import resumir
+
+    partidas = [
+        {"codigo": "A", "resumen": "a", "importe": 100.004, "estado": "exacta"},
+        {"codigo": "", "resumen": "sin código", "importe": 50.0, "estado": "a_revisar"},
+        {"codigo": "C", "resumen": "c", "importe": None, "estado": "exacta"},
+    ]
+    r = resumir(partidas, None, {"omitidas": 2, "total_documento": 200.0})
+    assert r.venta == pytest.approx(150.0)  # cada línea al céntimo
+    texto = " ".join(r.avisos_venta)
+    partes = (
+        "1 partida(s) del presupuesto contratado sin cantidad",
+        "«a revisar»",
+        "sin código",
+        "2 línea(s) del documento",
+        "no coincide con el total",
+    )
+    for parte in partes:
+        assert parte in texto, parte
+    # Ninguna con importe: la venta no consta (no «0 €»).
+    r = resumir([{"codigo": "C", "resumen": "c", "importe": None}], None)
+    assert r.venta is None and r.margen is None
+    assert "la venta no consta" in r.avisos_venta[0]

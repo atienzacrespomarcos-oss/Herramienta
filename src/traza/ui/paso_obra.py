@@ -14,7 +14,10 @@ from traza.core.numeros import escribir_numero
 
 
 def _eur(v: float | None) -> str:
-    return "—" if v is None else f"{escribir_numero(round(v, 2))} €"
+    """Como el resto de importes de la aplicación (ventana._dinero): «1.234,50 €»."""
+    from traza.ui.ventana import _dinero
+
+    return "—" if v is None else f"{_dinero(v)} €"
 
 
 def _pct(v: float | None) -> str:
@@ -53,6 +56,9 @@ class PaginaVenta(_Pagina):
         self.a_contratado = ventana._accion(
             m, "Presupuesto contratado…", lambda: self.accion_contratado()
         )
+        self.a_quitar = ventana._accion(
+            m, "Quitar presupuesto contratado", lambda: self.accion_quitar()
+        )
         super().__init__(ventana, ["Capítulo", "Partidas", "Venta"], [self.a_contratado])
 
     def accion_contratado(self) -> None:
@@ -72,6 +78,11 @@ class PaginaVenta(_Pagina):
         if i is not None:
             self.proyecto.fijar_venta_contratada(meds[i]["id"])
             self.v.refrescar()
+
+    def accion_quitar(self) -> None:
+        # Para volver a leer su documento o elegir otro; se puede deshacer.
+        self.proyecto.quitar_venta_contratada()
+        self.v.refrescar()
 
     def refrescar(self) -> None:
         from traza.ui.ventana import _llenar
@@ -94,7 +105,7 @@ class PaginaVenta(_Pagina):
             # Capítulo de primer nivel: [(código, resumen), …] desde la raíz.
             cap = " ".join(x for x in p["capitulo"][0] if x) if p["capitulo"] else "(sin capítulo)"
             por_capitulo[cap][0] += 1
-            por_capitulo[cap][1] += p["importe"] or 0.0
+            por_capitulo[cap][1] += round(p["importe"] or 0.0, 2)
         r = self.proyecto.resumen_obra()
         self.resumen.setText(
             f"Presupuesto contratado: {venta['documento_nombre']} · Venta: {_eur(r.venta)} "
@@ -104,10 +115,12 @@ class PaginaVenta(_Pagina):
             self.tabla,
             [[cap, str(n), _eur(imp)] for cap, (n, imp) in por_capitulo.items()],
         )
-        self.avisos.setText(" ".join(f"⚠ {a}" for a in r.avisos if "venta" in a.lower()))
+        self.avisos.setText("\n".join(f"⚠ {a}" for a in r.avisos_venta))
 
     def actualizar_estado(self, hay: bool) -> None:
-        self.a_contratado.setEnabled(_es_obra(self, hay))
+        con = _es_obra(self, hay)
+        self.a_contratado.setEnabled(con)
+        self.a_quitar.setEnabled(con and self.proyecto.venta_contratada() is not None)
 
 
 class PaginaCosteObjetivo(_Pagina):
@@ -155,7 +168,10 @@ class PaginaCosteObjetivo(_Pagina):
             _llenar(self.tabla, [])
             return
         r = self.proyecto.resumen_obra()
-        texto = f"Coste objetivo ({coste['documento_nombre']}): {_eur(r.objetivo)}"
+        texto = (
+            f"Coste objetivo ({coste['documento_nombre']}, hoja «{coste['hoja']}»): "
+            f"{_eur(r.objetivo)}"
+        )
         if r.venta is not None:
             texto += (
                 f" · Venta: {_eur(r.venta)} · Margen previsto: {_eur(r.margen)} "
@@ -163,15 +179,15 @@ class PaginaCosteObjetivo(_Pagina):
             )
         self.resumen.setText(texto + ".")
         total = r.objetivo or 0.0
-        filas = [
-            [nombre, _eur(imp), _pct(100 * imp / total if total else None)]
-            for nombre, imp in r.paquetes.items()
-        ]
+
+        def pct(imp: float) -> str:
+            # Con objetivo 0 (p. ej. fórmulas sin resultado guardado) no hay porcentaje.
+            return _pct(100 * imp / total if total else None)
+
+        filas = [[nombre, _eur(imp), pct(imp)] for nombre, imp in r.paquetes.items()]
         sin_paquete = total - sum(r.paquetes.values())
-        if abs(sin_paquete) > 0.005:
-            filas.append(
-                ["(sin repartir en paquetes)", _eur(sin_paquete), _pct(100 * sin_paquete / total)]
-            )
+        if round(abs(sin_paquete), 2) >= 0.01:  # el mismo céntimo que el lector
+            filas.append(["(sin repartir en paquetes)", _eur(sin_paquete), pct(sin_paquete)])
         _llenar(self.tabla, filas)
         avisos = []
         if r.solo_en_venta or r.solo_en_coste:
@@ -179,11 +195,16 @@ class PaginaCosteObjetivo(_Pagina):
                 f"Partidas que no casan por código: {len(r.solo_en_venta)} solo en la venta, "
                 f"{len(r.solo_en_coste)} solo en el coste: revisa sus códigos en Presto."
             )
-        avisos += [a for a in coste["avisos"]]
+        if r.venta_sin_codigo:
+            avisos.append(
+                f"{r.venta_sin_codigo} partida(s) de venta sin código no se pueden enlazar."
+            )
+        avisos += r.avisos_coste
         self.avisos.setText("\n".join(f"⚠ {a}" for a in avisos))
 
     def actualizar_estado(self, hay: bool) -> None:
         con = _es_obra(self, hay)
         self.a_importar.setEnabled(con)
-        # Solo en Obra, como sus pasos (como el menú Entregables en Oferta).
+        # Con un proyecto abierto, solo en Obra (como sus pasos); sin proyecto se ve
+        # deshabilitado, como los demás menús.
         self.v.menu_obra.menuAction().setVisible(not hay or con)
