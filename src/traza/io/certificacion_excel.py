@@ -18,6 +18,7 @@ capítulo o un subtotal no se suman dos veces.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -116,13 +117,20 @@ SINONIMOS: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: Un título con estas palabras es de cantidades, unidades, precios o porcentajes, no de
 #: importes en euros: «Cantidad a origen», «Uds. a origen» o «% anterior» no son el importe
 #: (revisión 09-11-2026: «% anterior» y «% actual» se leían como euros).
-NO_IMPORTE = ("%", "cantidad", "cant ", "medicion", "precio", "unitario", "unidades", "uds ",
-              "ud ", "porcentaje")  # fmt: skip
+NO_IMPORTE = ("%", "cantidad", "cant", "medicion", "precio", "unitario", "unidades", "uds",
+              "ud", "porcentaje")  # fmt: skip
+
+
+def _tiene(texto: str, terminos: tuple[str, ...]) -> bool:
+    """Por palabras («ud» no está en «longitud», «iva» no está en «relativa»); «%» y los
+    términos de varias palabras, por subcadena (revisión 09-11-2026)."""
+    palabras = set(texto.replace("%", " % ").split())
+    return any((n in texto) if (" " in n or n == "%") else (n in palabras) for n in terminos)
 
 
 def _vale_para(rol: str, titulo_normalizado: str) -> bool:
-    t = titulo_normalizado + " "
-    if rol.startswith("importe") and any(n in t for n in NO_IMPORTE):
+    t = titulo_normalizado
+    if rol.startswith("importe") and _tiene(t, NO_IMPORTE):
         return False
     # Un % a origen tiene que decir que es un porcentaje.
     return rol != "porcentaje_origen" or "%" in t or "porcentaje" in t
@@ -285,7 +293,7 @@ def mapa_de_ia(ruta: Path, propuesta: dict[str, Any]) -> Mapa:
 
 
 #: Filas de total que NO son el total certificado de la obra.
-_OTROS_TOTALES = ("iva", "capitulo", "cap ", "con impuestos", "liquido", "a pagar")
+_OTROS_TOTALES = ("iva", "capitulo", "cap", "con impuestos", "liquido", "a pagar")
 
 
 def leer(ruta: Path, mapa: Mapa) -> Leido:
@@ -329,7 +337,7 @@ def leer(ruta: Path, mapa: Mapa) -> Leido:
             not codigo or normalizar(codigo).startswith("total")
         )
         if es_total and origen is not None:
-            if not any(o in texto + " " for o in _OTROS_TOTALES):
+            if not _tiene(texto, _OTROS_TOTALES):
                 total_excel = (r, origen)
             continue
         malas = [rol for rol in usados if sin_resultado(r, rol)]
@@ -355,7 +363,7 @@ def _escala_porcentaje(ws, col: dict[str, int], mapa: Mapa) -> float:
         celda = ws.cell(r, col["porcentaje_origen"])
         if _numero(celda.value) is None or not ws.cell(r, col["codigo"]).value:
             continue
-        if "%" in (celda.number_format or ""):
+        if _formato_porcentaje(celda.number_format):
             return 1.0
         valores.append(celda.value)
     return 100.0 if max(valores, default=0.0) > 1.5 else 1.0
@@ -369,3 +377,10 @@ def descripcion(mapa: Mapa) -> str:
         if rol in mapa.columnas
     ]
     return f"Hoja «{mapa.hoja}», títulos en la fila {mapa.fila_titulos}: " + ", ".join(partes) + "."
+
+
+def _formato_porcentaje(formato: str | None) -> bool:
+    """Formato de porcentaje de verdad («0%», «0,00%»): un «%» escrito como texto («0"%"»,
+    «0\\%») solo se muestra y no divide entre 100."""
+    sin_literales = re.sub(r'"[^"]*"|\\.', "", formato or "")
+    return "%" in sin_literales

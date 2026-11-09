@@ -270,3 +270,12 @@ def test_numeros_saltados_y_bajadas_se_anotan(venta, tmp_path):
     assert c1["nota"] == ""
     assert "incluye lo de las que faltan" in c3["nota"] and "menor que la anterior" in c3["nota"]
     assert c3["del_mes"] == 12100 - 12600
+
+
+def test_formato_y_palabras():
+    from traza.io.certificacion_excel import _formato_porcentaje, _tiene
+
+    assert _formato_porcentaje("0%") and _formato_porcentaje("0.00%")
+    assert not _formato_porcentaje('0"%"') and not _formato_porcentaje("0\\%")
+    assert not _tiene("longitud total", ("ud",)) and _tiene("uds a origen", ("uds",))
+    assert not _tiene("total relativa", ("iva",)) and _tiene("total con iva", ("iva",))
