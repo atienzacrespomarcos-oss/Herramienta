@@ -156,6 +156,16 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
         # Un modificado no siempre hace falta: sin ninguno, el paso no tiene marca; con
         # alguno, ✓ hecho.
         return None if p.modificados() else EstadoPaso("")
+    if paso == "venta":
+        if p.venta_contratada() is None:
+            if not p.mediciones():
+                return EstadoPaso(PENDIENTE, "Falta: leer el presupuesto en «Mediciones»")
+            return EstadoPaso(PENDIENTE, "Falta: elegir el presupuesto contratado")
+        return None
+    if paso == "coste_objetivo":
+        if p.coste_objetivo() is None:
+            return EstadoPaso(PENDIENTE, "Falta: importar el Excel de coste objetivo")
+        return None
     return EstadoPaso("")  # sin estado (p. ej. Equipos)
 
 

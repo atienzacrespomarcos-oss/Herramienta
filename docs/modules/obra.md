@@ -1,6 +1,7 @@
 # Obra: control de venta, costes, certificaciones y previsión
 
-Estado: **diseño aprobado** (09-11-2026); en construcción por bloques.
+Estado: **diseño aprobado** (09-11-2026). **Bloque 1 implementado** (crear obra, venta y
+coste objetivo).
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -109,10 +110,38 @@ importes). Lo que importa es su estructura:
 - Excel de control de la obra con todo el detalle (venta, objetivo por partida y paquete,
   facturas, certificaciones, previsión y futuribles).
 
+## Cómo está hecho el bloque 1 (decisiones de método, 09-11-2026)
+
+- **Encargo «Obra (venta, costes y certificaciones)»**. Una oferta pasa a obra cambiando
+  el tipo de encargo (Ver → Tipo de encargo…): conserva sus documentos, mediciones y
+  modificados. Pasos de Obra: los de cálculo, «Mediciones y ofertas», **Venta**,
+  **Coste objetivo**, «Modificados» y «Equipos». El menú **Obra** solo se ve en obras.
+- **Venta**: «Obra → Presupuesto contratado…» elige una medición ya leída (BC3, Excel o
+  PDF, en «Mediciones y ofertas»). Se guarda en `meta` («venta_medicion»); esa medición
+  no se puede quitar mientras sea la contratada. En pantalla: venta total y por capítulo
+  de primer nivel. Las partidas sin cantidad o sin precio no suman y se avisa.
+- **Coste objetivo** (`io/coste_presto.py`): «Obra → Importar coste objetivo (Excel de
+  Presto)…» con el Excel incorporado en Documentación.
+  - Se busca la fila con «Código», «Nat», «Resumen»; cada grupo `CanObj · PrObj ·
+    ImpObj` toma el nombre escrito encima de cualquiera de sus tres columnas. El primero es
+    el OBJETIVO; los demás, los paquetes.
+  - Cuentan las filas `Nat = Partida` (con sus importes por grupo) y las **líneas añadidas a
+    mano**: sin código ni naturaleza, con resumen y el **precio escrito** (no calculado).
+    Filas de recursos, cierres y totales no cuentan (su precio es una fórmula).
+  - Se leen los resultados guardados por Excel; una fórmula sin resultado se avisa.
+  - Un texto en lugar de precio («NO INCLUIDO …») se guarda como nota, con importe 0.
+  - Comprobación: objetivo − suma de paquetes > 1 céntimo → aviso «sin repartir».
+  - Comprobado con el comparativo real del usuario (fuera del repositorio): el total leído
+    coincide al céntimo con su fila de TOTAL, incluida su línea añadida a mano.
+  - Uno por obra: importar otro lo sustituye (se puede deshacer). Esquema V11.
+- **Comparación** (`app/obra.py`): margen previsto = venta − objetivo, y su % sobre la
+  venta. Partidas enlazadas por código (sin espacios a los lados ni mayúsculas); las que
+  no casan se cuentan en pantalla.
+
 ## Pendiente
 
 - Revisión del diseño por el usuario.
 - Un ejemplo del Excel de certificación del usuario (para el bloque 2).
-- Construir por bloques: (1) crear obra, venta y coste objetivo; (2) coste real,
+- Construir por bloques: ~~(1) crear obra, venta y coste objetivo~~ (hecho); (2) coste real,
   certificaciones, foto de lo real y previsión del usuario; (3) futuribles y Excel de
   control.

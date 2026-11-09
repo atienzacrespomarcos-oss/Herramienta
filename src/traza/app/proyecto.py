@@ -17,6 +17,7 @@ from traza.app import cargas as calculo_cargas
 from traza.app import flujo, lectura_ia
 from traza.app import hidronica as calculo_hidronica
 from traza.app import modificados as calculo_mod
+from traza.app import obra as calculo_obra
 from traza.app import planos as calculo_planos
 from traza.app import redes as calculo_redes
 from traza.app import subcuadros as calculo_subcuadros
@@ -37,6 +38,8 @@ from traza.app.ordenes import (
     FijarCargasEspacio,
     FijarCargasProyecto,
     FijarPropiedad,
+    FijarVentaContratada,
+    ImportarCosteObjetivo,
     ImportarMedicion,
     LeerPlano,
     Orden,
@@ -55,6 +58,7 @@ from traza.io import (
     bc3,
     bc3_modificar,
     clima_idae,
+    coste_presto,
     dxf,
     esquema_hidraulico_dxf,
     informe_cargas,
@@ -537,6 +541,75 @@ class Proyecto:
         )
         self.ejecutar(orden, autor="importacion")
         return orden.id, avisos
+
+    # --- Obra: venta y coste objetivo (docs/modules/obra.md) -----------------------------
+
+    def venta_contratada(self) -> dict[str, Any] | None:
+        """La medición que es el presupuesto contratado de la obra (o None)."""
+        fila = leer(self._con, "meta", {"clave": "venta_medicion"})
+        if fila is None:
+            return None
+        return next((m for m in self.mediciones() if m["id"] == fila["valor"]), None)
+
+    def fijar_venta_contratada(self, medicion_id: str) -> None:
+        self.ejecutar(FijarVentaContratada(medicion_id))
+
+    def importar_coste_objetivo(self, documento_id: str) -> coste_presto.CosteObjetivo:
+        """Lee el Excel de coste objetivo de Presto (incorporado como documento) y lo guarda
+        tal cual (orden ImportarCosteObjetivo; sustituye al anterior)."""
+        doc = leer(self._con, "documento", {"id": documento_id})
+        if doc is None:
+            raise OrdenRechazada("Documento no incorporado.")
+        if doc["extension"].lower() not in (".xlsx", ".xlsm"):
+            raise OrdenRechazada(
+                f"«{doc['nombre_original']}» no es un Excel (.xlsx): guárdalo desde Excel."
+            )
+        try:
+            r = coste_presto.leer(self.ruta_documento(documento_id))
+        except coste_presto.CosteNoReconocido as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        self.ejecutar(
+            ImportarCosteObjetivo(
+                documento_id,
+                r.hoja,
+                r.paquetes,
+                [
+                    {
+                        "codigo": p.codigo,
+                        "resumen": p.resumen,
+                        "unidad": p.unidad,
+                        "capitulo": p.capitulo,
+                        "cantidad": p.cantidad,
+                        "precio": p.precio,
+                        "importe": p.importe,
+                        "paquetes": p.paquetes,
+                        "nota": p.nota,
+                        "fila": p.fila,
+                    }
+                    for p in r.partidas
+                ],
+                r.avisos,
+                coste_presto.LECTOR,
+                coste_presto.VERSION,
+            )
+        )
+        return r
+
+    def coste_objetivo(self) -> dict[str, Any] | None:
+        fila = leer(self._con, "coste_objetivo", {"id": 1})
+        if fila is None:
+            return None
+        for clave in ("paquetes", "partidas", "avisos"):
+            fila[clave] = json.loads(fila[clave])
+        doc = leer(self._con, "documento", {"id": fila["documento_id"]})
+        fila["documento_nombre"] = doc["nombre_original"] if doc else ""
+        return fila
+
+    def resumen_obra(self) -> calculo_obra.ResumenObra:
+        venta = self.venta_contratada()
+        return calculo_obra.resumir(
+            self.partidas(venta["id"]) if venta is not None else None, self.coste_objetivo()
+        )
 
     def mediciones(self) -> list[dict[str, Any]]:
         filas = self._filas(
