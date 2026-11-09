@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 09-11-2026 (flujo de trabajo, bloque 1).
+Última actualización: 09-11-2026 (flujo de trabajo, bloques 1 y 2).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -22,7 +22,7 @@ declarados).
 | — | Rooftop | 3.4 | Pendiente | |
 | RF-104 | VRF / expansión directa | 3.5 | Pendiente | |
 | RF-105 | Hidrónico | 7 | Implementada (cálculo y elementos) | `docs/modules/hidronica.md`. Primario-secundario, 2 y 4 tubos, circuitos de las cargas; diámetros, bombas, colectores, inercia, vaso, presiones, válvulas y aislamiento con RITE e IDAE nº 18; lista completa de elementos y Excel. Probado con los ejemplos resueltos de la guía IDAE nº 18. Esquema de principio en DXF R2013 con leyenda (7.B). Falta validar con un proyecto real y abrir el esquema en el AutoCAD del usuario. |
-| RF-200…205 | DXF, LISP, listados, memoria | 3 | Pendiente | |
+| RF-200…205 | DXF, LISP, listados, memoria | flujo 2 | Implementada | `docs/modules/flujo.md`. Paso «Entregables»: todos los DXF/LISP y Excel del diseño de una vez y la justificación de cálculos en Word sobre la plantilla del usuario (de apoyo, no la memoria oficial: decisión del usuario). Probado con proyectos de prueba; falta abrirla con la plantilla real de Aliter. |
 | RF-110 | Subcuadros eléctricos de clima | 8 | Implementada | `docs/modules/electricidad.md`. Solo subcuadros de clima (decisión del usuario): salidas desde los equipos dimensionados, secciones por intensidad admisible y caída de tensión, magnetotérmico, diferencial, conductor de protección y unifilar DXF. Probado con las tablas y ejemplos de las guías del REBT y un subcuadro calculado a mano. Falta un subcuadro real del usuario. |
 | RF-120, 140, 150 | Fontanería, PCI, control | 5 | Pendiente | |
 | RF-130 | Saneamiento | — | Fuera de alcance | Decisión del usuario (09-11-2026): «saneamiento me da igual, no quiero incorporarlo». |

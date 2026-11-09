@@ -1,6 +1,6 @@
 # Flujo de trabajo de la herramienta
 
-Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implementado** (09-11-2026).
+Estado: **decidido** (09-11-2026); se construye por bloques. **Bloques 1 y 2 implementados** (09-11-2026).
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -16,6 +16,7 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
 | Orden de los bloques | **1 → 2 → 3** (encargos y estado; entregables y memoria; oferta con recálculo). |
 | Tabla de pasos por encargo | **Así** (la de abajo). |
 | Entregables de un diseño | **Planos DXF/LISP**, **Excel de cálculo** y **memoria técnica en Word editable** (.docx). Presupuesto/BC3 del diseño, no. |
+| Alcance de la memoria (09-11-2026) | «Es de soporte en caso de que me hagan justificar algo. Con plantilla de Aliter. Nada oficial». **Sin membrete** de TRAZA. |
 
 ## Pasos por tipo de encargo
 
@@ -131,3 +132,64 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
   (en gris, como el resto del dibujo) o se descarta. Así cargas, redes, hidráulica y
   cuadros se calculan solo para la ampliación, sin una marca más que mantener. La pantalla
   lo dice («Confirmados (ampliación)», «Falta: confirmar los espacios de la ampliación»).
+
+## Cómo está hecho el bloque 2 (decisiones de método, 09-11-2026)
+
+### Paso «Entregables» (Diseño y Ampliación; menú Entregables)
+- **Generar entregables…**: se elige una carpeta y se crea dentro una subcarpeta nueva
+  «<proyecto> - Entregables AAAA-MM-DD hhmm» (nunca se sobrescribe nada). Dentro:
+  - Excel de cada plano;
+  - cargas en Excel y PDF;
+  - de cada red de aire, DXF R2013, LISP y Excel;
+  - de cada sistema hidráulico, Excel y esquema de principio DXF;
+  - de cada subcuadro, el unifilar DXF;
+  - la justificación de cálculos en Word.
+  Al terminar dice cuántos ficheros y, de lo que no se ha podido generar, el motivo. Un
+  error en uno, del tipo que sea, se apunta y no impide los demás.
+- Nombres sin repetir: si dos entregables darían el mismo fichero (dos planos «Planta.dxf»
+  de carpetas distintas, redes «A/B» y «A:B», mayúsculas, que Windows no distingue), el
+  segundo lleva « (2)». Nunca se pisa uno con otro.
+- El menú Entregables solo se ve en Diseño y Ampliación, como el paso.
+- Si hay pasos **⚠ desactualizados**, pregunta antes de generar; la justificación lo dice
+  en «Estado al generar este documento».
+- Si la guía del IDAE no está leída en la sesión, se lee (en segundo plano) antes.
+- **Solo la justificación de cálculos (Word)…**: el documento suelto, donde se elija.
+- Nombres de fichero válidos en Windows (`core/ficheros.nombre_valido`).
+- Coste: genera en el hilo de la ventana y recalcula cargas por cada entregable; con los
+  proyectos de prueba es inmediato. Si con un proyecto real tarda, se calculará una vez y
+  se mostrará el avance.
+
+### Justificación de cálculos (`io/memoria.py`)
+- Documento de **apoyo** («nada oficial»): por cálculo, datos de partida con su procedencia,
+  método y criterios con su norma, y resultados. Apartados:
+  - cargas y ventilación: datos de partida y clima, método, resultados por espacio, y de
+    cada espacio la procedencia de cada dato y el desglose por partidas;
+  - redes de aire: resumen, criterios y tramos;
+  - sistema hidráulico: resumen por servicio, criterios, circuitos, y los elementos con la
+    norma o fuente que los exige;
+  - subcuadros: criterios del REBT y sus guías, y por línea Ib, sección, Iz, protección,
+    diferencial, caída de tensión y CUMPLE / NO CUMPLE.
+- Los criterios son **los mismos textos** que las hojas «Hipótesis» de los Excel
+  (`informe_*.hipotesis`): el Word y el Excel no pueden decir cosas distintas. Los de los
+  subcuadros resumen «Criterios elegidos» de `electricidad.md`.
+- Números con **coma decimal** (también en las hipótesis de los Excel, que antes salían
+  con punto).
+- Lo que no se puede calcular se dice («Sin calcular: …»), nunca se omite en silencio:
+  cargas sin clima o sin espacios, una red que no se puede dimensionar (sus avisos, sin
+  describir un método que no se ha aplicado), un error inesperado de cualquier cálculo.
+- **Cifras**: un número con hasta 3 decimales (un dato de partida: 0,25; 2,75 m;
+  0,37 kW) se escribe tal cual se usó; con más (un resultado), a 1 decimal.
+- **Subcuadros**: método de instalación y longitud de cada línea, para poder rehacer el
+  cálculo; la columna «Comprobación» se **calcula** con los valores de la línea (I diseño
+  ≤ In ≤ Iz y caída total ≤ límite), no se lee de un indicador.
+- Propiedades del documento (título, fecha) propias, no las de la plantilla; sin autor.
+- Se escribe aparte y se sustituye: un fallo a medias no deja un .docx roto.
+- Una plantilla .dotx renombrada a .docx también se abre.
+- **Plantilla**: «Entregables → Plantilla de Word…» (.docx o .dotx). Se recuerda en el
+  equipo, no en el proyecto (es la de Aliter para todos). Se conservan sus estilos,
+  encabezado, pie y página, y se vacía su cuerpo. Si a la plantilla le falta un estilo
+  (Word solo guarda los usados), se imita con formato directo. Si la plantilla no se
+  encuentra, se avisa y el documento sale sin ella.
+- TRAZA.exe: `--collect-data docx` (la plantilla interna de python-docx); la autoprueba
+  genera una justificación.
+- Dependencia nueva: python-docx 1.2.0 (MIT).

@@ -67,6 +67,15 @@ class PreguntasPreparadas:
     def informacion(self, titulo, texto):
         self.informaciones.append(texto)
 
+    def carpeta_entregables(self):
+        return self._siguiente("carpeta_entregables")
+
+    def destino_word(self, sugerido):
+        return self._siguiente("destino_word")
+
+    def plantilla_word(self):
+        return self._siguiente("plantilla_word")
+
     def encargo(self, actual):
         return self._siguiente("encargo")
 
@@ -810,7 +819,9 @@ def test_paso_desactualizado_se_marca_y_se_da_por_revisado(ventana, tmp_path, mo
 
     def estado(paso):
         if paso == "redes" and not revisados:
-            return EstadoPaso(DESACTUALIZADO, "Ha cambiado Cargas: revisa y da por revisado")
+            return EstadoPaso(
+                DESACTUALIZADO, "Ha cambiado Cargas y ventilación: revisa y da por revisado"
+            )
         return original(paso)
 
     monkeypatch.setattr(p, "estado_paso", estado)
@@ -822,7 +833,7 @@ def test_paso_desactualizado_se_marca_y_se_da_por_revisado(ventana, tmp_path, mo
     v.ir_a_paso("redes")
     item = v.lista_pasos.currentItem()
     assert item.text() == "⚠ 4. Redes de aire"
-    assert item.toolTip() == "Ha cambiado Cargas: revisa y da por revisado"
+    assert item.toolTip() == "Ha cambiado Cargas y ventilación: revisa y da por revisado"
     v.a_revisado.trigger()
     assert revisados == ["redes"]
     assert v.lista_pasos.currentItem().text() == "○ 4. Redes de aire"

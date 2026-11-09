@@ -21,7 +21,7 @@ jobs:
       - name: Construir TRAZA.exe
         run: >
           uv run pyinstaller --noconfirm --clean --windowed --name TRAZA
-          --collect-data pint scripts/traza_exe.py
+          --collect-data pint --collect-data docx scripts/traza_exe.py
       - name: Autoprueba del ejecutable
         shell: pwsh
         env:

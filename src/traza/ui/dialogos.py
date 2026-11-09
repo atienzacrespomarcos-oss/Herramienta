@@ -379,6 +379,24 @@ class Preguntas:
         )
         return Path(ruta) if ruta else None
 
+    def carpeta_entregables(self) -> Path | None:
+        carpeta = QFileDialog.getExistingDirectory(
+            self.v, "Carpeta donde dejar los entregables (se crea una subcarpeta)"
+        )
+        return Path(carpeta) if carpeta else None
+
+    def destino_word(self, sugerido: Path) -> Path | None:
+        ruta, _ = QFileDialog.getSaveFileName(
+            self.v, "Justificación de cálculos", str(sugerido), "Word (*.docx)"
+        )
+        return Path(ruta) if ruta else None
+
+    def plantilla_word(self) -> Path | None:
+        ruta, _ = QFileDialog.getOpenFileName(
+            self.v, "Plantilla de Word", "", "Word (*.docx *.dotx)"
+        )
+        return Path(ruta) if ruta else None
+
     def proyecto_existente(self) -> Path | None:
         carpeta = QFileDialog.getExistingDirectory(self.v, "Abrir proyecto (carpeta .traza)")
         return Path(carpeta) if carpeta else None
