@@ -21,7 +21,7 @@ from pathlib import Path
 from traza.core.estados import Estado, transicion_permitida
 from traza.core.geometria import MOTOR as MOTOR_GEOMETRIA
 from traza.core.geometria import VERSION as VERSION_GEOMETRIA
-from traza.core.geometria import Contorno, ContornoInvalido, Vertice
+from traza.core.geometria import Contorno, ContornoInvalido, Vertice, mismo_contorno
 from traza.core.procedencia import Origen, Procedencia
 from traza.core.tipos import TIPOS_DE_PLANO, Clase, tipo, validar_valor
 from traza.io.pdf import pagina_citada
@@ -417,11 +417,13 @@ class ResolverPendiente(Orden):
 
 # --- Tipo de encargo ----------------------------------------------------------------
 
-#: Tipos de encargo del usuario (06-11-2026). Deciden qué pasos del proyecto se muestran.
+#: Tipos de encargo (decisión del usuario, 09-11-2026; docs/modules/flujo.md). Sustituyen a
+#: «diseño + presupuesto + instalación», «presupuesto + instalación» y «solo instalación»;
+#: la migración V10 pasa los dos últimos a «oferta».
 ENCARGOS = {
-    "diseno": "Diseño + presupuesto + instalación",
-    "presupuesto": "Presupuesto + instalación",
-    "instalacion": "Solo instalación",
+    "diseno": "Diseño (plano del cliente)",
+    "oferta": "Oferta de un proyecto ajeno",
+    "ampliacion": "Ampliación de una instalación existente",
 }
 
 
@@ -437,6 +439,27 @@ class CambiarEncargo(Orden):
         if antes == despues:
             raise OrdenRechazada("El proyecto ya tiene ese tipo de encargo.")
         return [Delta("meta", antes, despues)]
+
+
+#: Los pasos que pueden quedar desactualizados (app/flujo.DEPENDE; un test lo vigila).
+PASOS_CON_DEPENDENCIAS = ("cargas", "redes", "hidronica", "subcuadros")
+
+
+@dataclass
+class DarPorRevisado(Orden):
+    """El usuario ha revisado un paso que estaba desactualizado (docs/modules/flujo.md)."""
+
+    paso: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if self.paso not in PASOS_CON_DEPENDENCIAS:
+            raise OrdenRechazada("Ese paso no depende de otros: no hay nada que revisar.")
+        # La marca es el último número del registro de cambios en el momento de revisar:
+        # lo anterior queda revisado. Se guarda en la tabla (no se lee del registro)
+        # porque el registro solo crece y deshacer la revisión también escribe en él.
+        ultimo = con.execute("SELECT COALESCE(MAX(n), 0) FROM cambio").fetchone()[0]
+        antes = leer(con, "paso_revisado", {"paso": self.paso})
+        return [Delta("paso_revisado", antes, {"paso": self.paso, "marca": str(ultimo)})]
 
 
 # --- Mediciones, ofertas y presupuestos ----------------------------------------------
@@ -839,6 +862,8 @@ def _plano(con: sqlite3.Connection, plano_id: str) -> Fila:
     p = leer(con, "plano", {"id": plano_id})
     if p is None:
         raise OrdenRechazada("Ese plano no está leído en el proyecto.")
+    if p["sustituido_por"]:
+        raise OrdenRechazada("Ese plano está sustituido por su versión revisada.")
     return p
 
 
@@ -914,6 +939,8 @@ class LeerPlano(Orden):
                     "lector": self.lector,
                     "version_lector": self.version_lector,
                     "leido": ahora(),
+                    # Todas las columnas: deshacer compara la fila entera (V10).
+                    "sustituido_por": None,
                 },
             )
         ]
@@ -1270,6 +1297,138 @@ class QuitarDePlano(Orden):
         if geo is not None:
             deltas.append(Delta("geometria", geo, None))
         deltas.append(Delta("elemento", el, None))
+        return deltas
+
+
+@dataclass
+class RevisarPlano(Orden):
+    """Sustituye un plano por su versión revisada (docs/modules/flujo.md, 1c).
+
+    Usuario (09-11-2026): «quiero poder yo proponer planos de ampliación o modificación y
+    que se recalcule todo». El emparejamiento lo hace Proyecto con el DXF (app/planos.py);
+    aquí se aplica de una vez: plano nuevo con las mismas capas, cada elemento a su
+    contorno revisado (superficie y perímetro recalculados, con su registro), los que ya
+    no están se quitan y las redes de aire pasan al plano nuevo. Lo que depende (cargas,
+    redes, hidráulica, cuadros) se calcula siempre de lo guardado y queda marcado para
+    revisar (app/flujo.py).
+    """
+
+    plano_id: str
+    documento_id: str
+    #: (elemento_id, handle, capa, vértices (x, y, bulge) en metros) en el plano revisado.
+    parejas: tuple[tuple[str, str, str, tuple[tuple[float, float, float], ...]], ...]
+    desaparecidos: tuple[str, ...]
+    descartados: tuple[str, ...]  # los descartes del plano anterior que siguen estando
+    lector: str
+    version_lector: str
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = _plano(con, self.plano_id)
+        doc = leer(con, "documento", {"id": self.documento_id})
+        if doc is None or doc["extension"].lower() != ".dxf":
+            raise OrdenRechazada("El plano revisado tiene que ser un DXF incorporado.")
+        if con.execute(
+            "SELECT 1 FROM plano WHERE documento_id = ?", (self.documento_id,)
+        ).fetchone():
+            raise OrdenRechazada(f"«{doc['nombre_original']}» ya está leído como plano.")
+        geos = {
+            r["elemento_id"]: dict(r)
+            for r in con.execute("SELECT * FROM geometria WHERE plano_id = ?", (self.plano_id,))
+        }
+        tratados = [p[0] for p in self.parejas] + list(self.desaparecidos)
+        if sorted(tratados) != sorted(geos):
+            raise OrdenRechazada(
+                "La revisión no recoge todos los elementos del plano: vuelve a compararlo."
+            )
+        nuevo = {
+            **antes,
+            "id": self.id,
+            "documento_id": self.documento_id,
+            "descartados": json.dumps(sorted(self.descartados)),
+            "lector": self.lector,
+            "version_lector": self.version_lector,
+            "leido": ahora(),
+            "sustituido_por": None,
+        }
+        deltas = [
+            Delta("plano", None, nuevo),
+            Delta("plano", antes, {**antes, "sustituido_por": self.id}),
+        ]
+        for elemento_id, handle, capa, vertices in self.parejas:
+            deltas += self._mover(con, nuevo, doc, geos[elemento_id], handle, capa, vertices)
+        for elemento_id in self.desaparecidos:
+            el = _elemento(con, elemento_id)
+            nombre = leer(con, "propiedad", {"elemento_id": elemento_id, "clave": "nombre"})
+            rotulo = f"{el['codigo']} {json.loads(nombre['valor']) if nombre else ''}".strip()
+            try:
+                deltas += QuitarDePlano(elemento_id).planificar(con)
+            except OrdenRechazada as exc:
+                raise OrdenRechazada(
+                    f"«{rotulo}» ya no está en el plano revisado y no se puede quitar: {exc}"
+                ) from None
+        for r in con.execute("SELECT * FROM red_aire WHERE plano_id = ?", (self.plano_id,)):
+            deltas.append(Delta("red_aire", dict(r), {**dict(r), "plano_id": self.id}))
+        return deltas
+
+    @staticmethod
+    def _mover(con, plano: Fila, doc: Fila, geo: Fila, handle, capa, vertices) -> list[Delta]:
+        try:
+            contorno = Contorno(tuple(Vertice(x, y, b) for x, y, b in vertices))
+        except (ContornoInvalido, TypeError, ValueError) as exc:
+            raise OrdenRechazada(f"Contorno no válido: {exc}") from None
+        elemento_id = geo["elemento_id"]
+        el = _elemento(con, elemento_id)
+        deltas = [
+            Delta(
+                "geometria",
+                geo,
+                {
+                    **geo,
+                    "plano_id": plano["id"],
+                    "handle": handle,
+                    "capa": capa,
+                    "contorno": json.dumps([[v.x, v.y, v.bulge] for v in contorno.vertices]),
+                },
+            )
+        ]
+        props = {
+            clave: leer(con, "propiedad", {"elemento_id": elemento_id, "clave": clave})
+            for clave in ("superficie", "perimetro")
+        }
+        valores = {"superficie": (contorno.area, "m**2"), "perimetro": (contorno.perimetro, "m")}
+        anterior = Contorno(tuple(Vertice(*v) for v in json.loads(geo["contorno"])))
+        # Misma forma en el mismo sitio (a 1 mm): no se recalcula nada, y su registro sigue
+        # explicando el valor. Un contorno movido o girado SÍ cambia aunque conserve
+        # superficie y perímetro (revisión 09-11-2026). Mismo criterio que el resumen
+        # (app/planos.Pareja.cambia).
+        if mismo_contorno(anterior, contorno):
+            return deltas
+        if contorno.autointersecante():
+            raise OrdenRechazada(
+                f"«{el['codigo']}»: su contorno en el plano revisado se corta a sí mismo. "
+                "Corrígelo en el plano."
+            )
+        if el["estado"] == Estado.APROBADO:
+            raise OrdenRechazada(
+                f"«{el['codigo']}» está aprobado y cambia en el plano revisado: reábrelo "
+                "indicando el motivo antes de revisar el plano."
+            )
+        registro = _registro_contorno(doc["sha256"], plano, handle, contorno)
+        cita = Procedencia(Origen.CALCULO, registro_calculo_id=registro["id"])
+        deltas.append(Delta("registro_calculo", None, registro))
+        viejos = {f["registro_calculo_id"] for f in props.values() if f is not None}
+        for rid in sorted(r for r in viejos if r):
+            reg = leer(con, "registro_calculo", {"id": rid})
+            if reg is not None and not reg["obsoleto"]:
+                deltas.append(Delta("registro_calculo", reg, {**reg, "obsoleto": 1}))
+        for clave, fila in props.items():
+            if fila is None:
+                continue
+            valor, unidad = valores[clave]
+            deltas.append(
+                Delta("propiedad", fila, _fila_propiedad(elemento_id, clave, valor, unidad, cita))
+            )
         return deltas
 
 

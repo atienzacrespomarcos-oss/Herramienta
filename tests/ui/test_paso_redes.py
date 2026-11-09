@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 from openpyxl import load_workbook
+from PySide6.QtCore import Qt
 from tests.integration.test_cargas_proyecto import ESTACION
 from tests.integration.test_redes_proyecto import _nave_con_conductos
 from tests.ui.test_ventana import PreguntasPreparadas
@@ -191,3 +192,40 @@ def test_renovaciones_deshabilitadas_no_bloquean_aceptar(qtbot):
     d._aceptar()
     assert d.resultado is not None and d.resultado["criterio_caudal"] == "volumen"
     assert d.resultado["renovaciones"] is None
+
+
+def test_plano_revisado_desde_la_ventana(ventana, tmp_path):
+    """Planos → «Plano revisado o de ampliación…»: dice qué cambia y, al aceptar, sustituye
+    el plano y marca lo que depende (docs/modules/flujo.md, 1c)."""
+    from tests.integration.test_plano_revisado import ALMACEN, ARCHIVO, OFICINAS_GRANDES, _revisado
+
+    v, q = ventana
+    p = v.proyecto
+    ruta = _revisado(
+        tmp_path, [("ALMACÉN", ALMACEN), ("OFICINAS", OFICINAS_GRANDES), ("ARCHIVO", ARCHIVO)]
+    )
+    p.incorporar_documento(ruta)
+    p.calcular_cargas()  # como tras pulsar «Calcular»: la guía ya está leída
+    v.refrescar()
+    v.ir_a_paso("planos")
+    textos: list[str] = []
+    q.preparar("elegir", 0)
+    q.preparar("confirmar", False)
+    original = q.confirmar
+    q.confirmar = lambda titulo, texto: (textos.append(texto), original(titulo, texto))[1]
+    v.pagina_planos.a_revisado.trigger()
+    assert not q.avisos, q.avisos
+    assert textos and "OFICINAS: 78,4 m² → 94,4 m²" in textos[0]
+    assert "Contornos nuevos para confirmar: 1." in textos[0]
+    assert p.planos()[0]["documento_nombre"] == "Nave.dxf", "cancelado: no cambia nada"
+    q.preparar("elegir", 0)
+    q.preparar("confirmar", True)
+    v.pagina_planos.a_revisado.trigger()
+    assert not q.avisos, q.avisos
+    assert [x["documento_nombre"] for x in p.planos()] == ["Nave rev B.dxf"]
+    item = next(
+        v.lista_pasos.item(i)
+        for i in range(v.lista_pasos.count())
+        if v.lista_pasos.item(i).data(Qt.UserRole) == "cargas"
+    )
+    assert item.text().startswith("⚠ ") and "Planos" in item.toolTip()

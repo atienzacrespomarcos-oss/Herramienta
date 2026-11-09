@@ -2,6 +2,17 @@
 
 ## [Sin publicar]
 
+### Flujo de trabajo · bloque 1 (09-11-2026)
+- Tipos de encargo **Diseño · Oferta · Ampliación** con sus pasos (docs/modules/flujo.md);
+  los proyectos de «presupuesto + instalación» y «solo instalación» pasan a Oferta.
+- **Pasos con estado**: ✓ hecho, ○ pendiente (con lo que falta), ⚠ desactualizado (ha
+  cambiado un paso anterior) y «Ver → Dar por revisado este paso».
+- **Plano revisado o de ampliación**: sustituye el plano, empareja cada espacio y obstáculo
+  con su contorno nuevo, enseña lo que cambia, recalcula todo y marca lo que depende.
+- Ampliación: se confirman solo los espacios nuevos.
+- Pedidos, fuera (decisión del usuario).
+- Esquema V10: encargos nuevos, tabla `paso_revisado` y `plano.sustituido_por`.
+
 ### Etapa 8 · subcuadros eléctricos de clima (09-11-2026)
 - Paso «Subcuadros de clima» (menú Electricidad): salidas propuestas desde los equipos ya
   dimensionados; intensidades (ITC-BT-47 en motores), secciones por intensidad admisible

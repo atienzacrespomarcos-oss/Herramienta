@@ -35,6 +35,7 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "red_aire": ("id",),
     "sistema_hidraulico": ("id",),
     "subcuadro": ("id",),
+    "paso_revisado": ("paso",),
 }
 
 

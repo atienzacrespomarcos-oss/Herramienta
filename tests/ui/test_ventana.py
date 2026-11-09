@@ -205,7 +205,7 @@ def test_todas_las_acciones_se_ejecutan_sin_error(qtbot, tmp_path, pdf_3_paginas
 
 def test_un_error_de_disco_se_avisa_y_no_revienta(ventana, tmp_path, monkeypatch):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
 
     def disco_lleno():
@@ -218,7 +218,7 @@ def test_un_error_de_disco_se_avisa_y_no_revienta(ventana, tmp_path, monkeypatch
 
 def test_no_se_ejecutan_ficheros_incorporados(ventana, tmp_path, monkeypatch):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     bat = tmp_path / "peligroso.bat"
     bat.write_text("echo hola", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_no_se_ejecutan_ficheros_incorporados(ventana, tmp_path, monkeypatch):
 
 def test_restaurar_sin_copias_avisa(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     v.a_restaurar.trigger()
     assert "no tiene copias" in q.avisos[-1]
@@ -265,9 +265,9 @@ def _elegir_propiedad(v: VentanaPrincipal, etiqueta: str) -> None:
 def test_escenario_aceptacion_etapa_1_desde_la_interfaz(ventana, tmp_path, pdf_3_paginas):
     v, q = ventana
     # Crear proyecto
-    q.preparar("nuevo_proyecto", (tmp_path / "Nave A", "Nave A", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "Nave A", "Nave A", "oferta"))
     v.a_nuevo.trigger()
-    assert v.windowTitle() == "TRAZA — Nave A · Solo instalación"
+    assert v.windowTitle() == "TRAZA — Nave A · Oferta de un proyecto ajeno"
 
     # Incorporar PDF
     q.preparar("documento", (pdf_3_paginas, "oferta"))
@@ -349,7 +349,7 @@ def test_escenario_aceptacion_etapa_1_desde_la_interfaz(ventana, tmp_path, pdf_3
 
 def test_pendientes_desde_la_interfaz(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     q.preparar("texto", "Confirmar tensión de la UTA")
     v.a_nuevo_pendiente.trigger()
@@ -363,7 +363,7 @@ def test_pendientes_desde_la_interfaz(ventana, tmp_path):
 
 def test_borrar_valor_y_jerarquia(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     q.preparar("nuevo_elemento", ("equipo", "UTA-01", None))
     v.a_nuevo_elemento.trigger()
@@ -382,7 +382,7 @@ def test_borrar_valor_y_jerarquia(ventana, tmp_path):
 
 def test_restaurar_copia_desde_la_interfaz(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     v.a_copia.trigger()  # copia 1: sin elementos
     q.preparar("nuevo_elemento", ("equipo", "UTA-01", None))
@@ -485,10 +485,25 @@ def test_sin_proyecto_se_ve_la_bienvenida_y_ningun_paso(ventana):
 
 def test_pasos_visibles_y_navegacion(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     textos = [v.lista_pasos.item(i).text() for i in range(v.lista_pasos.count())]
-    assert textos == ["1. Documentación", "2. Mediciones y ofertas", "3. Modificados", "4. Equipos"]
+    # Proyecto nuevo: todo pendiente (○) salvo Modificados y Equipos, sin estado.
+    assert all(x.startswith("○ ") for x in textos[:-2])
+    assert textos[-2].startswith("8. ") and textos[-1].startswith("9. ")
+    textos = [x.removeprefix("○ ") for x in textos]
+    assert textos == [
+        "1. Documentación",
+        "2. Planos y espacios",
+        "3. Cargas y ventilación",
+        "4. Redes de aire",
+        "5. Sistema hidráulico",
+        "6. Subcuadros de clima",
+        "7. Mediciones y ofertas",
+        "8. Modificados",
+        "9. Equipos",
+    ]
+    assert v.lista_pasos.item(1).toolTip() == "Falta: leer el plano DXF"
     assert v.paso_actual() == "documentacion"
     v.ir_a_paso("equipos")
     assert v.paginas.currentWidget() is v._pagina["equipos"]
@@ -498,7 +513,7 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
 
 def test_leer_medicion_exportar_y_quitar_desde_la_interfaz(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "presupuesto"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     assert not v.a_leer_medicion.isEnabled(), "sin documentos legibles no se ofrece leer"
     bc3 = tmp_path / "Oferta.bc3"
@@ -540,17 +555,17 @@ def test_leer_medicion_exportar_y_quitar_desde_la_interfaz(ventana, tmp_path):
 
 def test_cambiar_tipo_de_encargo(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     q.preparar("encargo", "diseno")
     v.a_encargo.trigger()
     assert v.proyecto.encargo == "diseno"
-    assert v.windowTitle().endswith("Diseño + presupuesto + instalación")
+    assert v.windowTitle().endswith("Diseño (plano del cliente)")
 
 
 def test_historial_se_abre_desde_ver(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     v.show()
     assert not v.dock_historial.isVisible()
@@ -560,7 +575,7 @@ def test_historial_se_abre_desde_ver(ventana, tmp_path):
 
 def test_total_no_consta_si_no_hay_importes(ventana, tmp_path):
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     f = tmp_path / "sin_precios.bc3"
     f.write_bytes(b"~V||FIEBDC-3/2016|||ANSI|\n~C|R##||O|\n~C|P1|m|Tubo|\n~D|R##|P1\\1\\8\\|\n")
@@ -576,7 +591,7 @@ def test_leer_pdf_con_ia_pide_permiso_y_permite_confirmar_lo_dudoso(ventana, tmp
     import pymupdf
 
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     ruta = tmp_path / "oferta.pdf"
     doc = pymupdf.open()
@@ -639,7 +654,7 @@ def test_modificado_completo_desde_la_interfaz(ventana, tmp_path):
     from traza.ui.dialogos import DatosCambio
 
     v, q = ventana
-    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "instalacion"))
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     assert not v.a_nuevo_modificado.isEnabled(), "sin mediciones no hay base"
     base = tmp_path / "Contrato.bc3"
@@ -781,3 +796,33 @@ def test_dialogo_de_cambio_distingue_partidas_iguales(qtbot):
     d.partida.setEditText(textos[2])
     d._aceptar()
     assert d.resultado.partida_id == "c"
+
+
+def test_paso_desactualizado_se_marca_y_se_da_por_revisado(ventana, tmp_path, monkeypatch):
+    from traza.app.flujo import DESACTUALIZADO, EstadoPaso
+
+    v, q = ventana
+    q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "diseno"))
+    v.a_nuevo.trigger()
+    p = v.proyecto
+    original = p.estado_paso
+    revisados: list[str] = []
+
+    def estado(paso):
+        if paso == "redes" and not revisados:
+            return EstadoPaso(DESACTUALIZADO, "Ha cambiado Cargas: revisa y da por revisado")
+        return original(paso)
+
+    monkeypatch.setattr(p, "estado_paso", estado)
+    monkeypatch.setattr(p, "dar_por_revisado", revisados.append)
+    v.refrescar()
+    v.ir_a_paso("planos")
+    v.a_revisado.trigger()
+    assert q.informaciones[-1] == "Este paso no está desactualizado." and not revisados
+    v.ir_a_paso("redes")
+    item = v.lista_pasos.currentItem()
+    assert item.text() == "⚠ 4. Redes de aire"
+    assert item.toolTip() == "Ha cambiado Cargas: revisa y da por revisado"
+    v.a_revisado.trigger()
+    assert revisados == ["redes"]
+    assert v.lista_pasos.currentItem().text() == "○ 4. Redes de aire"

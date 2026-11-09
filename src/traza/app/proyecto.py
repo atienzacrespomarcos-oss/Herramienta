@@ -13,8 +13,8 @@ from typing import Any
 
 from traza.ai import claude_code
 from traza.app import cargas as calculo_cargas
+from traza.app import flujo, lectura_ia
 from traza.app import hidronica as calculo_hidronica
-from traza.app import lectura_ia
 from traza.app import modificados as calculo_mod
 from traza.app import planos as calculo_planos
 from traza.app import redes as calculo_redes
@@ -28,6 +28,7 @@ from traza.app.ordenes import (
     CambiarPlano,
     ConfirmarContorno,
     CrearPendiente,
+    DarPorRevisado,
     DefinirRed,
     DefinirSistemaHidraulico,
     DefinirSubcuadro,
@@ -41,6 +42,7 @@ from traza.app.ordenes import (
     OrdenRechazada,
     PartidaNueva,
     RegistrarDocumento,
+    RevisarPlano,
     ahora,
     nuevo_id,
 )
@@ -145,8 +147,7 @@ class Proyecto:
     @property
     def encargo(self) -> str:
         fila = self._con.execute("SELECT valor FROM meta WHERE clave='encargo'").fetchone()
-        # Proyectos creados antes de existir el tipo de encargo: se tratan como diseño
-        # completo, que es el que muestra todos los pasos (no oculta nada).
+        # Proyectos creados antes de existir el tipo de encargo: se tratan como diseño.
         return fila[0] if fila else "diseno"
 
     def copia_de_seguridad(self) -> Path:
@@ -829,10 +830,14 @@ class Proyecto:
             )
         )
 
-    def planos(self) -> list[dict[str, Any]]:
+    def planos(self, sustituidos: bool = False) -> list[dict[str, Any]]:
         filas = self._filas(
             "SELECT p.*, d.nombre_original AS documento_nombre FROM plano p"
-            " JOIN documento d ON d.id = p.documento_id ORDER BY p.leido"
+            " JOIN documento d ON d.id = p.documento_id"
+            # Un plano sustituido por su revisión ya no se trabaja (sus elementos y redes
+            # pasaron al revisado); sigue en la base por la historia (V10).
+            + ("" if sustituidos else " WHERE p.sustituido_por IS NULL")
+            + " ORDER BY p.leido"
         )
         for f in filas:
             for clave in ("capas_espacios", "capas_obstaculos", "capas_textos", "descartados"):
@@ -911,6 +916,112 @@ class Proyecto:
         if handle not in {x.handle for x in self.propuestas(plano_id)}:
             raise OrdenRechazada("Ese contorno no está entre las propuestas del plano.")
         self.ejecutar(DescartarPropuesta(plano_id, handle))
+
+    def comparar_plano_revisado(
+        self, plano_id: str, documento_id: str
+    ) -> tuple[calculo_planos.Emparejamiento, list[str]]:
+        """Qué pasa con cada espacio u obstáculo si el plano se sustituye por el revisado
+        (no escribe nada). Devuelve el emparejamiento y los descartes que se conservan."""
+        p = self.plano(plano_id)
+        revisado = self.plano_dxf(documento_id)
+        _capas_existen(revisado, [*p["capas_espacios"], *p["capas_obstaculos"], *p["capas_textos"]])
+        nuevas = calculo_planos.propuestas(
+            revisado,
+            p["unidad"],
+            p["capas_espacios"],
+            p["capas_obstaculos"],
+            p["capas_textos"],
+            set(),
+            set(),
+        )
+        confirmados = [
+            calculo_planos.Confirmado(
+                f["id"],
+                f["codigo"],
+                f["nombre"] or "",
+                tipo_elemento,
+                f["contorno"],
+                f["estado"] == Estado.APROBADO,
+            )
+            for tipo_elemento in ("espacio", "obstaculo")
+            for f in self.contornos_confirmados(tipo_elemento)
+            if f["plano_id"] == plano_id
+        ]
+        r = calculo_planos.emparejar(confirmados, nuevas)
+        # Los descartes (contornos que el usuario no quiere, p. ej. pilares) se buscan igual
+        # en el revisado, para no tener que descartarlos otra vez.
+        anterior = calculo_planos.propuestas(
+            self.plano_dxf(p["documento_id"]),
+            p["unidad"],
+            p["capas_espacios"],
+            p["capas_obstaculos"],
+            p["capas_textos"],
+            set(),
+            set(),
+        )
+        descartes = [
+            calculo_planos.Confirmado(x.handle, "", "", x.rol, x.contorno)
+            for x in anterior
+            if x.handle in set(p["descartados"])
+        ]
+        d = calculo_planos.emparejar(descartes, r.nuevas)
+        siguen = sorted(x.despues.handle for x in [*d.iguales, *d.cambiados])
+        r.nuevas = [x for x in r.nuevas if x.handle not in set(siguen)]
+        # Las redes de aire pasan al plano revisado: se avisa antes si les falta algo.
+        capas = {c.casefold() for c in revisado.capas}
+        bloques = {b.nombre.casefold() for b in revisado.bloques}
+        for red in self.redes():
+            if red["plano_id"] != plano_id:
+                continue
+            faltan = [f"la capa «{red['capa_ejes']}»"] * (red["capa_ejes"].casefold() not in capas)
+            faltan += [
+                f"el bloque «{b}»"
+                for b in [*red["bloques_terminales"], red["bloque_equipo"] or ""]
+                if b and b.casefold() not in bloques
+            ]
+            if faltan:
+                r.avisos.append(
+                    f"La red «{red['nombre']}» no se podrá calcular: el revisado no tiene "
+                    + ", ".join(faltan)
+                    + "."
+                )
+        return r, siguen
+
+    def revisar_plano(self, plano_id: str, documento_id: str) -> calculo_planos.Emparejamiento:
+        """Sustituye el plano por el revisado (orden RevisarPlano): lo que depende se
+        recalcula y queda marcado para revisar."""
+        r, descartes = self.comparar_plano_revisado(plano_id, documento_id)
+        if r.aprobados_que_cambian:
+            raise OrdenRechazada(
+                "Están aprobados y cambian o desaparecen en el plano revisado: "
+                + ", ".join(f"«{c.rotulo}»" for c in r.aprobados_que_cambian)
+                + ". Reábrelos indicando el motivo antes de revisar el plano."
+            )
+        if r.desaparecidos and not (r.iguales or r.cambiados):
+            raise OrdenRechazada(
+                "Ningún espacio u obstáculo del plano anterior coincide con el revisado: "
+                "¿está el dibujo desplazado (otro punto base) o en otra unidad?"
+            )
+        self.ejecutar(
+            RevisarPlano(
+                plano_id,
+                documento_id,
+                tuple(
+                    (
+                        x.antes.elemento_id,
+                        x.despues.handle,
+                        x.despues.capa,
+                        tuple((v.x, v.y, v.bulge) for v in x.despues.contorno.vertices),
+                    )
+                    for x in [*r.iguales, *r.cambiados]
+                ),
+                tuple(c.elemento_id for c in r.desaparecidos),
+                tuple(descartes),
+                dxf.LECTOR,
+                dxf.VERSION,
+            )
+        )
+        return r
 
     def _valores(self, tipos_elemento: tuple[str, ...]) -> dict[str, dict[str, Any]]:
         marcas = ",".join("?" * len(tipos_elemento))
@@ -1198,6 +1309,13 @@ class Proyecto:
             return calculo_hidronica.calcular(sistema, cargas)
         except ValueError as exc:
             raise OrdenRechazada(str(exc)) from exc
+
+    # --- Estado de los pasos (docs/modules/flujo.md) ------------------------------------
+    def estado_paso(self, paso: str) -> flujo.EstadoPaso:
+        return flujo.estado(self, paso)
+
+    def dar_por_revisado(self, paso: str) -> None:
+        self.ejecutar(DarPorRevisado(paso))
 
     # --- Subcuadros de clima (Etapa 8, docs/modules/electricidad.md) -------------------
     def subcuadros(self) -> list[dict[str, Any]]:

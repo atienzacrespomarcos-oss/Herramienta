@@ -118,19 +118,22 @@ EXTENSIONES_ABRIBLES = {
 
 
 TODOS = frozenset(ENCARGOS)
-#: Pasos del proyecto: (clave, texto, encargos en que se muestra). Solo pasos que funcionan;
-#: los de cálculo se añadirán, solo para «diseño», cuando estén construidos. «Planos y
-#: espacios» solo en encargos con diseño: en presupuesto o instalación no hay que sacar
-#: espacios del plano (decisión del usuario sobre pasos por encargo, 06-11-2026).
+#: Pasos del proyecto: (clave, texto, encargos en que se muestra). Solo pasos que funcionan.
+#: Tabla de pasos por encargo decidida por el usuario el 09-11-2026 (docs/modules/flujo.md):
+#: los de cálculo, en los tres (en Oferta, para recalcular el proyecto ajeno); Mediciones y
+#: Modificados, solo en Oferta.
+OFERTA = frozenset({"oferta"})
+#: Marca del estado de cada paso en la lista (el detalle, en el tooltip).
+MARCA_ESTADO = {"hecho": "✓ ", "pendiente": "○ ", "desactualizado": "⚠ "}
 PASOS = [
     ("documentacion", "Documentación", TODOS),
-    ("planos", "Planos y espacios", frozenset({"diseno"})),
-    ("cargas", "Cargas y ventilación", frozenset({"diseno"})),
-    ("redes", "Redes de aire", frozenset({"diseno"})),
-    ("hidronica", "Sistema hidráulico", frozenset({"diseno"})),
-    ("subcuadros", "Subcuadros de clima", frozenset({"diseno"})),
-    ("mediciones", "Mediciones y ofertas", TODOS),
-    ("modificados", "Modificados", TODOS),
+    ("planos", "Planos y espacios", TODOS),
+    ("cargas", "Cargas y ventilación", TODOS),
+    ("redes", "Redes de aire", TODOS),
+    ("hidronica", "Sistema hidráulico", TODOS),
+    ("subcuadros", "Subcuadros de clima", TODOS),
+    ("mediciones", "Mediciones y ofertas", OFERTA),
+    ("modificados", "Modificados", OFERTA),
     ("equipos", "Equipos", TODOS),
 ]
 
@@ -443,8 +446,13 @@ class VentanaPrincipal(QMainWindow):
                 return
             visibles = [p for p in PASOS if self.proyecto.encargo in p[2]]
             for n, (clave, texto, _) in enumerate(visibles, start=1):
-                item = QListWidgetItem(f"{n}. {texto}")
+                # Estado del paso (usuario, 09-11-2026: «pasos con estado»).
+                e = self.proyecto.estado_paso(clave)
+                marca = MARCA_ESTADO.get(e.estado, "")
+                item = QListWidgetItem(f"{marca}{n}. {texto}")
                 item.setData(Qt.UserRole, clave)
+                if e.texto:
+                    item.setToolTip(e.texto)
                 self.lista_pasos.addItem(item)
             claves = [p[0] for p in visibles]
             fila = claves.index(actual) if actual in claves else 0
@@ -589,6 +597,7 @@ class VentanaPrincipal(QMainWindow):
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
         self.a_encargo = self._accion(m, "Tipo de encargo…", self.accion_encargo)
+        self.a_revisado = self._accion(m, "Dar por revisado este paso", self.accion_revisado)
 
         m = mb.addMenu("A&yuda")
         self.a_acerca = self._accion(m, "Acerca de TRAZA", self.accion_acerca)
@@ -628,6 +637,7 @@ class VentanaPrincipal(QMainWindow):
             self.a_nuevo_pendiente,
             self.a_historial,
             self.a_encargo,
+            self.a_revisado,
         ):
             a.setEnabled(hay)
         self.a_leer_medicion.setEnabled(hay and bool(self._documentos_legibles()))
@@ -1113,6 +1123,16 @@ class VentanaPrincipal(QMainWindow):
 
     def accion_historial(self) -> None:
         self.dock_historial.setVisible(not self.dock_historial.isVisible())
+
+    def accion_revisado(self) -> None:
+        paso = self.paso_actual()
+        if paso is None or self.proyecto is None:
+            return
+        if self.proyecto.estado_paso(paso).estado != "desactualizado":
+            self.preguntas.informacion("Dar por revisado", "Este paso no está desactualizado.")
+            return
+        self.proyecto.dar_por_revisado(paso)
+        self.refrescar()
 
     def accion_encargo(self) -> None:
         nuevo = self.preguntas.encargo(self.proyecto.encargo)

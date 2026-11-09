@@ -195,6 +195,39 @@ class Contorno:
         return Contorno(tuple(Vertice(v.x * factor, v.y * factor, v.bulge) for v in self.vertices))
 
 
+#: Dos vértices a menos de esto son el mismo (1 mm con el contorno en metros): lo que un
+#: DXF guardado otra vez mueve por redondeo, muy por debajo de lo que se dibuja a propósito.
+TOLERANCIA_VERTICE = 0.001
+
+
+def mismo_contorno(a: Contorno, b: Contorno, tol: float = TOLERANCIA_VERTICE) -> bool:
+    """Misma forma en el mismo sitio: la misma SECUENCIA de vértices (a menos de `tol`) y de
+    arcos, empiece donde empiece el contorno y en cualquier sentido. Un contorno desplazado
+    o girado, aunque conserve superficie y perímetro, NO es el mismo (revisión 09-11-2026:
+    un espacio aprobado podía cambiar de forma sin reabrirlo). Se compara en orden, no como
+    conjunto de puntos: los mismos puntos unidos en otro orden son otra figura (segunda
+    revisión 09-11-2026)."""
+    n = len(a.vertices)
+    if n != len(b.vertices):
+        return False
+    va = a.vertices
+    vb = b.vertices
+    # En sentido contrario el arco de cada tramo pasa al otro extremo y cambia de signo: el
+    # tramo k del recorrido inverso va de vb[n-1-k] a vb[n-2-k], el tramo n-2-k al revés.
+    inverso = tuple(
+        Vertice(vb[n - 1 - k].x, vb[n - 1 - k].y, -vb[(n - 2 - k) % n].bulge) for k in range(n)
+    )
+
+    def igual(v: Vertice, w: Vertice) -> bool:
+        return abs(v.x - w.x) <= tol and abs(v.y - w.y) <= tol and abs(v.bulge - w.bulge) <= 1e-6
+
+    return any(
+        all(igual(va[k], seq[(r + k) % n]) for k in range(n))
+        for seq in (vb, inverso)
+        for r in range(n)
+    )
+
+
 @functools.lru_cache(maxsize=256)  # entradas, no bytes: pocas, que un contorno grande pesa
 def _aplanado_guardado(vertices: tuple[Vertice, ...], flecha: float) -> tuple:
     """El aplanado se reutiliza: clasificar N textos en M contornos no lo recalcula N·M

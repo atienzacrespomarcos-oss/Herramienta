@@ -119,13 +119,13 @@ def test_excel_sin_mediciones(proyecto, tmp_path):
 
 
 def test_tipo_de_encargo(tmp_path):
-    p = Proyecto.crear(tmp_path / "N", "N", encargo="instalacion")
+    p = Proyecto.crear(tmp_path / "N", "N", encargo="ampliacion")
     try:
-        assert p.encargo == "instalacion"
-        p.ejecutar(CambiarEncargo("presupuesto"))
-        assert p.encargo == "presupuesto"
+        assert p.encargo == "ampliacion"
+        p.ejecutar(CambiarEncargo("oferta"))
+        assert p.encargo == "oferta"
         p.deshacer()
-        assert p.encargo == "instalacion"
+        assert p.encargo == "ampliacion"
         with pytest.raises(OrdenRechazada):
             p.ejecutar(CambiarEncargo("otro"))
     finally:

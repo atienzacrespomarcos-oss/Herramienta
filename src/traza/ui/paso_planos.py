@@ -127,6 +127,7 @@ class PaginaPlanos(QWidget):
                 [
                     self.a_leer,
                     self.a_capas,
+                    self.a_revisado,
                     self.a_nivel,
                     self.a_confirmar,
                     self.a_descartar,
@@ -153,6 +154,7 @@ class PaginaPlanos(QWidget):
         a = self.v._accion
         self.a_leer = a(m, "Leer plano DXF…", self.accion_leer)
         self.a_capas = a(m, "Capas y unidad…", self.accion_capas)
+        self.a_revisado = a(m, "Plano revisado o de ampliación…", self.accion_revisado)
         m.addSeparator()
         self.a_nivel = a(m, "Nuevo nivel…", self.accion_nivel)
         self.a_confirmar = a(m, "Confirmar propuesta…", self.accion_confirmar)
@@ -168,7 +170,8 @@ class PaginaPlanos(QWidget):
         return self.v.proyecto
 
     def _dxf_por_leer(self) -> list[dict]:
-        leidos = {p["documento_id"] for p in self.proyecto.planos()}
+        # También los sustituidos por una revisión: su DXF ya está leído.
+        leidos = {p["documento_id"] for p in self.proyecto.planos(sustituidos=True)}
         return [
             d
             for d in self.proyecto.documentos()
@@ -241,6 +244,44 @@ class PaginaPlanos(QWidget):
             self.proyecto.cambiar_plano(
                 p["id"], datos.unidad, datos.espacios, datos.obstaculos, datos.textos
             )
+
+    def accion_revisado(self) -> None:
+        """El plano revisado (o con la ampliación dibujada) sustituye al actual y todo lo
+        que depende se recalcula (usuario, 09-11-2026; docs/modules/flujo.md)."""
+        p = self.proyecto.plano(self.plano_id())
+        docs = self._dxf_por_leer()
+        if not docs:
+            self.v.preguntas.aviso(
+                "Plano revisado",
+                "No hay ningún DXF sin leer. Incorpora antes el plano revisado en «Documentación».",
+            )
+            return
+        i = self.v.preguntas.elegir(
+            "Plano revisado",
+            f"Sustituye a «{p['documento_nombre']}»:",
+            [d["nombre_original"] for d in docs],
+        )
+        if i is None:
+            return
+        doc = docs[i]
+        self.proyecto.plano_dxf(
+            doc["id"],
+            esperar=lambda f: self.v._en_segundo_plano(f, "Leyendo el plano DXF…", "Leer plano"),
+        )
+        r, _ = self.proyecto.comparar_plano_revisado(p["id"], doc["id"])
+        if r.aprobados_que_cambian:  # se dice antes de preguntar, no después
+            self.v.preguntas.aviso(
+                "Plano revisado",
+                "Están aprobados y cambian o desaparecen en el plano revisado: "
+                + ", ".join(f"«{c.rotulo}»" for c in r.aprobados_que_cambian)
+                + ". Reábrelos indicando el motivo antes de revisar el plano.",
+            )
+            return
+        if not self.v.preguntas.confirmar("Plano revisado", _texto_revision(r)):
+            return
+        self.proyecto.revisar_plano(p["id"], doc["id"])
+        self.v.refrescar()
+        self._elegir_plano(self.proyecto.planos()[-1]["id"])
 
     def accion_nivel(self) -> None:
         r = self.v.preguntas.nuevo_nivel()
@@ -567,7 +608,15 @@ class PaginaPlanos(QWidget):
             f"Unidad «{p['unidad']}» · espacios: {', '.join(p['capas_espacios']) or '—'} · "
             f"obstáculos: {', '.join(p['capas_obstaculos']) or '—'} · nombres: "
             f"{', '.join(p['capas_textos']) or 'todas'}. Pendientes de revisar: {n_espacios} "
-            f"espacio(s) y {n_obstaculos} obstáculo(s). Confirmados: {len(self._espacios)} "
+            f"espacio(s) y {n_obstaculos} obstáculo(s). "
+            # Ampliación: se confirma solo lo nuevo; lo existente queda sin confirmar (en
+            # gris en el plano) o se descarta (docs/modules/flujo.md).
+            + (
+                "Confirmados (ampliación): "
+                if self.proyecto.encargo == "ampliacion"
+                else "Confirmados: "
+            )
+            + f"{len(self._espacios)} "
             f"espacio(s), {_m(superficie)} m²."
             + (
                 f" ⚠ {len(plano.avisos)} aviso(s) de lectura (ver Excel, hoja Información)."
@@ -615,7 +664,7 @@ class PaginaPlanos(QWidget):
         plano = hay and self.plano_id() is not None
         self.a_leer.setEnabled(hay)
         self.a_nivel.setEnabled(hay)
-        for a in (self.a_capas, self.a_exportar, self.a_recuperar):
+        for a in (self.a_capas, self.a_revisado, self.a_exportar, self.a_recuperar):
             a.setEnabled(plano)
         pestana = self.pestanas.currentWidget()
         hay_prop = (
@@ -631,3 +680,35 @@ class PaginaPlanos(QWidget):
             and pestana in (self.tabla_espacios, self.tabla_obstaculos, self.tabla_niveles)
             and pestana.currentRow() >= 0
         )
+
+
+def _m2(valor: float) -> str:
+    return f"{escribir_numero(round(valor, 1))} m²"
+
+
+def _texto_revision(r: calculo_planos.Emparejamiento) -> str:
+    """Resumen corto de lo que cambia; el detalle se ve después en el plano."""
+    lineas = [f"Sin cambios: {len(r.iguales)}."]
+    if r.cambiados:
+        lineas.append("Cambian:")
+        lineas += [
+            f"  {x.antes.rotulo}: {_m2(x.antes.contorno.area)} → {_m2(x.despues.superficie)}"
+            + (
+                " (misma superficie, otra forma o posición)"
+                if _m2(x.antes.contorno.area) == _m2(x.despues.superficie)
+                else ""
+            )
+            for x in r.cambiados
+        ]
+    if r.desaparecidos:
+        lineas.append("Ya no están (se quitan, con su uso y sus datos de cargas):")
+        lineas += [f"  {c.rotulo}" for c in r.desaparecidos]
+    if r.nuevas:
+        lineas.append(f"Contornos nuevos para confirmar: {len(r.nuevas)}.")
+    lineas += [f"⚠ {a}" for a in r.avisos]
+    lineas.append("")
+    lineas.append(
+        "Las cargas, redes, hidráulica y cuadros se recalculan con el plano nuevo y quedan "
+        "marcados para revisar. ¿Sustituir el plano?"
+    )
+    return "\n".join(lineas)

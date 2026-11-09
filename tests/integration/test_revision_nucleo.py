@@ -242,3 +242,29 @@ def test_historial_completo_sin_corte(proyecto):
     for _ in range(260):
         proyecto.deshacer()
     assert len(proyecto.cambios()) == 520
+
+
+def test_encargos_antiguos_pasan_a_oferta(tmp_path):
+    """V10: «presupuesto + instalación» y «solo instalación» pasan a Oferta (docs/modules/
+    flujo.md)."""
+    from traza.persistence.esquema import MIGRACIONES
+
+    for antiguo in ("presupuesto", "instalacion"):
+        raiz = tmp_path / f"{antiguo}.traza"
+        for sub in ("documentos", "copias", "exportaciones"):
+            (raiz / sub).mkdir(parents=True)
+        con = bd.conectar(raiz / fs.BD)
+        con.execute("BEGIN IMMEDIATE")
+        for m in MIGRACIONES[:9]:
+            for s in bd._sentencias(m):
+                con.execute(s)
+        con.execute("PRAGMA user_version = 9")
+        con.execute("INSERT INTO meta VALUES ('nombre', 'Antiguo')")
+        con.execute("INSERT INTO meta VALUES ('encargo', ?)", (antiguo,))
+        con.execute("COMMIT")
+        con.close()
+        p = Proyecto.abrir(raiz)
+        try:
+            assert p.encargo == "oferta"
+        finally:
+            p.cerrar()

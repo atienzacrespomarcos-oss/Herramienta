@@ -41,14 +41,22 @@ def _pasos(v) -> list[str]:
     return [v.lista_pasos.item(i).data(0x0100) for i in range(v.lista_pasos.count())]
 
 
-def test_paso_planos_solo_en_encargos_con_diseno(ventana):
+def test_pasos_por_tipo_de_encargo(ventana):
+    """Tabla de docs/modules/flujo.md (usuario, 09-11-2026): los de cálculo en los tres
+    encargos; Mediciones y Modificados solo en Oferta."""
     v, q = ventana
-    assert "planos" in _pasos(v)
     from traza.app.ordenes import CambiarEncargo
 
-    v.proyecto.ejecutar(CambiarEncargo("presupuesto"))
-    v.refrescar()
-    assert "planos" not in _pasos(v)
+    calculo = ["planos", "cargas", "redes", "hidronica", "subcuadros"]
+    assert v.proyecto.encargo == "diseno"
+    assert all(p in _pasos(v) for p in calculo)
+    assert "mediciones" not in _pasos(v) and "modificados" not in _pasos(v)
+    for encargo, con_mediciones in (("oferta", True), ("ampliacion", False)):
+        v.proyecto.ejecutar(CambiarEncargo(encargo))
+        v.refrescar()
+        assert all(p in _pasos(v) for p in calculo), encargo
+        assert ("mediciones" in _pasos(v)) is con_mediciones
+        assert ("modificados" in _pasos(v)) is con_mediciones
 
 
 def test_recorrido_completo(ventana, tmp_path):
@@ -275,15 +283,16 @@ def test_tras_descartar_no_queda_elegida_otra_propuesta(ventana, tmp_path):
     assert pp.tabla_propuestas.item(pp.tabla_propuestas.currentRow(), 0).data(0x0100) == elegida
 
 
-def test_menu_planos_solo_en_encargos_con_diseno(ventana):
+def test_menu_planos_en_los_tres_encargos(ventana):
+    """En Oferta se lee el plano para recalcular el proyecto ajeno (usuario, 09-11-2026)."""
     v, q = ventana
     from traza.app.ordenes import CambiarEncargo
 
-    assert v.menu_planos.menuAction().isVisible()
-    v.proyecto.ejecutar(CambiarEncargo("instalacion"))
-    v.refrescar()
-    assert not v.menu_planos.menuAction().isVisible()
-    assert not v.pagina_planos.a_leer.isEnabled() and not v.pagina_planos.a_nivel.isEnabled()
+    for encargo in ("oferta", "ampliacion"):
+        v.proyecto.ejecutar(CambiarEncargo(encargo))
+        v.refrescar()
+        assert v.menu_planos.menuAction().isVisible(), encargo
+        assert v.pagina_planos.a_nivel.isEnabled(), encargo
 
 
 def test_plano_que_ya_no_se_puede_leer_no_deja_la_ventana_a_medias(ventana, tmp_path):
