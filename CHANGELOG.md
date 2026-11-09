@@ -10,6 +10,11 @@
   que queda sin repartir.
 - Margen previsto (venta − objetivo) y objetivo por paquete. Esquema V11.
 
+### Justificación con el formato de los informes del usuario (09-11-2026)
+- Con una plantilla sin estilos de título (la de Aliter), la justificación de cálculos
+  sale como sus informes: título centrado, apartados en mayúsculas y negrita, texto
+  justificado y tablas con cabecera gris.
+
 ### Flujo de trabajo · bloque 2: entregables (09-11-2026)
 - Paso **Entregables** (Diseño y Ampliación): genera de una vez, en una carpeta nueva,
   los Excel de planos, cargas (Excel y PDF), redes (DXF, LISP y Excel), hidráulica (Excel
