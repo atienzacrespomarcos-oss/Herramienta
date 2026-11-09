@@ -22,6 +22,8 @@ from typing import Any
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.exceptions import PackageNotFoundError
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from traza.core.numeros import escribir_numero
@@ -128,31 +130,70 @@ def _abrir_dotx(plantilla: Path):
         return Document(str(copia))
 
 
+#: Formato de los informes del usuario (su plantilla, vista el 09-11-2026, solo trae el
+#: estilo «Normal»): título centrado en negrita de 14 pt, subtítulo de 13 pt, apartados en
+#: MAYÚSCULAS y negrita de 12 pt, texto justificado con 8 pt de separación, tablas con la
+#: cabecera gris (ECECEC) en negrita y texto de 9,5 pt. Usuario: «Sí, como mis informes».
+GRIS_CABECERA = "ECECEC"
+LETRA_TABLA = Pt(9.5)
+SEPARACION = Pt(8)
+
+
 class _Escritor:
-    """Párrafos, títulos y tablas con los estilos de la plantilla; si la plantilla no
-    trae alguno (Word solo guarda los que se han usado), se imita con formato directo."""
+    """Párrafos, títulos y tablas con los estilos de la plantilla. Si la plantilla no trae
+    estilos de título (la del usuario solo tiene «Normal»), se escribe con el formato de
+    sus informes (ver arriba)."""
 
     def __init__(self, doc) -> None:
         self.doc = doc
         self._estilos = {s.name for s in doc.styles}
+        self.como_informe = "Heading 1" not in self._estilos
 
     def _estilo(self, *nombres: str) -> str | None:
         return next((n for n in nombres if n in self._estilos), None)
 
+    def _linea(self, texto: str, *, negrita=False, tam=None, centrado=False, cursiva=False):
+        p = self.doc.add_paragraph()
+        r = p.add_run(texto)
+        r.bold = negrita or None
+        r.italic = cursiva or None
+        if tam is not None:
+            r.font.size = Pt(tam)
+        if centrado:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        elif self.como_informe:
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        if self.como_informe:
+            p.paragraph_format.space_after = SEPARACION
+        return p
+
+    def portada(self, proyecto: str, titulo: str, subtitulo: str) -> None:
+        if self.como_informe:
+            self._linea(proyecto.upper(), negrita=True, tam=14, centrado=True)
+            self._linea(titulo.upper(), negrita=True, tam=13, centrado=True)
+            self._linea(subtitulo, negrita=True, centrado=True)
+            self._linea("-" * 120)
+        else:
+            self.titulo(titulo, 0)
+            self.parrafo(f"Proyecto: {proyecto}")
+
     def titulo(self, texto: str, nivel: int) -> None:
+        if self.como_informe:
+            self._linea(
+                texto.upper() if nivel <= 1 else texto,
+                negrita=True,
+                tam={0: 14, 1: 12, 2: 12}.get(nivel, 11),
+                centrado=nivel == 0,
+            )
+            return
         estilo = self._estilo("Title" if nivel == 0 else f"Heading {nivel}")
         if estilo:
             self.doc.add_paragraph(texto, style=estilo)
             return
-        p = self.doc.add_paragraph()
-        r = p.add_run(texto)
-        r.bold = True
-        r.font.size = Pt({0: 20, 1: 14, 2: 12}.get(nivel, 11))
+        self._linea(texto, negrita=True, tam={0: 20, 1: 14, 2: 12}.get(nivel, 11))
 
     def parrafo(self, texto: str, cursiva: bool = False) -> None:
-        p = self.doc.add_paragraph()
-        r = p.add_run(texto)
-        r.italic = cursiva
+        self._linea(texto, cursiva=cursiva)
 
     def vinetas(self, lineas: list[str]) -> None:
         estilo = self._estilo("List Bullet")
@@ -160,7 +201,7 @@ class _Escritor:
             if estilo:
                 self.doc.add_paragraph(linea, style=estilo)
             else:
-                self.doc.add_paragraph(f"• {linea}")
+                self._linea(f"• {linea}")
 
     def tabla(self, cabecera: list[str], filas: list[list[Any]], numericas=()) -> None:
         if not filas:
@@ -171,16 +212,33 @@ class _Escritor:
         if estilo:
             t.style = estilo
         for celda, texto in zip(t.rows[0].cells, cabecera, strict=True):
-            celda.text = ""
+            # La celda nueva ya trae un párrafo vacío: se escribe en él (con `celda.text =
+            # ""` quedaba una ejecución vacía sin negrita delante de la buena).
             run = celda.paragraphs[0].add_run(texto)
             run.bold = True
+            if self.como_informe:
+                run.font.size = LETRA_TABLA
+                _sombrear(celda, GRIS_CABECERA)
         for fila in filas:
             celdas = t.add_row().cells
             for j, (celda, valor) in enumerate(zip(celdas, fila, strict=True)):
                 celda.text = valor if isinstance(valor, str) else _n(valor)
+                parrafo = celda.paragraphs[0]
                 if j in numericas:
-                    celda.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    parrafo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                if self.como_informe:
+                    for run in parrafo.runs:
+                        run.font.size = LETRA_TABLA
         self.doc.add_paragraph()
+
+
+def _sombrear(celda, color: str) -> None:
+    """Fondo de una celda (w:shd), como las cabeceras de las tablas del usuario."""
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), color)
+    celda._tc.get_or_add_tcPr().append(shd)
 
 
 # --- Documento --------------------------------------------------------------------------
@@ -199,8 +257,7 @@ def escribir(destino: Path, d: DatosMemoria, plantilla: Path | None = None) -> P
     props.created = props.modified = datetime.now()
     props.revision = 1
     w = _Escritor(doc)
-    w.titulo("Justificación de cálculos", 0)
-    w.parrafo(f"Proyecto: {d.proyecto}")
+    w.portada(d.proyecto, "Justificación de cálculos", "Documento de apoyo")
     w.parrafo(f"Encargo: {d.encargo}")
     w.parrafo(f"Fecha: {d.fecha:%d-%m-%Y}")
     w.parrafo(

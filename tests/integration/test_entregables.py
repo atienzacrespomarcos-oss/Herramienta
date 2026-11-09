@@ -326,3 +326,42 @@ def test_nombre_con_punto_da_sus_extensiones(red, tmp_path):  # noqa: F811
     carpeta, hechos = p.generar_entregables(tmp_path)
     nombres = {r.name for n, rs, _ in hechos if "«Red 1.5»" in n for r in rs}
     assert nombres == {"Red Red 1.5.dxf", "Red Red 1.5.lsp", "Red Red 1.5.xlsx"}
+
+
+def _plantilla_solo_normal(tmp_path):
+    """Como la plantilla de informes del usuario: sin estilos de título ni de lista."""
+    from docx.oxml.ns import qn
+
+    doc = Document()
+    doc.sections[0].footer.paragraphs[0].text = "EMPRESA · pie de la plantilla"
+    estilos = doc.styles.element
+    for s in list(estilos.iterchildren(qn("w:style"))):
+        nombre = s.find(qn("w:name"))
+        if nombre is not None and nombre.get(qn("w:val")).lower().startswith(
+            ("heading", "title", "list bullet")
+        ):
+            estilos.remove(s)
+    ruta = tmp_path / "Informe.docx"
+    doc.save(str(ruta))
+    return ruta
+
+
+def test_con_plantilla_sin_titulos_sale_con_el_formato_de_sus_informes(completo, tmp_path):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    doc = Document(str(completo.exportar_memoria(tmp_path / "J", _plantilla_solo_normal(tmp_path))))
+    assert doc.sections[0].footer.paragraphs[0].text == "EMPRESA · pie de la plantilla"
+    p = [x for x in doc.paragraphs if x.text.strip()]
+    assert p[0].text == completo.nombre.upper() and p[0].alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert p[0].runs[0].bold and p[0].runs[0].font.size == Pt(14)
+    assert p[1].text == "JUSTIFICACIÓN DE CÁLCULOS" and p[1].runs[0].font.size == Pt(13)
+    apartado = next(x for x in p if x.text.startswith("1. "))
+    assert apartado.text == "1. CARGAS TÉRMICAS Y VENTILACIÓN" and apartado.runs[0].bold
+    cuerpo = next(x for x in p if x.text.startswith("Documento de apoyo:"))
+    assert cuerpo.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+    celda = doc.tables[0].rows[0].cells[0]
+    assert celda._tc.tcPr.find(qn("w:shd")).get(qn("w:fill")) == "ECECEC"
+    assert celda.paragraphs[0].runs[0].bold
+    assert celda.paragraphs[0].runs[0].font.size == Pt(9.5)

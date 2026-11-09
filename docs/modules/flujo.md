@@ -185,6 +185,13 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloques 1 y 2 imp
 - Propiedades del documento (título, fecha) propias, no las de la plantilla; sin autor.
 - Se escribe aparte y se sustituye: un fallo a medias no deja un .docx roto.
 - Una plantilla .dotx renombrada a .docx también se abre.
+- **Formato de sus informes** (usuario, 09-11-2026: «Sí, como mis informes»): si la
+  plantilla no trae estilos de título (la de Aliter solo tiene «Normal»), la
+  justificación sale como sus informes: proyecto y título centrados en negrita (14 y
+  13 pt), subtítulo, línea de guiones, apartados en MAYÚSCULAS y negrita (12 pt), texto
+  justificado con 8 pt de separación y tablas con cabecera gris ECECEC en negrita de
+  9,5 pt. Sin cierre de lugar, fecha y firma (es un documento de apoyo). Con una
+  plantilla que sí trae estilos de título, se usan los suyos.
 - **Plantilla**: «Entregables → Plantilla de Word…» (.docx o .dotx). Se recuerda en el
   equipo, no en el proyecto (es la de Aliter para todos). Se conservan sus estilos,
   encabezado, pie y página, y se vacía su cuerpo. Si a la plantilla le falta un estilo
