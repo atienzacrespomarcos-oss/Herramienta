@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidg
 
 from traza.app.ordenes import OrdenRechazada
 from traza.core.numeros import escribir_numero
+from traza.engines.subcuadro import interruptor
 from traza.io.unifilar_dxf import cable
 from traza.rules import electricidad as re
 from traza.ui.paso_redes import _archivo
@@ -162,7 +163,7 @@ class PaginaSubcuadros(QWidget):
                     _n(s.potencia_kw, 2),
                     _n(s.intensidad_a),
                     cable(s).removeprefix("RZ1-K 0,6/1 kV "),
-                    f"{s.curva}{s.calibre_a}",
+                    interruptor(s),
                     f"{s.diferencial_ma} mA {s.diferencial_tipo}",
                     _n(s.caida_total_pct, 2),
                     "CUMPLE" if s.cumple else "NO CUMPLE",

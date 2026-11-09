@@ -162,3 +162,17 @@ def test_vocabulario_de_la_base_de_datos_igual_que_las_reglas():
 
     assert lista("suministro") == set(re.SUMINISTROS)
     assert lista("metodo_alimentacion") == set(re.METODOS)
+
+
+def test_rotulo_del_interruptor_y_unifilar_de_mas_de_160_a(tmp_path):
+    import ezdxf
+
+    from traza.io import unifilar_dxf as ud
+
+    r = sc.calcular([sc.Salida("Enfriadora grande", 90, 3, 20, variador=True)])
+    s = r.salidas[0]
+    assert sc.interruptor(s) == "caja moldeada >160 A" and s.motor
+    doc = ezdxf.readfile(ud.escribir_unifilar(tmp_path / "U", "P", r, "x"))
+    texto = "\n".join(t.dxf.text for t in doc.modelspace().query("TEXT"))
+    assert "None" not in texto and "caja moldeada >160 A" in texto
+    assert "M" in texto.split("\n")  # dibujada como motor aunque lleve variador (curva C)

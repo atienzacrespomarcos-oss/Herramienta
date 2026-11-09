@@ -47,6 +47,7 @@ class Linea:
     diferencial_ma: int | None = None
     diferencial_tipo: str = ""
     cumple: bool = True
+    motor: bool = False  # el símbolo del unifilar (con variador la curva es C)
     avisos: tuple[str, ...] = field(default=())
 
 
@@ -103,9 +104,16 @@ def _elegir(nombre, fases, potencia_kw, cos_phi, i_servicio, i_diseno, longitud,
             return Linea(
                 nombre, fases, potencia_kw, i_servicio, i_diseno, s,
                 re.seccion_proteccion(s), iz, cal, _curva(motor, variador), caida,
-                caida_previa_pct + caida, metodo, longitud,
+                caida_previa_pct + caida, metodo, longitud, motor=motor,
             )  # fmt: skip
     return None
+
+
+def interruptor(linea: Linea) -> str:
+    """«D100», o caja moldeada por encima de 160 A (no hay calibre modular)."""
+    if linea.calibre_a is None:
+        return "caja moldeada >160 A"
+    return f"{linea.curva}{linea.calibre_a}"
 
 
 def _curva(motor: bool, variador: bool) -> str:
@@ -200,7 +208,8 @@ def calcular(
                 )
             return ResultadoSubcuadro(alim, tuple(resultado), limite, tuple(avisos), suministro)
     raise ValueError(
-        f"«{falla}» no cumple la caída de tensión ni con 300 mm²: revisa su longitud o su "
+        f"«{falla}» no cumple ni con 300 mm² (intensidad admisible o caída de tensión): revisa su "
+        "longitud o su "
         "potencia (o divide el subcuadro)."
         if falla
         else "La alimentación no cumple ni con 300 mm²: revisa su longitud o la potencia del "

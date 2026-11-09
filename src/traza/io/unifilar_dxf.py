@@ -14,7 +14,7 @@ import ezdxf
 import ezdxf.zoom
 from ezdxf.enums import TextEntityAlignment
 
-from traza.engines.subcuadro import Linea, ResultadoSubcuadro
+from traza.engines.subcuadro import Linea, ResultadoSubcuadro, interruptor
 from traza.rules import electricidad as re
 
 APPID = "TRAZA"
@@ -138,7 +138,7 @@ def escribir_unifilar(destino: Path, proyecto: str, r: ResultadoSubcuadro, ident
     for i, s in enumerate(r.salidas):
         x = x0 + PASO / 2 + i * PASO
         d.linea([(x, yb), (x, yb - 4)])
-        d.interruptor(x, yb - 4, f"{s.curva}{s.calibre_a} {polos(s)}")
+        d.interruptor(x, yb - 4, f"{interruptor(s)} {polos(s)}")
         d.linea([(x, yb - 14), (x, yb - 16)])
         d.diferencial(x, yb - 16, f"{s.diferencial_ma} mA tipo {s.diferencial_tipo}")
         d.linea([(x, yb - 28), (x, yb - 90)])  # largo: el rótulo del cable no pisa al receptor
@@ -149,7 +149,7 @@ def escribir_unifilar(destino: Path, proyecto: str, r: ResultadoSubcuadro, ident
             alto=1.5,
             giro=270,
         )
-        if s.curva == "D":  # motor
+        if s.motor:
             d.circulo(x, yb - 94, 4)
             d.texto("M", x, yb - 94, "receptores", 2.5, alinear="MIDDLE_CENTER")
         else:
@@ -162,7 +162,7 @@ def escribir_unifilar(destino: Path, proyecto: str, r: ResultadoSubcuadro, ident
     xl = x0 + ancho + 15
     notas = (
         "LEYENDA",
-        "Interruptor automático: curva (C general, D motores), calibre y polos",
+        "Interruptor automático: curva (D motores de arranque directo, C resto), calibre y polos",
         "Diferencial: sensibilidad y tipo (A; B en trifásicos con variador; F en monofásicos)",
         "M: motor · rectángulo: otros receptores",
         "Cable de cobre RZ1-K 0,6/1 kV (XLPE); «G» incluye el conductor de protección",

@@ -61,7 +61,7 @@ Estado: **en desarrollo**.
   <https://www.plcmadrid.es/wp-content/uploads/guia_bt_anexo_2_sep03R1.pdf>:
   - trifásico e = P·L/(γ·S·U), monofásico e = 2·P·L/(γ·S·U) (U = 400 V o 230 V),
     despreciando la reactancia hasta 120 mm²; por encima, X ≈ 0,15 R (150), 0,20 R (185) y
-    0,25 R (240): ΔU = (R + X·tg φ)·P/U;
+    0,25 R (240) y, en 300 mm², 0,1 Ω/km («en ausencia de datos»): ΔU = (R + X·tg φ)·P/U;
   - conductividad del cobre γ = 56 / 48 / 44 m/(Ω·mm²) a 20 / 70 / 90 °C.
 - **GUÍA-BT-22** (oct. 2005, rev. 1),
   <https://www.plcmadrid.es/wp-content/uploads/rebt/itc22/guia_bt_22_oct05R1.pdf>:
@@ -82,8 +82,9 @@ Estado: **en desarrollo**.
   alimenta el subcuadro**.
 - **Sección**: la menor normalizada que cumple Iz·factor ≥ In (que ya es ≥ Ib) y la caída
   de tensión; motores con Ib al 125 % (ITC-BT-47).
-- **Protección**: magnetotérmico de la serie de calibres, curva D en motores (bombas,
-  ventiladores, compresores) y C en el resto; diferencial por salida.
+- **Protección**: magnetotérmico de la serie de calibres, curva D en motores de arranque
+  directo y C en el resto (también en motores con variador); por encima de 160 A, caja
+  moldeada a definir; diferencial por salida.
 - **Factor de potencia** por defecto **0,85** («a falta de datos se toma 0,85», GUÍA-BT
   Anexo 2, ejemplo de la LGA); el de la ficha del equipo manda. Ejemplo de comprobación:
   145 kW, 400 V, cos φ 0,90 → 232,5 A.
@@ -109,8 +110,8 @@ Estado: **en desarrollo**.
   longitud, cos φ, motor, variador, método).
 - **Proponer desde los equipos**: una salida por generador, bomba de primario, bomba y
   unidades de cada circuito de los sistemas hidráulicos, y por ventilador de cada red de
-  aire. La potencia eléctrica la pone el usuario con la ficha del modelo; la del
-  ventilador se propone con la máxima que permite su SFP (RITE IT 1.2.4.2.5).
+  aire. La potencia eléctrica la pone el usuario con la ficha del modelo elegido (también
+  la del ventilador).
 - **Trifásicos con neutro** (3F+N+PE, interruptor 4P) y monofásicos F+N+PE (2P).
 - **En pantalla**: la alimentación (cable, IG, caída, límite, CUMPLE / NO CUMPLE) y una fila
   por salida (kW, Ib, cable, magnetotérmico, diferencial, caída total).

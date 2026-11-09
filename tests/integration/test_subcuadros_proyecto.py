@@ -33,6 +33,8 @@ def test_subcuadro_calculado_y_unifilar(red, tmp_path):  # noqa: F811
         assert s.nombre in texto and ud.cable(s) in texto
         assert f"{s.curva}{s.calibre_a} {ud.polos(s)}" in texto
         assert f"{s.diferencial_ma} mA tipo {s.diferencial_tipo}" in texto
+    # La enfriadora (motor con variador, curva C) se dibuja como motor.
+    assert r.salidas[0].motor and r.salidas[0].curva == "C"
     assert all(t.dxf.style == ud.ESTILO for t in doc.modelspace().query("TEXT"))
     assert all(e.get_xdata("TRAZA")[0].value == f"{sid}:unifilar" for e in doc.modelspace())
 
