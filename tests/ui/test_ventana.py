@@ -83,6 +83,10 @@ class PreguntasPreparadas:
     def prevision(self, actual):
         return self._siguiente("prevision")
 
+    def certificacion(self, explicacion, numero):
+        self.explicaciones = [*getattr(self, "explicaciones", []), (explicacion, numero)]
+        return self._siguiente("certificacion")
+
     def encargo(self, actual):
         return self._siguiente("encargo")
 

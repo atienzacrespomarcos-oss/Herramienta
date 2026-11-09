@@ -385,5 +385,24 @@ CREATE TABLE prevision (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12)
+# V13 (09-11-2026): certificaciones de la obra (docs/modules/obra.md, bloque 2b). Cada una,
+# el importe a origen por partida (por código de la venta) leído del Excel del usuario o
+# del cliente, con el mapa de columnas con que se leyó (para poder explicarlo).
+V13 = """
+CREATE TABLE certificacion (
+    id TEXT PRIMARY KEY,
+    numero INTEGER NOT NULL UNIQUE CHECK (numero >= 1),
+    fecha TEXT NOT NULL,
+    documento_id TEXT NOT NULL REFERENCES documento(id),
+    total_origen REAL NOT NULL,
+    partidas TEXT NOT NULL,
+    mapa TEXT NOT NULL,
+    avisos TEXT NOT NULL,
+    lector TEXT NOT NULL,
+    version_lector TEXT NOT NULL,
+    leido TEXT NOT NULL
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13)
 VERSION_ACTUAL = len(MIGRACIONES)

@@ -246,3 +246,70 @@ def foto(
         resumen.objetivo,
         huerfanas,
     )
+
+
+# --- Bloque 2b: certificaciones (las hace el usuario; TRAZA las lee y las suma) ----------
+
+
+@dataclass
+class ResultadoCertificacion:
+    """Lo leído de un Excel de certificación, cruzado con la venta por código."""
+
+    #: clave del código → (código, resumen, importe a origen)
+    por_partida: dict[str, tuple[str, str, float]] = field(default_factory=dict)
+    no_casan: list[tuple[int, str, str, float]] = field(default_factory=list)  # fila, cód…
+    capitulos: int = 0  # filas de capítulo o subtotal, que no suman (ya suman sus partidas)
+    total_excel: tuple[int, float] | None = None
+    avisos: list[str] = field(default_factory=list)
+
+    @property
+    def total(self) -> float:
+        return round(sum(round(v[2], 2) for v in self.por_partida.values()), 2)
+
+
+def cruzar_certificacion(
+    leido: Any, partidas_venta: list[dict[str, Any]]
+) -> ResultadoCertificacion:
+    """Solo suman las filas cuyo código es una partida de la venta: un capítulo o un
+    subtotal (su código es de capítulo, o su naturaleza lo dice) no se suma dos veces. Lo
+    que no casa se lista con su importe, nunca se descarta en silencio."""
+    venta = {_clave(p["codigo"]): p for p in partidas_venta if _clave(p["codigo"])}
+    capitulos = {
+        _clave(c[0]) for p in partidas_venta for c in (p.get("capitulo") or []) if c and c[0]
+    }
+    r = ResultadoCertificacion(total_excel=leido.total_excel, avisos=list(leido.avisos))
+    for f in leido.filas:
+        clave = _clave(f.codigo)
+        if clave in venta:
+            if clave in r.por_partida:
+                r.avisos.append(f"{f.codigo} (fila {f.fila}) está dos veces: se suman las dos.")
+            previo = r.por_partida.get(clave, (f.codigo, f.resumen, 0.0))[2]
+            r.por_partida[clave] = (f.codigo, f.resumen, previo + (f.importe_origen or 0.0))
+        elif clave in capitulos or "cap" in f.naturaleza.lower():
+            r.capitulos += 1
+        elif f.importe_origen:
+            r.no_casan.append((f.fila, f.codigo, f.resumen, f.importe_origen))
+    if not r.por_partida:
+        raise ValueError(
+            "Ningún código del Excel coincide con las partidas del presupuesto contratado: "
+            "¿es la certificación de esta obra?"
+        )
+    for clave, (codigo, _r, origen) in r.por_partida.items():
+        imp = venta[clave]["importe"]
+        if imp is not None and round(origen - imp, 2) > 0.01:
+            r.avisos.append(
+                f"{codigo}: certificado a origen por encima de su venta (más del 100 %)."
+            )
+    if r.no_casan:
+        r.avisos.append(
+            f"{len(r.no_casan)} línea(s) con importe que no son partidas de la venta (no suman): "
+            + ", ".join(f"{c} (fila {n})" for n, c, _r, _i in r.no_casan[:8])
+            + ("…" if len(r.no_casan) > 8 else "")
+        )
+    if r.total_excel is not None and round(abs(r.total_excel[1] - r.total), 2) > 0.01:
+        r.avisos.append(
+            f"La suma de las partidas ({r.total:.2f} €) no coincide con el TOTAL del Excel "
+            f"({r.total_excel[1]:.2f} €, fila {r.total_excel[0]})".replace(".", ",")
+            + ": revisa las líneas que no casan."
+        )
+    return r

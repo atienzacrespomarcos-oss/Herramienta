@@ -1,7 +1,7 @@
 # Obra: control de venta, costes, certificaciones y previsión
 
-Estado: **diseño aprobado** (09-11-2026). **Bloques 1 y 2a implementados** (crear obra, venta,
-coste objetivo, coste real y previsión).
+Estado: **diseño aprobado** (09-11-2026). **Bloques 1, 2a y 2b implementados** (crear obra,
+venta, coste objetivo, coste real, previsión y certificaciones).
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -189,7 +189,7 @@ solo se toma la **estructura** y la forma de trabajar:
 - La venta real (certificado a origen) llega con las certificaciones (bloque 2b); hasta
   entonces, no consta («—»). Esquema V12 (`factura`, `paquete_cerrado`, `prevision`).
 
-## Bloque 2b: certificaciones (decidido, por construir)
+## Bloque 2b: certificaciones (decisiones de método, 09-11-2026)
 
 Usuario (09-11-2026): «No necesitas plantilla (quizá te pase alguna pero al final debes ser
 capaz de interpretar un Excel)». Por eso:
@@ -202,8 +202,32 @@ capaz de interpretar un Excel)». Por eso:
 4. Antes de importar, se enseña lo entendido (qué columna es qué y el total a origen) para
    que el usuario lo confirme.
 
+Cómo está hecho (`io/certificacion_excel.py`, `app/obra.cruzar_certificacion`):
+- **Columnas por título** en las primeras 40 filas de cada hoja; se elige la fila con el
+  mapa más completo. Títulos normalizados (sin acentos, mayúsculas ni puntos) y comparados
+  por «contiene» en orden: % a origen, anterior, a origen, de esta certificación, de
+  presupuesto, naturaleza, código, descripción. Un título con «cantidad», «medición»,
+  «precio» o «unitario» nunca es un importe («Cantidad a origen» no es el importe).
+- **Importe a origen** de una fila: su columna; si no, anterior + esta certificación; si
+  no, % a origen × importe de presupuesto (el % en tanto por uno o por ciento según el
+  mayor valor de la columna).
+- **Sin títulos reconocibles**: se pasan a Claude Code las 25 primeras filas de cada hoja
+  (títulos y muestra) y solo dice la hoja, la fila de títulos y la letra de cada columna.
+  Se comprueba contra el fichero: la hoja existe y cada columna tiene título en esa fila;
+  si no, se descarta (no se adivina). Sin código e importe a origen, se rechaza.
+- **Cruce con la venta**: solo suman las filas cuyo código es una partida del presupuesto
+  contratado; las de capítulo (código de capítulo de la venta o naturaleza «Capítulo»)
+  no suman; las demás con importe se listan como «no son partidas de la venta». Se avisa
+  si una partida supera su venta (más del 100 %), si un código se repite y si la suma no
+  cuadra con la fila TOTAL del Excel. Si ningún código casa, se rechaza («¿es la
+  certificación de esta obra?»).
+- Cada certificación guarda su número, fecha, el importe a origen por partida, el total y
+  el mapa con que se leyó. Lo de cada certificación = a origen − la anterior. La **venta
+  real** es el total a origen de la última. Esquema V13.
+
 ## Pendiente
 
 - Revisión del diseño por el usuario.
 - Construir por bloques: ~~(1) crear obra, venta y coste objetivo~~; ~~(2a) coste real,
-  foto de lo real y previsión~~; (2b) certificaciones; (3) futuribles y Excel de control.
+  foto de lo real y previsión~~; ~~(2b) certificaciones~~; (3) futuribles y Excel de
+  control.
