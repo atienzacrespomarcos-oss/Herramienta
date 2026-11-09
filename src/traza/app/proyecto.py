@@ -1484,7 +1484,8 @@ class Proyecto:
                 hechos.append((nombre, [], str(exc)))
                 return
             except PermissionError as exc:
-                hechos.append((nombre, [], f"no se puede escribir «{exc.filename}»"))
+                cual = Path(exc.filename).name if exc.filename else "el fichero"
+                hechos.append((nombre, [], f"no se puede escribir «{cual}»: ¿está abierto?"))
                 return
             except Exception as exc:  # noqa: BLE001 — se dice al usuario, no se corta
                 hechos.append((nombre, [], f"{type(exc).__name__}: {exc}"))

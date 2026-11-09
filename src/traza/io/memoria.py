@@ -24,6 +24,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.opc.exceptions import PackageNotFoundError
 from docx.shared import Pt
 
+from traza.core.numeros import escribir_numero
 from traza.engines.hidraulica import SERVICIOS
 from traza.io import informe_cargas, informe_hidronica, informe_redes
 from traza.io.informe_hidronica import MCA
@@ -77,6 +78,13 @@ def _n(v: Any, dec: int = 1) -> str:
             texto = f"{v:.{dec}f}"
         return texto.replace(".", ",")
     return str(v)
+
+
+def _exacto(v: Any) -> Any:
+    """Un dato de partida tal cual (0,0625 no se redondea): coma decimal, sin redondear."""
+    if isinstance(v, float) and not isinstance(v, bool):
+        return escribir_numero(v)
+    return v
 
 
 def _abrir(plantilla: Path | None):
@@ -227,8 +235,16 @@ def escribir(destino: Path, d: DatosMemoria, plantilla: Path | None = None) -> P
         w.parrafo("No hay ningún cálculo hecho en el proyecto.", cursiva=True)
     # Se escribe aparte y se sustituye: un fallo a medias no deja un .docx roto.
     temporal = destino.with_name(destino.name + ".parcial")
-    doc.save(str(temporal))
-    temporal.replace(destino)
+    try:
+        doc.save(str(temporal))
+        temporal.replace(destino)
+    except PermissionError as exc:
+        # El aviso nombra el documento (abierto en Word), no el temporal.
+        temporal.unlink(missing_ok=True)
+        raise PermissionError(exc.errno, exc.strerror, str(destino)) from exc
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise
     return destino
 
 
@@ -274,7 +290,8 @@ def _cargas(w: _Escritor, n: int, proyecto: str, r: Any) -> None:
         w.titulo(f"{x.codigo} {x.nombre}", 3)
         w.tabla(
             ["Dato", "Valor", "Unidad", "Origen", "Fuente"],
-            [[dt.concepto, dt.valor, dt.unidad, dt.origen, dt.fuente] for dt in x.datos],
+            # Datos de partida: tal cual se usaron, sin redondear.
+            [[dt.concepto, _exacto(dt.valor), dt.unidad, dt.origen, dt.fuente] for dt in x.datos],
             numericas=(1,),
         )
         w.tabla(
@@ -309,29 +326,28 @@ def _redes(w: _Escritor, n: int, redes: list[Any]) -> None:
             w.vinetas([f"Aviso: {a}" for a in r.avisos] or ["sin más detalle"])
             continue
         w.vinetas(informe_redes.hipotesis(r))
-        if c is not None:
-            w.tabla(
+        w.tabla(
+            [
+                "Tramo",
+                "Caudal (m³/h)",
+                "Sección (mm)",
+                "Velocidad (m/s)",
+                "Rozamiento (Pa/m)",
+                "Pérdida (Pa)",
+            ],
+            [
                 [
-                    "Tramo",
-                    "Caudal (m³/h)",
-                    "Sección (mm)",
-                    "Velocidad (m/s)",
-                    "Rozamiento (Pa/m)",
-                    "Pérdida (Pa)",
-                ],
-                [
-                    [
-                        t.tramo.id,
-                        t.tramo.caudal_m3s * 3600,
-                        t.seccion.texto(),
-                        t.velocidad_m_s,
-                        t.friccion_pa_m,
-                        t.perdida_pa,
-                    ]
-                    for t in c.tramos
-                ],
-                numericas=(1, 3, 4, 5),
-            )
+                    t.tramo.id,
+                    t.tramo.caudal_m3s * 3600,
+                    t.seccion.texto(),
+                    t.velocidad_m_s,
+                    t.friccion_pa_m,
+                    t.perdida_pa,
+                ]
+                for t in c.tramos
+            ],
+            numericas=(1, 3, 4, 5),
+        )
 
 
 def _hidraulica(w: _Escritor, n: int, sistemas: list[Any]) -> None:
@@ -401,8 +417,9 @@ def hipotesis_subcuadro(r: Any) -> list[str]:
         f"{elec.REBT} y guías técnicas de aplicación del Ministerio. Cable de cobre RZ1-K "
         "0,6/1 kV (XLPE, 90 °C).",
         "Intensidad admisible Iz: GUÍA-BT-19, tabla A (UNE 20460-5-523 tabla A.52-1 bis) por "
-        "método de instalación, con el factor de agrupamiento de la tabla E por el número de "
-        "líneas.",
+        "método de instalación. En las salidas, con el factor de agrupamiento de la tabla E "
+        "según cuántas salidas van por el mismo método (misma bandeja o canalización); la "
+        "línea que alimenta el subcuadro, sin agrupamiento.",
         "Motores: intensidad de diseño al 125 % (ITC-BT-47). Alimentación del subcuadro: "
         "suma de las salidas (las monofásicas cuentan 1/3, repartidas entre las tres fases) "
         "más el 25 % del motor mayor.",
@@ -423,10 +440,13 @@ def hipotesis_subcuadro(r: Any) -> list[str]:
 def comprobacion(x: Any, limite_pct: float) -> bool:
     """CUMPLE se calcula aquí con los valores de la línea, no se lee de un indicador: I
     diseño ≤ In ≤ Iz (sin calibre, caja moldeada: I diseño ≤ Iz) y caída total ≤ límite."""
+    # La misma tolerancia que el motor (engines/subcuadro.py): sin ella, un Iz de
+    # 62,99999999999999 A daría NO CUMPLE a una línea que el motor y el unifilar dan por buena.
+    tol = 1e-9
     protegida = (
-        x.intensidad_diseno_a <= x.calibre_a <= x.admisible_a
+        x.intensidad_diseno_a <= x.calibre_a + tol and x.calibre_a <= x.admisible_a + tol
         if x.calibre_a
-        else x.intensidad_diseno_a <= x.admisible_a
+        else x.intensidad_diseno_a <= x.admisible_a + tol
     )
     return protegida and x.caida_total_pct <= limite_pct + 1e-9
 
@@ -456,8 +476,8 @@ def _subcuadros(w: _Escritor, n: int, subcuadros: list[tuple[str, Any]]) -> None
                 [
                     x.nombre,
                     x.metodo,
-                    x.longitud_m,
-                    x.potencia_kw,
+                    _exacto(x.longitud_m),
+                    _exacto(x.potencia_kw),
                     x.intensidad_a,
                     x.intensidad_diseno_a,
                     f"{_n(x.seccion, 1)} / {_n(x.seccion_pe, 1)}",

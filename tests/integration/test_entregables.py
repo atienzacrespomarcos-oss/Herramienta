@@ -271,3 +271,58 @@ def test_plantilla_dotx_con_extension_docx(completo, tmp_path):
             zout.writestr(item, datos)
     ruta = completo.exportar_memoria(tmp_path / "J", renombrada)
     assert Document(str(ruta)).sections[0].header.paragraphs[0].text.startswith("ALITER")
+
+
+def test_comprobacion_con_la_tolerancia_del_motor_y_sin_calibre():
+    from types import SimpleNamespace
+
+    from traza.io.memoria import comprobacion
+
+    # Iz·factor con ruido de coma flotante: el motor acepta 63 A; el Word también.
+    justa = SimpleNamespace(
+        intensidad_diseno_a=60.0, calibre_a=63, admisible_a=62.99999999999999, caida_total_pct=2
+    )
+    assert comprobacion(justa, 5.0)
+    moldeada = SimpleNamespace(
+        intensidad_diseno_a=200.0, calibre_a=None, admisible_a=210.0, caida_total_pct=2
+    )
+    assert comprobacion(moldeada, 5.0)
+    assert not comprobacion(SimpleNamespace(**{**vars(moldeada), "admisible_a": 190.0}), 5.0)
+
+
+def test_dato_de_partida_con_cuatro_decimales_sin_redondear():
+    from traza.io.memoria import _exacto
+
+    assert _exacto(0.0625) == "0,0625" and _exacto("texto") == "texto" and _exacto(3) == 3
+
+
+def test_word_abierto_nombra_el_documento_y_no_deja_temporales(completo, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    original = Path.replace
+
+    def abierto(self, destino):
+        if str(self).endswith(".parcial"):
+            raise PermissionError(13, "Permission denied", str(self))
+        return original(self, destino)
+
+    monkeypatch.setattr(Path, "replace", abierto)
+    with pytest.raises(OrdenRechazada, match=r"«.*J\.docx»: ¿está abierto en Word"):
+        completo.exportar_memoria(tmp_path / "J")
+    assert not list(tmp_path.glob("*.parcial"))
+
+
+def test_nombre_con_punto_da_sus_extensiones(red, tmp_path):  # noqa: F811
+    p, _, plano_id, nivel_id = red
+    p.definir_red(
+        titulo="Red 1.5",
+        tipo="impulsion",
+        plano_id=plano_id,
+        capa_ejes="M-IMPULSION",
+        bloques_terminales=["DIFUSOR"],
+        bloque_equipo="UTA",
+        nivel_id=nivel_id,
+    )
+    carpeta, hechos = p.generar_entregables(tmp_path)
+    nombres = {r.name for n, rs, _ in hechos if "«Red 1.5»" in n for r in rs}
+    assert nombres == {"Red Red 1.5.dxf", "Red Red 1.5.lsp", "Red Red 1.5.xlsx"}
