@@ -57,3 +57,22 @@ def test_el_estado_no_lee_la_guia_del_idae(red):  # noqa: F811
     p.lector_guia = no_leer
     for paso in ("cargas", "redes"):
         assert p.estado_paso(paso).estado == HECHO
+
+
+def test_en_ampliacion_se_confirman_los_espacios_nuevos(tmp_path):
+    from tests.integration.test_redes_proyecto import _nave_con_conductos
+
+    from traza.app.proyecto import Proyecto
+
+    p = Proyecto.crear(tmp_path / "A", "A", "ampliacion")
+    try:
+        p.leer_plano(
+            p.incorporar_documento(_nave_con_conductos(tmp_path)),
+            "mm",
+            ["A-ESPACIOS"],
+            [],
+            ["A-TEXTOS"],
+        )
+        assert p.estado_paso("planos").texto == "Falta: confirmar los espacios de la ampliación"
+    finally:
+        p.cerrar()

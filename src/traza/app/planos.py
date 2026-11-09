@@ -156,3 +156,113 @@ def longitudes_por_capa(plano: PlanoDxf, unidad: str) -> list[FilaLongitud]:
         for c in sorted(plano.capas.values(), key=lambda c: c.nombre.lower())
         if c.longitud or c.sin_medir
     ]
+
+
+# --- Plano revisado (docs/modules/flujo.md, 1c) ----------------------------------------
+#
+# Usuario (09-11-2026): «quiero poder yo proponer planos de ampliación o modificación y que
+# se recalcule todo». Cada espacio u obstáculo confirmado se busca en el plano revisado:
+# es «el mismo» el contorno del mismo papel (espacio/obstáculo) que contiene un punto
+# interior del antiguo y cuyo punto interior está dentro del antiguo (los dos se solapan
+# de verdad, no solo se tocan); si hay varios, el de superficie más parecida. Los handles
+# no sirven: un DXF guardado otra vez, o exportado de otro programa, los renumera.
+
+#: Por debajo de esto, la superficie y el perímetro son los mismos (redondeo del dibujo).
+TOLERANCIA_M2 = 0.01
+TOLERANCIA_M = 0.01
+
+
+def punto_interior(contorno: Contorno) -> tuple[float, float]:
+    """Un punto dentro del contorno: el centroide si cae dentro; si no (una L, una U), el
+    centro del primer tramo interior de una horizontal que corta el contorno."""
+    pts = contorno.aplanado()
+    a = cx = cy = 0.0
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1], strict=True):
+        k = x1 * y2 - x2 * y1
+        a += k
+        cx += (x1 + x2) * k
+        cy += (y1 + y2) * k
+    if a:
+        cx, cy = cx / (3 * a), cy / (3 * a)
+        if contorno.contiene(cx, cy):
+            return cx, cy
+    ys = [y for _, y in pts]
+    y0, y1 = min(ys), max(ys)
+    for f in (0.5, 0.25, 0.75, 0.125, 0.375, 0.625, 0.875):
+        y = y0 + f * (y1 - y0)
+        cortes = sorted(
+            x1 + (y - ya) * (x2 - x1) / (yb - ya)
+            for (x1, ya), (x2, yb) in zip(pts, pts[1:] + pts[:1], strict=True)
+            if (ya > y) != (yb > y)
+        )
+        for xa, xb in zip(cortes[::2], cortes[1::2], strict=False):
+            if contorno.contiene((xa + xb) / 2, y):
+                return (xa + xb) / 2, y
+    x, y = pts[0]
+    return x, y
+
+
+@dataclass(frozen=True)
+class Confirmado:
+    """Un espacio u obstáculo confirmado sobre el plano que se revisa."""
+
+    elemento_id: str
+    codigo: str
+    nombre: str
+    rol: str  # espacio | obstaculo
+    contorno: Contorno  # en metros
+    aprobado: bool = False
+
+    @property
+    def rotulo(self) -> str:
+        return f"{self.codigo} {self.nombre}".strip()
+
+
+@dataclass(frozen=True)
+class Pareja:
+    antes: Confirmado
+    despues: Propuesta
+
+    @property
+    def cambia(self) -> bool:
+        return (
+            abs(self.despues.superficie - self.antes.contorno.area) > TOLERANCIA_M2
+            or abs(self.despues.perimetro - self.antes.contorno.perimetro) > TOLERANCIA_M
+        )
+
+
+@dataclass
+class Emparejamiento:
+    iguales: list[Pareja] = field(default_factory=list)
+    cambiados: list[Pareja] = field(default_factory=list)
+    desaparecidos: list[Confirmado] = field(default_factory=list)
+    nuevas: list[Propuesta] = field(default_factory=list)  # se confirman después, como siempre
+
+
+def emparejar(confirmados: list[Confirmado], revisado: list[Propuesta]) -> Emparejamiento:
+    interior_nueva = {p.handle: punto_interior(p.contorno) for p in revisado}
+    candidatas: list[tuple[float, int, Confirmado, Propuesta]] = []
+    for n, c in enumerate(confirmados):
+        xc, yc = punto_interior(c.contorno)
+        for p in revisado:
+            if p.rol != c.rol or not p.contorno.contiene(xc, yc):
+                continue
+            if not c.contorno.contiene(*interior_nueva[p.handle]):
+                continue
+            candidatas.append((abs(p.superficie - c.contorno.area), n, c, p))
+    r = Emparejamiento()
+    usados_c: set[str] = set()
+    usadas_p: set[str] = set()
+    for _, _, c, p in sorted(candidatas, key=lambda t: (t[0], t[1])):
+        if c.elemento_id in usados_c or p.handle in usadas_p:
+            continue
+        usados_c.add(c.elemento_id)
+        usadas_p.add(p.handle)
+        pareja = Pareja(c, p)
+        (r.cambiados if pareja.cambia else r.iguales).append(pareja)
+    r.desaparecidos = [c for c in confirmados if c.elemento_id not in usados_c]
+    r.nuevas = [p for p in revisado if p.handle not in usadas_p]
+    orden = {c.elemento_id: i for i, c in enumerate(confirmados)}
+    r.iguales.sort(key=lambda x: orden[x.antes.elemento_id])
+    r.cambiados.sort(key=lambda x: orden[x.antes.elemento_id])
+    return r

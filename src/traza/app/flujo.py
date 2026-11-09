@@ -47,11 +47,22 @@ def _ancestros(paso: str) -> set[str]:
     return vistos
 
 
-def _ultimo(con, tablas) -> int:
+def _ultimo(con, tablas, sin_ordenes_de=()) -> int:
+    """Último cambio en `tablas`. Con `sin_ordenes_de`, sin contar las órdenes que también
+    cambiaron esas otras tablas: cuando un plano revisado mueve la red al plano nuevo, o
+    quitar un espacio borra sus cargas, eso no es que el usuario haya revisado la red o las
+    cargas (revisión 09-11-2026: la red salía «hecha» tras revisar el plano)."""
     if not tablas:
         return 0
     marcas = ",".join("?" * len(tablas))
-    fila = con.execute(f"SELECT MAX(n) FROM cambio WHERE entidad IN ({marcas})", tablas).fetchone()
+    sql = f"SELECT MAX(n) FROM cambio c WHERE entidad IN ({marcas})"
+    if sin_ordenes_de:
+        otras = ",".join("?" * len(sin_ordenes_de))
+        sql += (
+            " AND NOT EXISTS (SELECT 1 FROM cambio a WHERE a.orden_id = c.orden_id"
+            f" AND a.entidad IN ({otras}))"
+        )
+    fila = con.execute(sql, (*tablas, *sin_ordenes_de)).fetchone()
     return fila[0] or 0
 
 
@@ -70,6 +81,10 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
         if not p.planos():
             return EstadoPaso(PENDIENTE, "Falta: leer el plano DXF")
         if not p.espacios():
+            if p.encargo == "ampliacion":
+                # Se diseña la parte nueva: solo se confirman sus espacios (usuario,
+                # 09-11-2026); lo existente queda sin confirmar o se descarta.
+                return EstadoPaso(PENDIENTE, "Falta: confirmar los espacios de la ampliación")
             return EstadoPaso(PENDIENTE, "Falta: confirmar los espacios")
         return None
     # Cargas, redes e hidráulica necesitan la guía del IDAE, que se lee una vez por sesión
@@ -125,8 +140,10 @@ def estado(p: Any, paso: str) -> EstadoPaso:
         return falta
     if paso in DEPENDE:
         con = p._con
-        propio = max(_ultimo(con, TABLAS[paso]), _revisado(con, paso))
-        cambiados = [a for a in _ancestros(paso) if _ultimo(con, TABLAS[a]) > propio]
+        ancestros = _ancestros(paso)
+        de_ancestros = tuple(t for a in ancestros for t in TABLAS[a])
+        propio = max(_ultimo(con, TABLAS[paso], de_ancestros), _revisado(con, paso))
+        cambiados = [a for a in ancestros if _ultimo(con, TABLAS[a]) > propio]
         if cambiados:
             nombres = {"planos": "Planos", "cargas": "Cargas", "redes": "Redes de aire",
                        "hidronica": "Sistema hidráulico"}  # fmt: skip

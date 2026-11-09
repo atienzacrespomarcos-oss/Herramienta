@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 09-11-2026 (Etapa 8, subcuadros de clima).
+Última actualización: 09-11-2026 (flujo de trabajo, bloque 1).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -34,4 +34,5 @@ declarados).
 | — | Mediciones: lector PDF y Excel con IA + comprobaciones | 2 | Implementada | ADR-0013. Probado con IA simulada; pendiente de Claude Code real y documentos del usuario. |
 | — | Excel «con todo» de mediciones | 2 | Implementada | Ya no es para pedidos: el usuario los dejó fuera (09-11-2026). |
 | — | Ampliaciones y modificaciones (Excel y BC3) | 2 | Implementada | Paso «Modificados». BC3 verificado por relectura; falta importarlo en Presto/Arquímedes. |
-| — | Interfaz por pasos según tipo de encargo | 2 | Implementada | Pasos: Documentación, Mediciones y ofertas, Equipos. Historial en «Ver». |
+| — | Interfaz por pasos según tipo de encargo | 2 · flujo 1 | Implementada | `docs/modules/flujo.md`. Encargos Diseño · Oferta · Ampliación, pasos con estado (hecho, pendiente con lo que falta, desactualizado) y «dar por revisado». Historial en «Ver». |
+| — | Plano revisado o de ampliación que recalcula todo | flujo 1 | Implementada | `docs/modules/flujo.md`. Emparejamiento por solape, resumen de cambios, una orden que se deshace entera, dependientes marcados para revisar. Probado con DXF de prueba: falta una revisión real de un plano del usuario. |

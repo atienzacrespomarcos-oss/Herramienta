@@ -42,6 +42,7 @@ from traza.app.ordenes import (
     OrdenRechazada,
     PartidaNueva,
     RegistrarDocumento,
+    RevisarPlano,
     ahora,
     nuevo_id,
 )
@@ -829,10 +830,14 @@ class Proyecto:
             )
         )
 
-    def planos(self) -> list[dict[str, Any]]:
+    def planos(self, sustituidos: bool = False) -> list[dict[str, Any]]:
         filas = self._filas(
             "SELECT p.*, d.nombre_original AS documento_nombre FROM plano p"
-            " JOIN documento d ON d.id = p.documento_id ORDER BY p.leido"
+            " JOIN documento d ON d.id = p.documento_id"
+            # Un plano sustituido por su revisión ya no se trabaja (sus elementos y redes
+            # pasaron al revisado); sigue en la base por la historia (V10).
+            + ("" if sustituidos else " WHERE p.sustituido_por IS NULL")
+            + " ORDER BY p.leido"
         )
         for f in filas:
             for clave in ("capas_espacios", "capas_obstaculos", "capas_textos", "descartados"):
@@ -911,6 +916,88 @@ class Proyecto:
         if handle not in {x.handle for x in self.propuestas(plano_id)}:
             raise OrdenRechazada("Ese contorno no está entre las propuestas del plano.")
         self.ejecutar(DescartarPropuesta(plano_id, handle))
+
+    def comparar_plano_revisado(
+        self, plano_id: str, documento_id: str
+    ) -> tuple[calculo_planos.Emparejamiento, list[str]]:
+        """Qué pasa con cada espacio u obstáculo si el plano se sustituye por el revisado
+        (no escribe nada). Devuelve el emparejamiento y los descartes que se conservan."""
+        p = self.plano(plano_id)
+        revisado = self.plano_dxf(documento_id)
+        _capas_existen(revisado, [*p["capas_espacios"], *p["capas_obstaculos"], *p["capas_textos"]])
+        nuevas = calculo_planos.propuestas(
+            revisado,
+            p["unidad"],
+            p["capas_espacios"],
+            p["capas_obstaculos"],
+            p["capas_textos"],
+            set(),
+            set(),
+        )
+        confirmados = [
+            calculo_planos.Confirmado(
+                f["id"],
+                f["codigo"],
+                f["nombre"] or "",
+                tipo_elemento,
+                f["contorno"],
+                f["estado"] == Estado.APROBADO,
+            )
+            for tipo_elemento in ("espacio", "obstaculo")
+            for f in self.contornos_confirmados(tipo_elemento)
+            if f["plano_id"] == plano_id
+        ]
+        r = calculo_planos.emparejar(confirmados, nuevas)
+        # Los descartes (contornos que el usuario no quiere, p. ej. pilares) se buscan igual
+        # en el revisado, para no tener que descartarlos otra vez.
+        anterior = calculo_planos.propuestas(
+            self.plano_dxf(p["documento_id"]),
+            p["unidad"],
+            p["capas_espacios"],
+            p["capas_obstaculos"],
+            p["capas_textos"],
+            set(),
+            set(),
+        )
+        descartes = [
+            calculo_planos.Confirmado(x.handle, "", "", x.rol, x.contorno)
+            for x in anterior
+            if x.handle in set(p["descartados"])
+        ]
+        d = calculo_planos.emparejar(descartes, r.nuevas)
+        siguen = sorted(x.despues.handle for x in [*d.iguales, *d.cambiados])
+        r.nuevas = [x for x in r.nuevas if x.handle not in set(siguen)]
+        return r, siguen
+
+    def revisar_plano(self, plano_id: str, documento_id: str) -> calculo_planos.Emparejamiento:
+        """Sustituye el plano por el revisado (orden RevisarPlano): lo que depende se
+        recalcula y queda marcado para revisar."""
+        r, descartes = self.comparar_plano_revisado(plano_id, documento_id)
+        if r.desaparecidos and not (r.iguales or r.cambiados):
+            raise OrdenRechazada(
+                "Ningún espacio u obstáculo del plano anterior coincide con el revisado: "
+                "¿está el dibujo desplazado (otro punto base) o en otra unidad?"
+            )
+        self.ejecutar(
+            RevisarPlano(
+                plano_id,
+                documento_id,
+                tuple(
+                    (
+                        x.antes.elemento_id,
+                        x.despues.handle,
+                        x.despues.capa,
+                        tuple((v.x, v.y, v.bulge) for v in x.despues.contorno.vertices),
+                    )
+                    for x in [*r.iguales, *r.cambiados]
+                ),
+                tuple(c.elemento_id for c in r.desaparecidos),
+                tuple(descartes),
+                dxf.LECTOR,
+                dxf.VERSION,
+            )
+        )
+        return r
 
     def _valores(self, tipos_elemento: tuple[str, ...]) -> dict[str, dict[str, Any]]:
         marcas = ",".join("?" * len(tipos_elemento))
