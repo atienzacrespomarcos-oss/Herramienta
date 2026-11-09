@@ -83,6 +83,10 @@ class PreguntasPreparadas:
     def prevision(self, actual):
         return self._siguiente("prevision")
 
+    def futurible(self, modificados, actual=None):
+        r = self._siguiente("futurible")
+        return r(modificados, actual) if callable(r) else r
+
     def certificacion(self, explicacion, numero):
         self.explicaciones = [*getattr(self, "explicaciones", []), (explicacion, numero)]
         return self._siguiente("certificacion")

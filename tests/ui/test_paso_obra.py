@@ -1,4 +1,4 @@
-"""Pasos «Venta» y «Coste objetivo» desde la ventana (docs/modules/obra.md, bloque 1)."""
+"""Pasos de Obra desde la ventana (docs/modules/obra.md)."""
 
 from __future__ import annotations
 
@@ -205,3 +205,69 @@ def test_importar_certificacion_desde_la_ventana(ventana, tmp_path):
         for i in range(v.pagina_prevision.tabla.rowCount())
     }
     assert filas["Venta"] == "12.100,00 €" and filas["Margen"] == "12.100,00 €"
+
+
+def test_futuribles_escenario_y_excel_de_control(ventana, tmp_path):
+    v, q = ventana
+    p = v.proyecto
+    med_id = p.mediciones()[0]["id"]
+    p.fijar_venta_contratada(med_id)
+    p.fijar_prevision(coste_total=24000, venta_total=27000)
+    from traza.app.ordenes import CrearModificado, VariarPartida
+
+    o = CrearModificado(med_id, "Zona de carga")
+    p.ejecutar(o)
+    cnd = next(x["id"] for x in p.partidas(med_id) if x["codigo"] == "CND01")
+    p.ejecutar(VariarPartida(o.id, cnd, 150, "medicion", "Tramo B"))
+    v.refrescar()
+    assert "futuribles" in _claves(v)
+    v.ir_a_paso("futuribles")
+    pf = v.pagina_futuribles
+    assert "Sin futuribles" in pf.resumen.text()
+    assert not pf.a_marcar.isEnabled()
+
+    # Lo que ve el diálogo: los modificados del presupuesto contratado.
+    def desde_modificado(modificados, actual):
+        assert [m["titulo"] for m in modificados] == ["Zona de carga"] and actual is None
+        return {"titulo": "Zona de carga", "venta": None, "modificado_id": o.id, "coste": 2500}
+
+    q.preparar("futurible", desde_modificado)
+    pf.a_nuevo.trigger()
+    q.preparar("futurible", {"titulo": "Oficinas", "venta": 12000, "coste": 9000})
+    pf.a_nuevo.trigger()
+    assert not q.avisos, q.avisos
+    filas = [[pf.tabla.item(i, c).text() for c in range(5)] for i in range(pf.tabla.rowCount())]
+    assert filas[0] == ["Zona de carga", "3.000,00 €", "2.500,00 €", "500,00 €", "No"]
+    assert "modificado nº 1 «Zona de carga»" in pf.avisos.text()
+    pf.tabla.selectRow(0)
+    pf.a_marcar.trigger()
+    assert pf.tabla.item(0, 4).text() == "Sí"
+    assert "Con los 1 marcados: venta 30.000,00 €" in pf.resumen.text()
+    # Corregir: el diálogo recibe lo actual; el ya usado sigue ofrecido para sí mismo.
+    pf.tabla.selectRow(0)
+
+    def corregir(modificados, actual):
+        assert actual["modificado_id"] == o.id and actual["venta"] is None
+        assert [m["id"] for m in modificados] == [o.id]
+        return {**actual, "coste": 2000}
+
+    q.preparar("futurible", corregir)
+    pf.a_corregir.trigger()
+    assert not q.avisos, (q.titulos, q.avisos)
+    assert pf.tabla.item(0, 2).text() == "2.000,00 €" and pf.tabla.item(0, 4).text() == "Sí"
+
+    v.ir_a_paso("prevision")
+    pp = v.pagina_prevision
+    assert pp.tabla.item(0, 4).text() == "30.000,00 €"  # 27 000 + 3 000
+    assert pp.tabla.item(1, 4).text() == "26.000,00 €"  # 24 000 + 2 000
+    assert "Futuribles marcados: 1 de 2" in pp.resumen.text()
+    destino = tmp_path / "control.xlsx"
+    q.preparar("destino_excel", destino)
+    pp.a_excel.trigger()
+    assert not q.avisos, q.avisos
+    assert destino.exists()
+
+    v.ir_a_paso("futuribles")
+    pf.tabla.selectRow(1)
+    pf.a_quitar.trigger()
+    assert pf.tabla.rowCount() == 1

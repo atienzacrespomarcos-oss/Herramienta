@@ -41,6 +41,7 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "paquete_cerrado": ("paquete",),
     "prevision": ("id",),
     "certificacion": ("id",),
+    "futurible": ("id",),
 }
 
 

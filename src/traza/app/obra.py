@@ -335,3 +335,89 @@ def cruzar_certificacion(
             + ": revisa las líneas que no casan."
         )
     return r
+
+
+# --- Bloque 3: futuribles (escenarios sí/no) ----------------------------------------------
+#
+# Usuario (09-11-2026): «previsiones y parte de futuribles (si aprueban tal o no oferta)»;
+# escenarios sí/no, sin probabilidades. «Venta real y previsión (no confundir con
+# ampliaciones y demás)»: los futuribles nunca entran en tu previsión; se suman aparte.
+
+
+@dataclass(frozen=True)
+class Futurible:
+    id: str
+    titulo: str
+    venta: float | None  # None: la del modificado no se puede calcular entera
+    coste: float
+    marcado: bool
+    origen: str  # «escrita por ti» o «modificado nº N …»
+    nota: str | None = None
+    avisos: tuple[str, ...] = ()
+    modificado_id: str | None = None  # None: la venta la escribió el usuario
+
+    @property
+    def margen(self) -> float | None:
+        return None if self.venta is None else self.venta - self.coste
+
+
+@dataclass
+class Escenario:
+    """Tu previsión sin futuribles y con los marcados (sus ventas y costes sumados)."""
+
+    prevision: dict[str, Any] | None
+    futuribles: list[Futurible]
+
+    @property
+    def marcados(self) -> list[Futurible]:
+        return [f for f in self.futuribles if f.marcado]
+
+    @property
+    def venta_marcados(self) -> float | None:
+        """None si alguno marcado no tiene venta: no se suma una cifra a medias."""
+        ventas = [f.venta for f in self.marcados]
+        return None if any(v is None for v in ventas) else round(sum(ventas), 2)
+
+    @property
+    def coste_marcados(self) -> float:
+        return round(sum(f.coste for f in self.marcados), 2)
+
+    @property
+    def venta(self) -> float | None:
+        v = self.venta_marcados
+        return None if self.prevision is None or v is None else self.prevision["venta_total"] + v
+
+    @property
+    def coste(self) -> float | None:
+        p = self.prevision
+        return None if p is None else p["coste_total"] + self.coste_marcados
+
+    @property
+    def margen(self) -> float | None:
+        return None if self.venta is None or self.coste is None else self.venta - self.coste
+
+    @property
+    def margen_pct(self) -> float | None:
+        m = self.margen
+        return None if m is None or not self.venta else 100 * m / self.venta
+
+
+def venta_por_codigo(
+    partidas_venta: list[dict[str, Any]],
+) -> dict[str, tuple[str, str, float | None]]:
+    """clave → (código, resumen, venta), en el orden del presupuesto; como en el cruce de
+    las certificaciones (un código repetido suma sus líneas, cada una al céntimo). Las
+    partidas sin código no se pueden enlazar y no salen."""
+    salida: dict[str, tuple[str, str, float | None]] = {}
+    for p in partidas_venta:
+        clave = _clave(p["codigo"])
+        if not clave:
+            continue
+        imp = None if p["importe"] is None else round(p["importe"], 2)
+        if clave in salida:
+            codigo, texto, previo = salida[clave]
+            imp = None if imp is None and previo is None else (previo or 0.0) + (imp or 0.0)
+            salida[clave] = (codigo, texto, imp)
+        else:
+            salida[clave] = (p["codigo"].strip(), p["resumen"] or "", imp)
+    return salida

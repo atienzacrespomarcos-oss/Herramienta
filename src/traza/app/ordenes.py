@@ -711,6 +711,107 @@ class QuitarCertificacion(Orden):
         return [Delta("certificacion", c, None)]
 
 
+def _importe_futurible(nombre: str, valor) -> float:
+    if isinstance(valor, bool) or not isinstance(valor, int | float) or not math.isfinite(valor):
+        raise OrdenRechazada(f"{nombre} tiene que ser un número.")
+    # Al céntimo, como el resto de importes de la obra. Puede ser negativo: un modificado
+    # o una oferta pueden quitar alcance (y coste).
+    return round(float(valor), 2)
+
+
+@dataclass
+class GuardarFuturible(Orden):
+    """Una oferta o un modificado pendiente de aprobar (docs/modules/obra.md, bloque 3),
+    con su venta y su coste estimado. La venta, o la escribe el usuario, o es la de un
+    modificado de TRAZA sobre el presupuesto contratado (se calcula siempre al día). El
+    coste lo estima el usuario: TRAZA no lo inventa. Con `id` de uno existente, lo corrige
+    (conserva si está marcado)."""
+
+    titulo: str
+    coste: float
+    venta: float | None = None
+    modificado_id: str | None = None
+    nota: str | None = ""
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        titulo = " ".join(self.titulo.split())
+        if not titulo:
+            raise OrdenRechazada("El futurible necesita un título.")
+        if (self.venta is None) == (self.modificado_id is None):
+            raise OrdenRechazada(
+                "La venta del futurible, o la escribes tú, o es la de un modificado: una de "
+                "las dos."
+            )
+        coste = _importe_futurible("El coste estimado", self.coste)
+        venta = None if self.venta is None else _importe_futurible("La venta", self.venta)
+        if self.modificado_id is not None:
+            mod = leer(con, "modificado", {"id": self.modificado_id})
+            if mod is None:
+                raise OrdenRechazada("Ese modificado no existe.")
+            contratada = leer(con, "meta", {"clave": "venta_medicion"})
+            if contratada is None or contratada["valor"] != mod["medicion_id"]:
+                raise OrdenRechazada(
+                    f"El modificado «{mod['titulo']}» no es del presupuesto contratado: su "
+                    "venta no es una ampliación de esta obra."
+                )
+            otro = con.execute(
+                "SELECT titulo FROM futurible WHERE modificado_id = ? AND id <> ?",
+                (self.modificado_id, self.id),
+            ).fetchone()
+            if otro:
+                raise OrdenRechazada(
+                    f"El modificado «{mod['titulo']}» ya es el futurible «{otro['titulo']}»."
+                )
+        antes = leer(con, "futurible", {"id": self.id})
+        despues = {
+            "id": self.id,
+            "titulo": titulo,
+            "modificado_id": self.modificado_id,
+            "venta": venta,
+            "coste": coste,
+            "marcado": antes["marcado"] if antes else 0,
+            "nota": (self.nota or "").strip() or None,
+            "creado": antes["creado"] if antes else ahora(),
+        }
+        if antes == despues:
+            raise OrdenRechazada("No hay cambios en el futurible.")
+        return [Delta("futurible", antes, despues)]
+
+
+@dataclass
+class MarcarFuturible(Orden):
+    """Sí/no: entra o no en el escenario «con futuribles» (decisión del usuario: sin
+    probabilidades)."""
+
+    futurible_id: str
+    marcado: bool
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "futurible", {"id": self.futurible_id})
+        if antes is None:
+            raise OrdenRechazada("Ese futurible no existe.")
+        valor = 1 if self.marcado else 0
+        if antes["marcado"] == valor:
+            raise OrdenRechazada(
+                "Ya está en el escenario." if valor else "Ya está fuera del escenario."
+            )
+        return [Delta("futurible", antes, {**antes, "marcado": valor})]
+
+
+@dataclass
+class QuitarFuturible(Orden):
+    """Aprobado (pasa a tu previsión) o descartado: se quita de la lista."""
+
+    futurible_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        f = leer(con, "futurible", {"id": self.futurible_id})
+        if f is None:
+            raise OrdenRechazada("Ese futurible no existe.")
+        return [Delta("futurible", f, None)]
+
+
 #: Los pasos que pueden quedar desactualizados (app/flujo.DEPENDE; un test lo vigila).
 PASOS_CON_DEPENDENCIAS = ("cargas", "redes", "hidronica", "subcuadros")
 
@@ -1103,6 +1204,15 @@ class BorrarModificado(Orden):
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
         mod = _modificado(con, self.modificado_id)
+        futurible = con.execute(
+            "SELECT titulo FROM futurible WHERE modificado_id = ?", (self.modificado_id,)
+        ).fetchone()
+        if futurible:
+            # Su venta sale de este modificado: sin él, el futurible no tendría venta.
+            raise OrdenRechazada(
+                f"No se puede borrar: es el futurible «{futurible['titulo']}» de la obra. "
+                "Quita antes el futurible."
+            )
         cambios = [
             dict(r)
             for r in con.execute(

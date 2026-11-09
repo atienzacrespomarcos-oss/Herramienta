@@ -456,6 +456,12 @@ class Preguntas:
         d = DialogoPrevision(self.v, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def futurible(self, modificados: list[dict], actual: dict | None = None):
+        from traza.ui.dialogos_obra import DialogoFuturible
+
+        d = DialogoFuturible(self.v, modificados, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def nuevo_nivel(self):
         from traza.ui.dialogos_planos import DialogoNivel
 

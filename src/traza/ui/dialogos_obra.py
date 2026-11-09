@@ -1,4 +1,4 @@
-"""Diálogos de Obra: factura de un paquete y previsión del usuario (docs/modules/obra.md)."""
+"""Diálogos de Obra: factura, previsión, certificación y futurible (docs/modules/obra.md)."""
 
 from __future__ import annotations
 
@@ -171,4 +171,78 @@ class DialogoCertificacion(QDialog):
             "numero": self.numero.value(),
             "fecha": self.fecha.date().toString("yyyy-MM-dd"),
         }
+        self.accept()
+
+
+class DialogoFuturible(QDialog):
+    """Una oferta o un modificado pendiente: título, de dónde sale la venta (la escribe el
+    usuario o es la de un modificado de TRAZA) y el coste que estima el usuario."""
+
+    def __init__(self, padre: QWidget, modificados: list[dict], actual: dict | None) -> None:
+        super().__init__(padre)
+        self.setWindowTitle("Corregir futurible" if actual else "Futurible")
+        self.resultado: dict | None = None
+        self._modificados = modificados
+        self.titulo = QLineEdit()
+        self.titulo.setPlaceholderText("P. ej. «Ampliación oficinas planta 1»")
+        self.origen = QComboBox()
+        self.origen.addItem("La escribo yo")
+        self.origen.addItems([f"Modificado nº {m['numero']} · {m['titulo']}" for m in modificados])
+        self.venta = QLineEdit()
+        self.venta.setPlaceholderText("Venta de la oferta (€); en negativo si quita alcance")
+        self.coste = QLineEdit()
+        self.coste.setPlaceholderText("Tu estimación (€)")
+        self.nota = QLineEdit()
+        self.nota.setPlaceholderText("Opcional: estado, a quién se envió…")
+        self.error = QLabel()
+        self.error.setStyleSheet("color: #c0392b")
+        actual = actual or {}
+        self._id = actual.get("id")
+        self.titulo.setText(actual.get("titulo") or "")
+        if actual.get("modificado_id"):
+            i = next(
+                (n for n, m in enumerate(modificados) if m["id"] == actual["modificado_id"]), None
+            )
+            if i is not None:
+                self.origen.setCurrentIndex(i + 1)
+        if actual.get("venta") is not None:
+            self.venta.setText(escribir_numero(actual["venta"]))
+        if actual.get("coste") is not None:
+            self.coste.setText(escribir_numero(actual["coste"]))
+        self.nota.setText(actual.get("nota") or "")
+        self.origen.currentIndexChanged.connect(self._origen)
+        f = QFormLayout(self)
+        f.addRow("Futurible", self.titulo)
+        f.addRow("Venta", self.origen)
+        f.addRow("Venta (€)", self.venta)
+        f.addRow("Coste estimado (€)", self.coste)
+        f.addRow("Nota", self.nota)
+        f.addRow(self.error)
+        _botones(f, self, self._aceptar)
+        self._origen()
+
+    def _origen(self) -> None:
+        # La venta de un modificado la calcula TRAZA (al día): no se escribe.
+        self.venta.setEnabled(self.origen.currentIndex() == 0)
+
+    def _aceptar(self) -> None:
+        if not self.titulo.text().strip():
+            self.error.setText("Ponle un título al futurible.")
+            return
+        i = self.origen.currentIndex()
+        try:
+            venta = _importe(self.venta.text(), "Venta") if i == 0 else None
+            coste = _importe(self.coste.text(), "Coste estimado")
+        except ValueError as exc:
+            self.error.setText(str(exc))
+            return
+        self.resultado = {
+            "titulo": self.titulo.text().strip(),
+            "venta": venta,
+            "modificado_id": None if i == 0 else self._modificados[i - 1]["id"],
+            "coste": coste,
+            "nota": self.nota.text().strip(),
+        }
+        if self._id:
+            self.resultado["id"] = self._id
         self.accept()

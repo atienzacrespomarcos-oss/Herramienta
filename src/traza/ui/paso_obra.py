@@ -1,4 +1,5 @@
-"""Pasos de Obra: «Venta» y «Coste objetivo» (docs/modules/obra.md, bloque 1).
+"""Pasos de Obra: venta, coste objetivo y real, certificaciones, previsión y futuribles
+(docs/modules/obra.md).
 
 Presentación limpia: en pantalla, lo que decide (venta, objetivo, margen previsto y el
 objetivo por paquete); lo que no casa entre venta y coste, en una línea de aviso.
@@ -419,11 +420,14 @@ class PaginaPrevision(QWidget):
         self.a_prevision = ventana._accion(
             m, "Actualizar mi previsión…", lambda: self.accion_prevision()
         )
+        self.a_excel = ventana._accion(m, "Exportar Excel de control…", lambda: self.accion_excel())
         self.resumen = QLabel()
         self.resumen.setWordWrap(True)
-        self.tabla = _tabla(["", "Contrato y objetivo", "Real a hoy", "Tu previsión"])
+        self.tabla = _tabla(
+            ["", "Contrato y objetivo", "Real a hoy", "Tu previsión", "Con futuribles marcados"]
+        )
         caja = QVBoxLayout(self)
-        caja.addWidget(_barra([self.a_prevision]))
+        caja.addWidget(_barra([self.a_prevision, self.a_excel]))
         caja.addWidget(self.resumen)
         caja.addWidget(self.tabla, 1)
 
@@ -437,6 +441,13 @@ class PaginaPrevision(QWidget):
             self.proyecto.fijar_prevision(**datos)
             self.v.refrescar()
 
+    def accion_excel(self) -> None:
+        sugerido = self.proyecto.carpeta.exportaciones / f"{self.proyecto.nombre} - control.xlsx"
+        destino = self.v.preguntas.destino_excel(sugerido)
+        if destino is not None:
+            ruta = self.proyecto.exportar_control_obra(destino)
+            self.v.statusBar().showMessage(f"Excel guardado: {ruta}", 10000)
+
     def refrescar(self) -> None:
         from traza.ui.ventana import _llenar
 
@@ -445,6 +456,7 @@ class PaginaPrevision(QWidget):
             _llenar(self.tabla, [])
             return
         f = self.proyecto.foto_obra()
+        e = self.proyecto.escenario()
         p = f.prevision
         margen_obj = None if f.venta is None or f.objetivo is None else f.venta - f.objetivo
         filas = [
@@ -453,9 +465,22 @@ class PaginaPrevision(QWidget):
                 _eur(f.venta),
                 _eur(f.certificado),
                 _eur(p["venta_total"]) if p else "—",
+                _eur(e.venta),
             ],
-            ["Coste", _eur(f.objetivo), _eur(f.facturado), _eur(p["coste_total"]) if p else "—"],
-            ["Margen", _eur(margen_obj), _eur(f.margen_real), _eur(f.margen_previsto)],
+            [
+                "Coste",
+                _eur(f.objetivo),
+                _eur(f.facturado),
+                _eur(p["coste_total"]) if p else "—",
+                _eur(e.coste),
+            ],
+            [
+                "Margen",
+                _eur(margen_obj),
+                _eur(f.margen_real),
+                _eur(f.margen_previsto),
+                _eur(e.margen),
+            ],
             [
                 "Margen (%)",
                 _pct(100 * margen_obj / f.venta if margen_obj is not None and f.venta else None),
@@ -465,6 +490,7 @@ class PaginaPrevision(QWidget):
                     else None
                 ),
                 _pct(f.margen_previsto_pct),
+                _pct(e.margen_pct),
             ],
         ]
         _llenar(self.tabla, filas)
@@ -476,10 +502,22 @@ class PaginaPrevision(QWidget):
         )
         if f.certificado is None:
             texto += " Sin certificaciones: la venta real sale de «Obra → Importar certificación»."
+        if e.futuribles:
+            texto += f" Futuribles marcados: {len(e.marcados)} de {len(e.futuribles)}."
+            if e.marcados and e.venta_marcados is None and p:
+                texto += " Alguno marcado no tiene venta: el escenario no se puede sumar."
         self.resumen.setText(texto)
 
     def actualizar_estado(self, hay: bool) -> None:
-        self.a_prevision.setEnabled(_es_obra(self, hay))
+        con = _es_obra(self, hay)
+        self.a_prevision.setEnabled(con)
+        self.a_excel.setEnabled(
+            con
+            and (
+                self.proyecto.venta_contratada() is not None
+                or self.proyecto.coste_objetivo() is not None
+            )
+        )
 
 
 class PaginaCertificaciones(QWidget):
@@ -609,3 +647,150 @@ class PaginaCertificaciones(QWidget):
         con = _es_obra(self, hay)
         self.a_importar.setEnabled(con and self.proyecto.venta_contratada() is not None)
         self.a_quitar.setEnabled(con and bool(self.proyecto.certificaciones()))
+
+
+class PaginaFuturibles(QWidget):
+    """Ofertas y modificados pendientes de aprobar, sí/no en el escenario (usuario,
+    09-11-2026: sin probabilidades). Nunca entran en tu previsión: se suman aparte."""
+
+    def __init__(self, ventana) -> None:
+        super().__init__()
+        self.v = ventana
+        from traza.ui.ventana import _barra, _tabla
+
+        m = ventana.menu_obra
+        m.addSeparator()
+        a = ventana._accion
+        self.a_nuevo = a(m, "Nuevo futurible…", lambda: self.accion_nuevo())
+        self.a_corregir = a(m, "Corregir futurible…", lambda: self.accion_corregir())
+        self.a_marcar = a(m, "Sí / no en el escenario", lambda: self.accion_marcar())
+        self.a_quitar = a(m, "Quitar futurible", lambda: self.accion_quitar())
+        self.resumen = QLabel()
+        self.resumen.setWordWrap(True)
+        self.tabla = _tabla(["Futurible", "Venta", "Coste estimado", "Margen", "En el escenario"])
+        self.tabla.cellDoubleClicked.connect(lambda *_: self.accion_marcar())
+        self.avisos = QLabel()
+        self.avisos.setWordWrap(True)
+        caja = QVBoxLayout(self)
+        caja.addWidget(_barra([self.a_nuevo, self.a_corregir, self.a_marcar, self.a_quitar]))
+        caja.addWidget(self.resumen)
+        caja.addWidget(self.tabla, 1)
+        caja.addWidget(self.avisos)
+
+    @property
+    def proyecto(self):
+        return self.v.proyecto
+
+    def _elegido(self):
+        fila = self.tabla.currentRow()
+        item = self.tabla.item(fila, 0) if fila >= 0 else None
+        if item is None:
+            return None
+        from PySide6.QtCore import Qt
+
+        fid = item.data(Qt.UserRole)
+        return next((f for f in self.proyecto.futuribles() if f.id == fid), None)
+
+    def _modificados(self, actual_id: str | None = None) -> list[dict]:
+        """Los del presupuesto contratado que aún no son futurible (o son este)."""
+        venta = self.proyecto.venta_contratada()
+        if venta is None:
+            return []
+        usados = {f.modificado_id for f in self.proyecto.futuribles() if f.id != actual_id}
+        return [m for m in self.proyecto.modificados(venta["id"]) if m["id"] not in usados]
+
+    def accion_nuevo(self) -> None:
+        datos = self.v.preguntas.futurible(self._modificados(), None)
+        if datos is not None:
+            self.proyecto.guardar_futurible(**datos)
+            self.v.refrescar()
+
+    def accion_corregir(self) -> None:
+        f = self._elegido()
+        if f is None:
+            self.v.preguntas.aviso("Corregir futurible", "Elige un futurible de la lista.")
+            return
+        actual = {
+            "id": f.id,
+            "titulo": f.titulo,
+            "modificado_id": f.modificado_id,
+            "venta": f.venta if f.modificado_id is None else None,
+            "coste": f.coste,
+            "nota": f.nota,
+        }
+        datos = self.v.preguntas.futurible(self._modificados(f.id), actual)
+        if datos is not None:
+            self.proyecto.guardar_futurible(**datos)
+            self.v.refrescar()
+
+    def accion_marcar(self) -> None:
+        f = self._elegido()
+        if f is None:
+            self.v.preguntas.aviso("Escenario", "Elige un futurible de la lista.")
+            return
+        self.proyecto.marcar_futurible(f.id, not f.marcado)
+        self.v.refrescar()
+
+    def accion_quitar(self) -> None:
+        f = self._elegido()
+        if f is None:
+            self.v.preguntas.aviso("Quitar futurible", "Elige un futurible de la lista.")
+            return
+        self.proyecto.quitar_futurible(f.id)
+        self.v.refrescar()
+
+    def refrescar(self) -> None:
+        from traza.ui.ventana import _llenar
+
+        self.avisos.clear()
+        if self.proyecto is None:
+            self.resumen.clear()
+            _llenar(self.tabla, [])
+            return
+        e = self.proyecto.escenario()
+        fila_actual = self.tabla.currentRow()
+        _llenar(
+            self.tabla,
+            [
+                [
+                    f.titulo,
+                    _eur(f.venta),
+                    _eur(f.coste),
+                    _eur(f.margen),
+                    "Sí" if f.marcado else "No",
+                ]
+                for f in e.futuribles
+            ],
+            [f.id for f in e.futuribles],
+        )
+        if 0 <= fila_actual < self.tabla.rowCount():
+            self.tabla.selectRow(fila_actual)
+        if not e.futuribles:
+            self.resumen.setText(
+                "Sin futuribles. Apunta las ofertas o modificados pendientes de aprobar: "
+                "«Obra → Nuevo futurible…»."
+            )
+        elif e.prevision is None:
+            self.resumen.setText(
+                f"{len(e.marcados)} de {len(e.futuribles)} en el escenario. Pon tu previsión "
+                "(«Obra → Actualizar mi previsión…») para ver cómo queda con ellos."
+            )
+        else:
+            self.resumen.setText(
+                f"Con los {len(e.marcados)} marcados: venta {_eur(e.venta)}, coste "
+                f"{_eur(e.coste)}, margen {_eur(e.margen)} ({_pct(e.margen_pct)}). Sin "
+                "ellos, tu previsión (paso «Previsión»)."
+            )
+        self.avisos.setText(
+            "\n".join(
+                [f"Venta de «{f.titulo}»: {f.origen}." for f in e.futuribles if f.modificado_id]
+                + [f"⚠ «{f.titulo}»: {a}." for f in e.futuribles for a in f.avisos]
+            )
+        )
+
+    def actualizar_estado(self, hay: bool) -> None:
+        con = _es_obra(self, hay)
+        self.a_nuevo.setEnabled(con)
+        hay_alguno = con and bool(self.proyecto.futuribles())
+        for a in (self.a_corregir, self.a_marcar, self.a_quitar):
+            a.setEnabled(hay_alguno)
