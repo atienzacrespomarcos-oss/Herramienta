@@ -154,3 +154,95 @@ def _avisos_venta(r: ResumenObra, partidas: list[dict[str, Any]], medicion) -> N
             f"La suma de partidas no coincide con el total que declara el documento "
             f"({total_doc:.2f} €)."
         )
+
+
+# --- Bloque 2a: coste real, foto de lo real y previsión del usuario ---------------------
+#
+# Usuario (09-11-2026): «Quiero una foto de lo real (coste − venta hasta que yo actualice) y
+# una previsión que yo haga»; «lo quiero como un número total. El tema de hacerlo por
+# paquetes a mí me sirve para ver qué partidas se me está descuadrando».
+
+
+@dataclass(frozen=True)
+class EstadoPaquete:
+    nombre: str
+    objetivo: float
+    facturado: float
+    facturas: int
+    cerrado: bool
+    #: False: sus facturas son de un paquete que ya no está en el coste objetivo (se
+    #: reimportó con otros nombres). Sale en la lista para poder corregirlas o quitarlas.
+    en_objetivo: bool = True
+
+    @property
+    def diferencia(self) -> float:
+        """Objetivo − facturado: positiva, queda margen; negativa, se ha pasado."""
+        return self.objetivo - self.facturado
+
+
+@dataclass
+class Foto:
+    paquetes: list[EstadoPaquete]
+    facturado: float
+    certificado: float | None  # a origen; None sin certificaciones
+    prevision: dict[str, Any] | None
+    venta: float | None
+    objetivo: float | None
+    #: Facturas de paquetes que ya no están en el coste objetivo (se reimportó con otros).
+    huerfanas: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def margen_real(self) -> float | None:
+        """Lo certificado menos lo facturado, a la fecha de la última actualización."""
+        return None if self.certificado is None else self.certificado - self.facturado
+
+    @property
+    def margen_previsto(self) -> float | None:
+        p = self.prevision
+        return None if p is None else p["venta_total"] - p["coste_total"]
+
+    @property
+    def margen_previsto_pct(self) -> float | None:
+        p, m = self.prevision, self.margen_previsto
+        return None if p is None or not p["venta_total"] else 100 * m / p["venta_total"]
+
+    @property
+    def descuadrados(self) -> list[EstadoPaquete]:
+        """Paquetes que ya se han pasado de su objetivo (más de un céntimo)."""
+        return [x for x in self.paquetes if round(x.diferencia, 2) < -0.01]
+
+
+def foto(
+    resumen: ResumenObra,
+    facturas: list[dict[str, Any]],
+    cerrados: set[str],
+    certificado: float | None,
+    prevision: dict[str, Any] | None,
+) -> Foto:
+    por_paquete: dict[str, list[float]] = {}
+    for f in facturas:
+        por_paquete.setdefault(f["paquete"], []).append(f["importe"])
+    paquetes = [
+        EstadoPaquete(
+            nombre,
+            objetivo,
+            round(sum(por_paquete.get(nombre, [])), 2),
+            len(por_paquete.get(nombre, [])),
+            nombre in cerrados,
+        )
+        for nombre, objetivo in resumen.paquetes.items()
+    ]
+    huerfanas = {n: round(sum(v), 2) for n, v in por_paquete.items() if n not in resumen.paquetes}
+    paquetes += [
+        EstadoPaquete(n, 0.0, v, len(por_paquete[n]), n in cerrados, en_objetivo=False)
+        for n, v in huerfanas.items()
+    ]
+    return Foto(
+        paquetes,
+        round(sum(f["importe"] for f in facturas), 2),
+        certificado,
+        prevision,
+        resumen.venta,
+        resumen.objetivo,
+        huerfanas,
+    )

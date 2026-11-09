@@ -508,6 +508,152 @@ class ImportarCosteObjetivo(Orden):
         return [Delta("coste_objetivo", antes, despues)]
 
 
+def _paquetes(con: sqlite3.Connection) -> list[str]:
+    fila = leer(con, "coste_objetivo", {"id": 1})
+    if fila is None:
+        raise OrdenRechazada(
+            "Importa antes el coste objetivo: las facturas se apuntan a sus paquetes."
+        )
+    return json.loads(fila["paquetes"])
+
+
+def _fecha(texto: str) -> str:
+    """AAAA-MM-DD (la interfaz la escribe así)."""
+    try:
+        return datetime.strptime(texto.strip(), "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise OrdenRechazada(f"Fecha no válida: «{texto}» (AAAA-MM-DD).") from None
+
+
+@dataclass
+class RegistrarFactura(Orden):
+    """Una factura de un paquete de coste (docs/modules/obra.md, «Coste real»). Importe sin
+    IVA; negativo si es un abono. Con `id` de una existente, la corrige."""
+
+    paquete: str
+    proveedor: str
+    numero: str
+    fecha: str
+    importe: float
+    documento_id: str | None = None
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if self.paquete not in _paquetes(con):
+            raise OrdenRechazada(f"«{self.paquete}» no es un paquete del coste objetivo.")
+        if leer(con, "paquete_cerrado", {"paquete": self.paquete}) is not None:
+            raise OrdenRechazada(
+                f"El paquete «{self.paquete}» está cerrado: reábrelo antes de apuntarle facturas."
+            )
+        proveedor, numero = self.proveedor.strip(), self.numero.strip()
+        if not proveedor or not numero:
+            raise OrdenRechazada("La factura necesita proveedor y número.")
+        if isinstance(self.importe, bool) or not isinstance(self.importe, int | float):
+            raise OrdenRechazada("El importe tiene que ser un número.")
+        # Al céntimo, como la venta y el coste objetivo (revisión 09-11-2026).
+        importe = round(float(self.importe), 2) if math.isfinite(self.importe) else 0.0
+        if importe == 0:
+            raise OrdenRechazada("El importe no puede ser 0 (un abono va en negativo).")
+        if self.documento_id and leer(con, "documento", {"id": self.documento_id}) is None:
+            raise OrdenRechazada("El documento de la factura no está incorporado.")
+        # El mismo proveedor y número aunque cambien mayúsculas o espacios: «ACME» y «Acme»
+        # contarían dos veces la misma factura (revisión 09-11-2026).
+        clave = (" ".join(proveedor.split()).casefold(), " ".join(numero.split()).casefold())
+        otra = next(
+            (
+                r[0]
+                for r in con.execute(
+                    "SELECT id, proveedor, numero FROM factura WHERE id <> ?", (self.id,)
+                )
+                if (" ".join(r[1].split()).casefold(), " ".join(r[2].split()).casefold()) == clave
+            ),
+            None,
+        )
+        if otra:
+            raise OrdenRechazada(f"Ya está apuntada la factura {numero} de {proveedor}.")
+        antes = leer(con, "factura", {"id": self.id})
+        despues = {
+            "id": self.id,
+            "paquete": self.paquete,
+            "proveedor": proveedor,
+            "numero": numero,
+            "fecha": _fecha(self.fecha),
+            "importe": importe,
+            "documento_id": self.documento_id,
+            "creado": antes["creado"] if antes else ahora(),
+        }
+        if antes is not None:
+            if leer(con, "paquete_cerrado", {"paquete": antes["paquete"]}) is not None:
+                raise OrdenRechazada(
+                    f"La factura es del paquete cerrado «{antes['paquete']}»: reábrelo antes."
+                )
+            if antes == despues:
+                raise OrdenRechazada("No hay cambios en la factura.")
+        return [Delta("factura", antes, despues)]
+
+
+@dataclass
+class QuitarFactura(Orden):
+    factura_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        f = leer(con, "factura", {"id": self.factura_id})
+        if f is None:
+            raise OrdenRechazada("Esa factura no existe.")
+        if leer(con, "paquete_cerrado", {"paquete": f["paquete"]}) is not None:
+            raise OrdenRechazada(f"El paquete «{f['paquete']}» está cerrado: reábrelo antes.")
+        return [Delta("factura", f, None)]
+
+
+@dataclass
+class CerrarPaquete(Orden):
+    """El paquete está liquidado: lo facturado es su coste final. Reabrir es otra orden
+    (queda en el registro de cambios, línea roja 5)."""
+
+    paquete: str
+    cerrar: bool = True
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        antes = leer(con, "paquete_cerrado", {"paquete": self.paquete})
+        if self.cerrar:
+            if self.paquete not in _paquetes(con):
+                raise OrdenRechazada(f"«{self.paquete}» no es un paquete del coste objetivo.")
+            if antes is not None:
+                raise OrdenRechazada("Ese paquete ya está cerrado.")
+            return [Delta("paquete_cerrado", None, {"paquete": self.paquete, "fecha": ahora()})]
+        if antes is None:
+            raise OrdenRechazada("Ese paquete no está cerrado.")
+        return [Delta("paquete_cerrado", antes, None)]
+
+
+@dataclass
+class FijarPrevision(Orden):
+    """La previsión del usuario: dos totales a fin de obra (docs/modules/obra.md). TRAZA no
+    la estima: la guarda tal cual, con su fecha."""
+
+    coste_total: float
+    venta_total: float
+    nota: str = ""
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        for nombre, v in (("coste", self.coste_total), ("venta", self.venta_total)):
+            if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v):
+                raise OrdenRechazada(f"La {nombre} prevista tiene que ser un número.")
+            if v < 0:
+                raise OrdenRechazada(f"La {nombre} prevista no puede ser negativa.")
+        antes = leer(con, "prevision", {"id": 1})
+        despues = {
+            "id": 1,
+            "coste_total": float(self.coste_total),
+            "venta_total": float(self.venta_total),
+            "nota": self.nota.strip() or None,
+            "fecha": ahora(),
+        }
+        if antes is not None and {**antes, "fecha": None} == {**despues, "fecha": None}:
+            raise OrdenRechazada("La previsión no cambia.")
+        return [Delta("prevision", antes, despues)]
+
+
 #: Los pasos que pueden quedar desactualizados (app/flujo.DEPENDE; un test lo vigila).
 PASOS_CON_DEPENDENCIAS = ("cargas", "redes", "hidronica", "subcuadros")
 

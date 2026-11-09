@@ -1,7 +1,7 @@
 # Obra: control de venta, costes, certificaciones y previsión
 
-Estado: **diseño aprobado** (09-11-2026). **Bloque 1 implementado** (crear obra, venta y
-coste objetivo).
+Estado: **diseño aprobado** (09-11-2026). **Bloques 1 y 2a implementados** (crear obra, venta,
+coste objetivo, coste real y previsión).
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -64,6 +64,8 @@ solo se toma la **estructura** y la forma de trabajar:
 | Previsión | «Quiero una **foto de lo real** (coste − venta hasta que yo actualice) y una **previsión que yo haga** de costes y posible certificación para saber». TRAZA no estima: muestra lo real y la previsión que introduce el usuario. |
 | Certificaciones (detalle) | «Lo que te daré será **mi Excel de certificación**. Saco el presupuesto de venta del Presto. Y por meses-certificaciones hago las certificaciones sobre el 100 % de cada capítulo, partida y subpartida». TRAZA lee ese Excel (por partida, a origen, por mes). Falta un ejemplo. |
 | Diseño | Aprobado el resto («Sí, construye»). |
+| Venta y coste (09-11-2026) | «Coste real y previsión. **Venta real y previsión** (no confundir con ampliaciones y demás)». Venta real = lo **certificado** a origen; venta prevista = la que el usuario prevé a fin de obra. Las ampliaciones, modificados y ofertas pendientes **no** entran en la previsión: son futuribles (bloque 3). |
+| Plantillas por cliente | «Yo puedo tener una plantilla pero un cliente funcione con otra»: TRAZA interpreta cualquier Excel de certificación (bloque 2b), no una plantilla fija. |
 | Previsión (nivel) | «Cuando te hablo de previsión, yo lo quiero como un **número total**. El tema de hacerlo por paquetes a mí me sirve para ver qué partidas se me están descuadrando, en caso de que se me descuadren o viceversa, pero yo al final lo que quiero son números totales». |
 
 ## Diseño propuesto (para revisar con el usuario antes de construir)
@@ -94,15 +96,15 @@ solo se toma la **estructura** y la forma de trabajar:
 ### Certificaciones (las hace el usuario, en su Excel)
 - Se lee el **Excel de certificación** del usuario: por capítulo, partida y subpartida, lo
   certificado a origen de cada mes sobre el 100 % de la venta. TRAZA no decide qué se
-  certifica: lo registra y lo suma (lectura por diseñar con un ejemplo real).
+  certifica: lo registra y lo suma (cómo se interpreta cualquier Excel: «Bloque 2b»).
 - Da el certificado del mes y a origen, por partida y total, y el % sobre la venta.
 
 ### Foto de lo real y previsión del usuario
-- **Foto de lo real** (a la fecha de la última actualización): venta certificada a origen,
-  coste facturado, y su diferencia (margen real hasta hoy); por paquete, objetivo frente
-  a facturado.
+- **Foto de lo real** (a la fecha de la última actualización): **venta real** (lo
+  certificado a origen), **coste real** (lo facturado) y su diferencia (margen real hasta
+  hoy); por paquete, objetivo frente a facturado.
 - **Previsión**: la introduce el usuario como **dos totales**: coste previsto a fin de obra
-  y certificación prevista a fin de obra (con su fecha de actualización). TRAZA no la
+  y **venta prevista** a fin de obra (con su fecha de actualización). TRAZA no la
   estima; la muestra junto a lo real y al objetivo, con el margen previsto que resulta.
 - **Paquetes**: sirven para **ver dónde se descuadra** (objetivo frente a facturado de cada
   paquete, en más o en menos), no para la previsión.
@@ -162,10 +164,46 @@ solo se toma la **estructura** y la forma de trabajar:
   venta. Partidas enlazadas por código (sin espacios a los lados ni mayúsculas); las que
   no casan se cuentan en pantalla.
 
+## Cómo está hecho el bloque 2a (decisiones de método, 09-11-2026)
+
+- **Coste real** (paso «Coste real»): facturas apuntadas a los paquetes del coste objetivo
+  (proveedor, nº, fecha, importe sin IVA; un abono, en negativo). Un proveedor no repite
+  número. Arriba, cada paquete con su objetivo, lo facturado, la diferencia (objetivo −
+  facturado) y si está abierto o cerrado; abajo, las facturas del paquete elegido.
+  - **Descuadres**: se listan los paquetes que ya se han pasado de su objetivo.
+  - **Cerrar paquete**: queda liquidado; no admite facturas nuevas ni cambios en las suyas
+    hasta reabrirlo (cerrar y reabrir quedan en el registro de cambios).
+  - Si se reimporta el coste objetivo y un paquete cambia de nombre, sus facturas siguen
+    en la lista con su paquete marcado «ya no está en el objetivo»: se pueden corregir
+    (eligiendo un paquete del objetivo), quitar o reabrir su paquete. Si el objetivo de un
+    paquete **cerrado** cambia al reimportar, se avisa.
+  - Importes al céntimo; un importe que redondea a 0 se rechaza. El mismo proveedor y
+    número no se repiten aunque cambien mayúsculas o espacios.
+  - Sin facturas al empezar la obra, el paso no lleva marca (no es un pendiente).
+- **Previsión** (paso «Previsión», «Obra → Actualizar mi previsión…»): dos totales que
+  pone el usuario, **venta** y **coste** a fin de obra, con nota opcional y su fecha. Una
+  tabla de tres columnas: **contrato y objetivo** (venta, objetivo, margen), **real a
+  hoy** (venta real = certificado, coste real = facturado, margen real) y **tu
+  previsión** (venta, coste, margen previsto, con su %). Las ampliaciones, modificados y
+  ofertas pendientes no entran: son futuribles (bloque 3).
+- La venta real (certificado a origen) llega con las certificaciones (bloque 2b); hasta
+  entonces, no consta («—»). Esquema V12 (`factura`, `paquete_cerrado`, `prevision`).
+
+## Bloque 2b: certificaciones (decidido, por construir)
+
+Usuario (09-11-2026): «No necesitas plantilla (quizá te pase alguna pero al final debes ser
+capaz de interpretar un Excel)». Por eso:
+1. Reconocer las columnas por sus títulos (código, resumen, importe a origen, del mes,
+   anterior, % a origen, importe de presupuesto…), lo específico antes que lo general.
+2. Si no se reconocen, Claude Code (suscripción del usuario, ADR-0013) **solo dice qué
+   columna es qué** mirando las filas de títulos; las cifras las lee TRAZA de las celdas.
+3. Las líneas se enlazan con las partidas de la venta por código (capítulos y subtotales
+   no suman dos veces) y la suma se contrasta con la fila de TOTAL del Excel.
+4. Antes de importar, se enseña lo entendido (qué columna es qué y el total a origen) para
+   que el usuario lo confirme.
+
 ## Pendiente
 
 - Revisión del diseño por el usuario.
-- Un ejemplo del Excel de certificación del usuario (para el bloque 2).
-- Construir por bloques: ~~(1) crear obra, venta y coste objetivo~~ (hecho); (2) coste real,
-  certificaciones, foto de lo real y previsión del usuario; (3) futuribles y Excel de
-  control.
+- Construir por bloques: ~~(1) crear obra, venta y coste objetivo~~; ~~(2a) coste real,
+  foto de lo real y previsión~~; (2b) certificaciones; (3) futuribles y Excel de control.

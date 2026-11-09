@@ -37,6 +37,9 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "subcuadro": ("id",),
     "paso_revisado": ("paso",),
     "coste_objetivo": ("id",),
+    "factura": ("id",),
+    "paquete_cerrado": ("paquete",),
+    "prevision": ("id",),
 }
 
 

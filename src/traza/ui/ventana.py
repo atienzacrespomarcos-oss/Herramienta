@@ -139,6 +139,8 @@ PASOS = [
     ("mediciones", "Mediciones y ofertas", OFERTA | OBRA),
     ("venta", "Venta", OBRA),
     ("coste_objetivo", "Coste objetivo", OBRA),
+    ("coste_real", "Coste real", OBRA),
+    ("prevision", "Previsión", OBRA),
     ("modificados", "Modificados", OFERTA | OBRA),
     ("equipos", "Equipos", TODOS),
     ("entregables", "Entregables", CON_ENTREGABLES),
@@ -413,10 +415,17 @@ class VentanaPrincipal(QMainWindow):
 
         self.pagina_entregables = PaginaEntregables(self, self._ajustes)
         # Pasos de Obra: módulo propio (ui/paso_obra.py).
-        from traza.ui.paso_obra import PaginaCosteObjetivo, PaginaVenta
+        from traza.ui.paso_obra import (
+            PaginaCosteObjetivo,
+            PaginaCosteReal,
+            PaginaPrevision,
+            PaginaVenta,
+        )
 
         self.pagina_venta = PaginaVenta(self)
         self.pagina_coste_objetivo = PaginaCosteObjetivo(self)
+        self.pagina_coste_real = PaginaCosteReal(self)
+        self.pagina_prevision = PaginaPrevision(self)
         self._pagina = {
             "documentacion": doc,
             "planos": self.pagina_planos,
@@ -430,6 +439,8 @@ class VentanaPrincipal(QMainWindow):
             "entregables": self.pagina_entregables,
             "venta": self.pagina_venta,
             "coste_objetivo": self.pagina_coste_objetivo,
+            "coste_real": self.pagina_coste_real,
+            "prevision": self.pagina_prevision,
         }
         for p in self._pagina.values():
             self.paginas.addWidget(p)
@@ -658,6 +669,8 @@ class VentanaPrincipal(QMainWindow):
         if hasattr(self, "pagina_coste_objetivo"):
             self.pagina_venta.actualizar_estado(hay)
             self.pagina_coste_objetivo.actualizar_estado(hay)
+            self.pagina_coste_real.actualizar_estado(hay)
+            self.pagina_prevision.actualizar_estado(hay)
         el = self.elemento_seleccionado() if hay else None
         aprobado = el is not None and el["estado"] == Estado.APROBADO
         for a in (
@@ -719,6 +732,8 @@ class VentanaPrincipal(QMainWindow):
         self.pagina_entregables.refrescar()
         self.pagina_venta.refrescar()
         self.pagina_coste_objetivo.refrescar()
+        self.pagina_coste_real.refrescar()
+        self.pagina_prevision.refrescar()
         self._refrescar_historial()
         self._refrescar_pendientes()
         self._actualizar_estado()

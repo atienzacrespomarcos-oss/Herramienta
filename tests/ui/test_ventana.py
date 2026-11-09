@@ -76,6 +76,13 @@ class PreguntasPreparadas:
     def plantilla_word(self):
         return self._siguiente("plantilla_word")
 
+    def factura(self, paquetes, actual=None):
+        r = self._siguiente("factura")
+        return r(paquetes, actual) if callable(r) else r
+
+    def prevision(self, actual):
+        return self._siguiente("prevision")
+
     def encargo(self, actual):
         return self._siguiente("encargo")
 

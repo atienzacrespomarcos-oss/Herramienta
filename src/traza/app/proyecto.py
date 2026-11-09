@@ -28,6 +28,7 @@ from traza.app.ordenes import (
     BorrarSubcuadro,
     CambiarEstado,
     CambiarPlano,
+    CerrarPaquete,
     ConfirmarContorno,
     CrearPendiente,
     DarPorRevisado,
@@ -37,6 +38,7 @@ from traza.app.ordenes import (
     DescartarPropuesta,
     FijarCargasEspacio,
     FijarCargasProyecto,
+    FijarPrevision,
     FijarPropiedad,
     FijarVentaContratada,
     ImportarCosteObjetivo,
@@ -45,8 +47,10 @@ from traza.app.ordenes import (
     Orden,
     OrdenRechazada,
     PartidaNueva,
+    QuitarFactura,
     QuitarVentaContratada,
     RegistrarDocumento,
+    RegistrarFactura,
     RevisarPlano,
     ahora,
     nuevo_id,
@@ -569,6 +573,15 @@ class Proyecto:
             r = coste_presto.leer(self.ruta_documento(documento_id))
         except coste_presto.CosteNoReconocido as exc:
             raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        # Un paquete cerrado no cambia de objetivo en silencio (línea roja 5): se avisa.
+        antes = self.resumen_obra().paquetes if self.coste_objetivo() else {}
+        nuevos = r.por_paquete()
+        for nombre in sorted(self.paquetes_cerrados()):
+            if nombre in antes and round(abs(nuevos.get(nombre, 0.0) - antes[nombre]), 2) > 0.01:
+                r.avisos.append(
+                    f"El paquete cerrado «{nombre}» cambia de objetivo: "
+                    f"{antes[nombre]:.2f} € → {nuevos.get(nombre, 0.0):.2f} €.".replace(".", ",")
+                )
         self.ejecutar(
             ImportarCosteObjetivo(
                 documento_id,
@@ -616,6 +629,44 @@ class Proyecto:
 
     def quitar_venta_contratada(self) -> None:
         self.ejecutar(QuitarVentaContratada())
+
+    # --- Obra, bloque 2a: coste real y previsión ----------------------------------------
+
+    def facturas(self) -> list[dict[str, Any]]:
+        return self._filas("SELECT * FROM factura ORDER BY paquete, fecha, proveedor, numero")
+
+    def registrar_factura(self, **datos: Any) -> str:
+        orden = RegistrarFactura(**datos)
+        self.ejecutar(orden)
+        return orden.id
+
+    def quitar_factura(self, factura_id: str) -> None:
+        self.ejecutar(QuitarFactura(factura_id))
+
+    def paquetes_cerrados(self) -> set[str]:
+        return {f["paquete"] for f in self._filas("SELECT paquete FROM paquete_cerrado")}
+
+    def cerrar_paquete(self, paquete: str, cerrar: bool = True) -> None:
+        self.ejecutar(CerrarPaquete(paquete, cerrar))
+
+    def prevision(self) -> dict[str, Any] | None:
+        return leer(self._con, "prevision", {"id": 1})
+
+    def fijar_prevision(self, coste_total: float, venta_total: float, nota: str = "") -> None:
+        self.ejecutar(FijarPrevision(coste_total, venta_total, nota))
+
+    def certificado_a_origen(self) -> float | None:
+        """Lo certificado a origen (bloque 2b: certificaciones). Hasta entonces, no consta."""
+        return None
+
+    def foto_obra(self) -> calculo_obra.Foto:
+        return calculo_obra.foto(
+            self.resumen_obra(),
+            self.facturas(),
+            self.paquetes_cerrados(),
+            self.certificado_a_origen(),
+            self.prevision(),
+        )
 
     def mediciones(self) -> list[dict[str, Any]]:
         filas = self._filas(

@@ -10,6 +10,7 @@ from collections import defaultdict
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from traza.app.ordenes import OrdenRechazada
 from traza.core.numeros import escribir_numero
 
 
@@ -213,3 +214,265 @@ class PaginaCosteObjetivo(_Pagina):
         # Con un proyecto abierto, solo en Obra (como sus pasos); sin proyecto se ve
         # deshabilitado, como los demás menús.
         self.v.menu_obra.menuAction().setVisible(not hay or con)
+
+
+def _fecha_es(iso: str | None) -> str:
+    """AAAA-MM-DD(…) → DD-MM-AAAA."""
+    if not iso:
+        return ""
+    a, m, d = iso[:10].split("-")
+    return f"{d}-{m}-{a}"
+
+
+class PaginaCosteReal(QWidget):
+    """Facturas por paquete y estado de cada paquete (docs/modules/obra.md, bloque 2a).
+    Arriba los paquetes (objetivo frente a facturado: dónde se descuadra); abajo, las
+    facturas del paquete elegido."""
+
+    def __init__(self, ventana) -> None:
+        super().__init__()
+        self.v = ventana
+        from traza.ui.ventana import _barra, _tabla
+
+        m = ventana.menu_obra
+        m.addSeparator()
+        a = ventana._accion
+        self.a_factura = a(m, "Nueva factura…", lambda: self.accion_factura())
+        self.a_corregir = a(m, "Corregir factura…", lambda: self.accion_corregir())
+        self.a_quitar = a(m, "Quitar factura", lambda: self.accion_quitar())
+        self.a_cerrar = a(m, "Cerrar paquete", lambda: self.accion_cerrar(True))
+        self.a_reabrir = a(m, "Reabrir paquete", lambda: self.accion_cerrar(False))
+        self.resumen = QLabel()
+        self.resumen.setWordWrap(True)
+        self.tabla = _tabla(["Paquete", "Objetivo", "Facturado", "Diferencia", "Estado"])
+        self.tabla.itemSelectionChanged.connect(lambda: self._refrescar_facturas())
+        self.facturas = _tabla(["Fecha", "Proveedor", "Nº", "Importe"])
+        self.avisos = QLabel()
+        self.avisos.setWordWrap(True)
+        caja = QVBoxLayout(self)
+        caja.addWidget(
+            _barra([self.a_factura, self.a_corregir, self.a_quitar, self.a_cerrar, self.a_reabrir])
+        )
+        caja.addWidget(self.resumen)
+        caja.addWidget(self.tabla, 2)
+        caja.addWidget(QLabel("Facturas del paquete elegido:"))
+        caja.addWidget(self.facturas, 1)
+        caja.addWidget(self.avisos)
+
+    @property
+    def proyecto(self):
+        return self.v.proyecto
+
+    def paquete(self) -> str | None:
+        fila = self.tabla.currentRow()
+        item = self.tabla.item(fila, 0) if fila >= 0 else None
+        return item.text() if item else None
+
+    def factura_id(self) -> str | None:
+        from PySide6.QtCore import Qt
+
+        fila = self.facturas.currentRow()
+        item = self.facturas.item(fila, 0) if fila >= 0 else None
+        return item.data(Qt.UserRole) if item else None
+
+    # --- Acciones ------------------------------------------------------------------------
+
+    def _pedir(self, actual: dict | None) -> None:
+        paquetes = list(self.proyecto.coste_objetivo()["paquetes"])
+        if actual and actual.get("paquete") and actual["paquete"] not in paquetes:
+            # Factura de un paquete que ya no está en el objetivo: el diálogo lo enseña tal
+            # cual (no lo cambia en silencio por el primero); la orden pide elegir otro.
+            paquetes.append(actual["paquete"])
+        # Si la orden rechaza algo, el diálogo vuelve con lo escrito.
+        while True:
+            datos = self.v.preguntas.factura(paquetes, actual)
+            if datos is None:
+                return
+            try:
+                self.proyecto.registrar_factura(**datos)
+            except OrdenRechazada as exc:
+                self.v.preguntas.aviso("Factura", str(exc))
+                actual = {**datos, "id": datos.get("id")}
+                continue
+            break
+        self.v.refrescar()
+        self._elegir(datos["paquete"])
+
+    def accion_factura(self) -> None:
+        # Con un paquete elegido en la lista, el diálogo sale con él.
+        self._pedir({"paquete": self.paquete()} if self.paquete() else None)
+
+    def accion_corregir(self) -> None:
+        fid = self.factura_id()
+        if fid is None:
+            self.v.preguntas.aviso("Corregir factura", "Elige una factura de la lista de abajo.")
+            return
+        self._pedir(next(f for f in self.proyecto.facturas() if f["id"] == fid))
+
+    def accion_quitar(self) -> None:
+        fid = self.factura_id()
+        if fid is None:
+            self.v.preguntas.aviso("Quitar factura", "Elige una factura de la lista de abajo.")
+            return
+        paquete = self.paquete()
+        self.proyecto.quitar_factura(fid)
+        self.v.refrescar()
+        self._elegir(paquete)
+
+    def accion_cerrar(self, cerrar: bool) -> None:
+        paquete = self.paquete()
+        if paquete is None:
+            self.v.preguntas.aviso("Paquete", "Elige un paquete de la lista.")
+            return
+        self.proyecto.cerrar_paquete(paquete, cerrar)
+        self.v.refrescar()
+        self._elegir(paquete)
+
+    def _elegir(self, paquete: str | None) -> None:
+        for i in range(self.tabla.rowCount()):
+            if self.tabla.item(i, 0).text() == paquete:
+                self.tabla.setCurrentCell(i, 0)
+                return
+
+    # --- Estado --------------------------------------------------------------------------
+
+    def refrescar(self) -> None:
+        from traza.ui.ventana import _llenar
+
+        elegido = self.paquete()
+        self.avisos.clear()
+        if self.proyecto is None or self.proyecto.coste_objetivo() is None:
+            self.resumen.setText(
+                ""
+                if self.proyecto is None
+                else "Importa antes el coste objetivo: las facturas se apuntan a sus paquetes."
+            )
+            _llenar(self.tabla, [])
+            _llenar(self.facturas, [])
+            return
+        f = self.proyecto.foto_obra()
+        self.resumen.setText(
+            f"Objetivo: {_eur(f.objetivo)} · Facturado: {_eur(f.facturado)} · "
+            f"Diferencia: {_eur((f.objetivo or 0) - f.facturado)}."
+        )
+        _llenar(
+            self.tabla,
+            [
+                [
+                    x.nombre,
+                    _eur(x.objetivo),
+                    _eur(x.facturado),
+                    _eur(x.diferencia),
+                    ("Cerrado" if x.cerrado else "Abierto")
+                    + ("" if x.en_objetivo else " · ya no está en el objetivo"),
+                ]
+                for x in f.paquetes
+            ],
+        )
+        avisos = []
+        if f.descuadrados:
+            avisos.append(
+                "Se han pasado del objetivo: "
+                + ", ".join(f"{x.nombre} ({_eur(-x.diferencia)})" for x in f.descuadrados)
+                + "."
+            )
+        if f.huerfanas:
+            avisos.append(
+                "Facturas de paquetes que ya no están en el coste objetivo: "
+                + ", ".join(f"{n} ({_eur(v)})" for n, v in f.huerfanas.items())
+                + "."
+            )
+        self.avisos.setText("\n".join(f"⚠ {a}" for a in avisos))
+        self._elegir(elegido)
+        self._refrescar_facturas()
+
+    def _refrescar_facturas(self) -> None:
+        from traza.ui.ventana import _llenar
+
+        paquete = self.paquete()
+        filas = [x for x in self.proyecto.facturas() if x["paquete"] == paquete] if paquete else []
+        _llenar(
+            self.facturas,
+            [
+                [_fecha_es(x["fecha"]), x["proveedor"], x["numero"], _eur(x["importe"])]
+                for x in filas
+            ],
+            [x["id"] for x in filas],
+        )
+
+    def actualizar_estado(self, hay: bool) -> None:
+        con = _es_obra(self, hay) and self.proyecto.coste_objetivo() is not None
+        for a in (self.a_factura, self.a_corregir, self.a_quitar, self.a_cerrar, self.a_reabrir):
+            a.setEnabled(con)
+
+
+class PaginaPrevision(QWidget):
+    """Foto de lo real y previsión del usuario (dos totales; TRAZA no la estima)."""
+
+    def __init__(self, ventana) -> None:
+        super().__init__()
+        self.v = ventana
+        from traza.ui.ventana import _barra, _tabla
+
+        m = ventana.menu_obra
+        m.addSeparator()
+        self.a_prevision = ventana._accion(
+            m, "Actualizar mi previsión…", lambda: self.accion_prevision()
+        )
+        self.resumen = QLabel()
+        self.resumen.setWordWrap(True)
+        self.tabla = _tabla(["", "Contrato y objetivo", "Real a hoy", "Tu previsión"])
+        caja = QVBoxLayout(self)
+        caja.addWidget(_barra([self.a_prevision]))
+        caja.addWidget(self.resumen)
+        caja.addWidget(self.tabla, 1)
+
+    @property
+    def proyecto(self):
+        return self.v.proyecto
+
+    def accion_prevision(self) -> None:
+        datos = self.v.preguntas.prevision(self.proyecto.prevision())
+        if datos is not None:
+            self.proyecto.fijar_prevision(**datos)
+            self.v.refrescar()
+
+    def refrescar(self) -> None:
+        from traza.ui.ventana import _llenar
+
+        if self.proyecto is None:
+            self.resumen.clear()
+            _llenar(self.tabla, [])
+            return
+        f = self.proyecto.foto_obra()
+        p = f.prevision
+        margen_obj = None if f.venta is None or f.objetivo is None else f.venta - f.objetivo
+        filas = [
+            [
+                "Venta",
+                _eur(f.venta),
+                _eur(f.certificado),
+                _eur(p["venta_total"]) if p else "—",
+            ],
+            ["Coste", _eur(f.objetivo), _eur(f.facturado), _eur(p["coste_total"]) if p else "—"],
+            ["Margen", _eur(margen_obj), _eur(f.margen_real), _eur(f.margen_previsto)],
+            [
+                "Margen (%)",
+                _pct(100 * margen_obj / f.venta if margen_obj is not None and f.venta else None),
+                "—",
+                _pct(f.margen_previsto_pct),
+            ],
+        ]
+        _llenar(self.tabla, filas)
+        texto = (
+            f"Tu previsión: actualizada el {_fecha_es(p['fecha'])}."
+            + (f" {p['nota']}" if p and p["nota"] else "")
+            if p
+            else "Aún no has puesto tu previsión: «Obra → Actualizar mi previsión…»."
+        )
+        if f.certificado is None:
+            texto += " La venta real (lo certificado) llegará con las certificaciones."
+        self.resumen.setText(texto)
+
+    def actualizar_estado(self, hay: bool) -> None:
+        self.a_prevision.setEnabled(_es_obra(self, hay))

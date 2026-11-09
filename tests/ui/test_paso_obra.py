@@ -107,3 +107,65 @@ def test_objetivo_cero_con_paquetes_no_rompe_la_pantalla(ventana, monkeypatch):
         for i in range(v.pagina_coste_objetivo.tabla.rowCount())
     ]
     assert "(sin repartir en paquetes)" in filas
+
+
+def _preparar_obra(v, q):
+    q.preparar("elegir", 0)
+    v.pagina_venta.a_contratado.trigger()
+    q.preparar("elegir", 0)
+    v.pagina_coste_objetivo.a_importar.trigger()
+
+
+def test_coste_real_facturas_y_cerrar(ventana):
+    v, q = ventana
+    _preparar_obra(v, q)
+    pc = v.pagina_coste_real
+    v.ir_a_paso("coste_real")
+    assert pc.tabla.rowCount() == 3 and pc.a_factura.isEnabled()
+    pc.tabla.setCurrentCell(0, 0)  # EQUIPOS
+    vistos = []
+
+    def rellenar(paquetes, actual):
+        vistos.append(actual)
+        return {
+            "paquete": "EQUIPOS",
+            "proveedor": "Fabricante",
+            "numero": "F-1",
+            "fecha": "2026-11-03",
+            "importe": 19000.0,
+        }
+
+    q.preparar("factura", rellenar)
+    pc.a_factura.trigger()
+    assert not q.avisos, q.avisos
+    assert vistos == [{"paquete": "EQUIPOS"}]  # sale con el paquete elegido
+    fila = [pc.tabla.item(0, j).text() for j in range(5)]
+    assert fila == ["EQUIPOS", "18.600,00 €", "19.000,00 €", "-400,00 €", "Abierto"]
+    assert "Se han pasado del objetivo: EQUIPOS (400,00 €)" in pc.avisos.text()
+    assert pc.facturas.rowCount() == 1 and pc.facturas.item(0, 0).text() == "03-11-2026"
+    # Repetida: el diálogo vuelve con lo escrito y se puede cancelar.
+    q.preparar("factura", rellenar, None)
+    pc.a_factura.trigger()
+    assert any("Ya está apuntada" in a for a in q.avisos)
+    pc.tabla.setCurrentCell(0, 0)
+    pc.a_cerrar.trigger()
+    assert pc.tabla.item(0, 4).text() == "Cerrado"
+
+
+def test_prevision_en_pantalla(ventana):
+    v, q = ventana
+    _preparar_obra(v, q)
+    pp = v.pagina_prevision
+    v.ir_a_paso("prevision")
+    assert "Aún no has puesto tu previsión" in pp.resumen.text()
+    q.preparar("prevision", {"venta_total": 27000.0, "coste_total": 24000.0, "nota": ""})
+    pp.a_prevision.trigger()
+    assert not q.avisos, q.avisos
+    filas = {
+        pp.tabla.item(i, 0).text(): [pp.tabla.item(i, j).text() for j in (1, 2, 3)]
+        for i in range(pp.tabla.rowCount())
+    }
+    assert filas["Venta"] == ["26.500,00 €", "—", "27.000,00 €"]
+    assert filas["Coste"] == ["23.200,00 €", "0,00 €", "24.000,00 €"]
+    assert filas["Margen"] == ["3.300,00 €", "—", "3.000,00 €"]
+    assert "La venta real (lo certificado) llegará con las certificaciones" in pp.resumen.text()
