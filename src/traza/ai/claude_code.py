@@ -154,7 +154,14 @@ def extraer(
     return _ejecutar([str(claude)], contenido, imagenes)
 
 
-def _ejecutar(base: list[str], contenido: str, imagenes: dict[int, Path] | None) -> dict[str, Any]:
+def _ejecutar(
+    base: list[str],
+    contenido: str,
+    imagenes: dict[int, Path] | None,
+    instrucciones: str = INSTRUCCIONES,
+    esquema: dict[str, Any] = ESQUEMA,
+    clave: str = "partidas",
+) -> dict[str, Any]:
     herramientas = ""
     carpeta = None
     if imagenes:
@@ -167,11 +174,11 @@ def _ejecutar(base: list[str], contenido: str, imagenes: dict[int, Path] | None)
     args = [
         *base,
         "-p",
-        INSTRUCCIONES,
+        instrucciones,
         "--output-format",
         "json",
         "--json-schema",
-        json.dumps(ESQUEMA, ensure_ascii=False),
+        json.dumps(esquema, ensure_ascii=False),
         "--tools",
         herramientas,
         "--permission-mode",
@@ -202,10 +209,12 @@ def _ejecutar(base: list[str], contenido: str, imagenes: dict[int, Path] | None)
         raise IaError(f"Claude Code no ha respondido en {TIEMPO_MAXIMO_S // 60} minutos.") from exc
     except OSError as exc:
         raise IaNoDisponible(f"No se puede ejecutar Claude Code: {exc}") from exc
-    return interpretar_salida(r.returncode, r.stdout, r.stderr)
+    return interpretar_salida(r.returncode, r.stdout, r.stderr, clave)
 
 
-def interpretar_salida(codigo: int, stdout: str, stderr: str) -> dict[str, Any]:
+def interpretar_salida(
+    codigo: int, stdout: str, stderr: str, clave: str = "partidas"
+) -> dict[str, Any]:
     """Los fallos de sesión llegan por stdout con código 0: no basta mirar el código."""
     try:
         datos = json.loads(stdout)
@@ -217,9 +226,85 @@ def interpretar_salida(codigo: int, stdout: str, stderr: str) -> dict[str, Any]:
     if datos.get("is_error") or codigo != 0:
         raise IaError(f"Claude Code devolvió un error: {str(datos.get('result', ''))[:500]}")
     salida = datos.get("structured_output")
-    if not isinstance(salida, dict) or "partidas" not in salida:
+    if not isinstance(salida, dict) or clave not in salida:
         raise IaError(
             "Claude Code no ha devuelto la extracción estructurada. "
             f"Mensaje: {str(datos.get('result', ''))[:500]}"
         )
     return salida
+
+
+# --- Qué columna es qué en un Excel de certificación (docs/modules/obra.md, bloque 2b) ----
+#
+# Usuario (09-11-2026): «al final debes ser capaz de interpretar un Excel»; «yo puedo tener
+# una plantilla pero un cliente funcione con otra». La IA SOLO dice qué columna es qué
+# mirando las filas de títulos; no lee ni devuelve ninguna cifra (las lee TRAZA de las
+# celdas, app/obra y io/certificacion_excel).
+
+_COLUMNA = {"type": ["string", "null"], "description": "Letra de la columna (p. ej. «H») o null"}
+
+ESQUEMA_MAPEO: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "hoja": {"type": "string"},
+        "fila_titulos": {"type": "integer"},
+        "columnas": {
+            "type": "object",
+            "properties": {
+                rol: _COLUMNA
+                for rol in (
+                    "codigo",
+                    "resumen",
+                    "naturaleza",
+                    "importe_origen",
+                    "importe_anterior",
+                    "importe_mes",
+                    "porcentaje_origen",
+                    "importe_presupuesto",
+                )
+            },
+            "required": [
+                "codigo",
+                "resumen",
+                "naturaleza",
+                "importe_origen",
+                "importe_anterior",
+                "importe_mes",
+                "porcentaje_origen",
+                "importe_presupuesto",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["hoja", "fila_titulos", "columnas"],
+    "additionalProperties": False,
+}
+
+INSTRUCCIONES_MAPEO = """Eres un técnico de obra en España. Te paso las primeras filas de \
+un Excel de CERTIFICACIÓN de obra (lo ejecutado sobre el presupuesto), con la referencia de \
+cada celda. Di solo QUÉ COLUMNA ES QUÉ; no leas ni devuelvas ninguna cifra.
+
+- "hoja" y "fila_titulos": la hoja y la fila donde están los títulos de las columnas.
+- "columnas": la letra de la columna de cada dato, o null si no está:
+  codigo (código de la partida o capítulo), resumen (descripción), naturaleza (si hay una
+  columna que dice Capítulo/Partida), importe_origen (importe certificado A ORIGEN, es decir,
+  acumulado hasta esta certificación), importe_anterior (certificado en las anteriores),
+  importe_mes (certificado en ESTA certificación), porcentaje_origen (% ejecutado a origen),
+  importe_presupuesto (importe del presupuesto, el 100 %).
+- Si dudas entre dos columnas para un dato, pon null: es mejor no saberlo que equivocarse.
+El Excel viene a continuación."""
+
+
+def mapear_columnas(contenido: str, comando: list[str] | None = None) -> dict[str, Any]:
+    """Pregunta a Claude Code qué columna es qué (sin cifras). `comando`, solo en pruebas."""
+    if comando is not None:
+        base = comando
+    else:
+        claude = disponible()
+        if claude is None or claude.suffix.lower() in (".cmd", ".bat"):
+            raise IaNoDisponible(
+                "Para interpretar este Excel hace falta Claude Code (versión nativa) con tu "
+                "suscripción: TRAZA no ha reconocido sus columnas por los títulos."
+            )
+        base = [str(claude)]
+    return _ejecutar(base, contenido, None, INSTRUCCIONES_MAPEO, ESQUEMA_MAPEO, "columnas")

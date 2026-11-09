@@ -459,7 +459,11 @@ class PaginaPrevision(QWidget):
             [
                 "Margen (%)",
                 _pct(100 * margen_obj / f.venta if margen_obj is not None and f.venta else None),
-                "—",
+                _pct(
+                    100 * f.margen_real / f.certificado
+                    if f.margen_real is not None and f.certificado
+                    else None
+                ),
                 _pct(f.margen_previsto_pct),
             ],
         ]
@@ -471,8 +475,137 @@ class PaginaPrevision(QWidget):
             else "Aún no has puesto tu previsión: «Obra → Actualizar mi previsión…»."
         )
         if f.certificado is None:
-            texto += " La venta real (lo certificado) llegará con las certificaciones."
+            texto += " Sin certificaciones: la venta real sale de «Obra → Importar certificación»."
         self.resumen.setText(texto)
 
     def actualizar_estado(self, hay: bool) -> None:
         self.a_prevision.setEnabled(_es_obra(self, hay))
+
+
+class PaginaCertificaciones(QWidget):
+    """Certificaciones del usuario (o del cliente), leídas de su Excel: la venta real."""
+
+    def __init__(self, ventana) -> None:
+        super().__init__()
+        self.v = ventana
+        from traza.ui.ventana import _barra, _tabla
+
+        m = ventana.menu_obra
+        m.addSeparator()
+        a = ventana._accion
+        self.a_importar = a(m, "Importar certificación (Excel)…", lambda: self.accion_importar())
+        self.a_quitar = a(m, "Quitar certificación", lambda: self.accion_quitar())
+        self.resumen = QLabel()
+        self.resumen.setWordWrap(True)
+        self.tabla = _tabla(["Nº", "Fecha", "A origen", "De esta certificación", "% de la venta"])
+        self.avisos = QLabel()
+        self.avisos.setWordWrap(True)
+        caja = QVBoxLayout(self)
+        caja.addWidget(_barra([self.a_importar, self.a_quitar]))
+        caja.addWidget(self.resumen)
+        caja.addWidget(self.tabla, 1)
+        caja.addWidget(self.avisos)
+
+    @property
+    def proyecto(self):
+        return self.v.proyecto
+
+    def accion_importar(self) -> None:
+        docs = [
+            d for d in self.proyecto.documentos() if d["extension"].lower() in (".xlsx", ".xlsm")
+        ]
+        if not docs:
+            self.v.preguntas.aviso(
+                "Certificación",
+                "Incorpora antes en «Documentación» el Excel de la certificación.",
+            )
+            return
+        i = self.v.preguntas.elegir(
+            "Certificación", "Excel de la certificación:", [d["nombre_original"] for d in docs]
+        )
+        if i is None:
+            return
+        doc = docs[i]
+        mapa, r = self.proyecto.leer_certificacion(
+            doc["id"],
+            lambda f: self.v._en_segundo_plano(
+                f, "Preguntando a la IA qué columna es qué…", "Certificación"
+            ),
+        )
+        from traza.io.certificacion_excel import descripcion
+
+        venta = self.proyecto.resumen_obra().venta
+        texto = (
+            ("He entendido (por sus títulos): " if mapa.origen == "títulos" else "La IA dice: ")
+            + descripcion(mapa)
+            + f"\n\nCertificado a origen: {_eur(r.total)}"
+            + (f" ({_pct(100 * r.total / venta)} de la venta)" if venta else "")
+            + f", en {len(r.por_partida)} partida(s) de la venta."
+            + (f" {r.capitulos} fila(s) de capítulo o subtotal no suman." if r.capitulos else "")
+            + ("\n\n" + "\n".join(f"⚠ {a}" for a in r.avisos) if r.avisos else "")
+        )
+        hechas = self.proyecto.certificaciones()
+        datos = self.v.preguntas.certificacion(texto, (hechas[-1]["numero"] + 1) if hechas else 1)
+        if datos is None:
+            return
+        self.proyecto.importar_certificacion(doc["id"], datos["numero"], datos["fecha"], mapa, r)
+        self.v.refrescar()
+
+    def accion_quitar(self) -> None:
+        fila = self.tabla.currentRow()
+        item = self.tabla.item(fila, 0) if fila >= 0 else None
+        if item is None:
+            self.v.preguntas.aviso("Quitar certificación", "Elige una certificación de la lista.")
+            return
+        from PySide6.QtCore import Qt
+
+        self.proyecto.quitar_certificacion(item.data(Qt.UserRole))
+        self.v.refrescar()
+
+    def refrescar(self) -> None:
+        from traza.ui.ventana import _llenar
+
+        self.avisos.clear()
+        if self.proyecto is None:
+            self.resumen.clear()
+            _llenar(self.tabla, [])
+            return
+        certs = self.proyecto.certificaciones()
+        venta = self.proyecto.resumen_obra().venta
+        if not certs:
+            self.resumen.setText(
+                "Sin certificaciones. Importa el Excel de cada una (tuyo o del cliente): "
+                "«Obra → Importar certificación (Excel)…»."
+            )
+        else:
+            ultima = certs[-1]
+            self.resumen.setText(
+                f"Venta real (certificado a origen, nº {ultima['numero']}): "
+                f"{_eur(ultima['total_origen'])}"
+                + (
+                    f" de {_eur(venta)} ({_pct(100 * ultima['total_origen'] / venta)})."
+                    if venta
+                    else "."
+                )
+            )
+            notas = [f"Nº {c['numero']}: {c['nota']}." for c in certs if c["nota"]]
+            self.avisos.setText("\n".join(f"⚠ {a}" for a in [*notas, *ultima["avisos"]]))
+        _llenar(
+            self.tabla,
+            [
+                [
+                    str(c["numero"]),
+                    _fecha_es(c["fecha"]),
+                    _eur(c["total_origen"]),
+                    _eur(c["del_mes"]),
+                    _pct(100 * c["total_origen"] / venta if venta else None),
+                ]
+                for c in certs
+            ],
+            [c["id"] for c in certs],
+        )
+
+    def actualizar_estado(self, hay: bool) -> None:
+        con = _es_obra(self, hay)
+        self.a_importar.setEnabled(con and self.proyecto.venta_contratada() is not None)
+        self.a_quitar.setEnabled(con and bool(self.proyecto.certificaciones()))

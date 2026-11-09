@@ -444,6 +444,12 @@ class Preguntas:
         d = DialogoFactura(self.v, paquetes, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def certificacion(self, explicacion: str, numero: int):
+        from traza.ui.dialogos_obra import DialogoCertificacion
+
+        d = DialogoCertificacion(self.v, explicacion, numero)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def prevision(self, actual: dict | None):
         from traza.ui.dialogos_obra import DialogoPrevision
 

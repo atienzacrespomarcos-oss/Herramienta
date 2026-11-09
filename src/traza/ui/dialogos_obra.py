@@ -134,3 +134,41 @@ class DialogoPrevision(QDialog):
             "nota": self.nota.text().strip(),
         }
         self.accept()
+
+
+class DialogoCertificacion(QDialog):
+    """Antes de importar: lo que TRAZA ha entendido del Excel (qué columna es qué, total a
+    origen y avisos) y el número y la fecha de la certificación."""
+
+    def __init__(self, padre: QWidget, explicacion: str, numero: int) -> None:
+        from PySide6.QtWidgets import QSpinBox
+
+        super().__init__(padre)
+        self.setWindowTitle("Importar certificación")
+        self.resultado: dict | None = None
+        from PySide6.QtWidgets import QPlainTextEdit
+
+        # Con muchos avisos, una etiqueta se salía de la pantalla: texto con barra.
+        texto = QPlainTextEdit(explicacion)
+        texto.setReadOnly(True)
+        texto.setMinimumSize(560, 220)
+        self.numero = QSpinBox()
+        self.numero.setRange(1, 999)
+        self.numero.setValue(numero)
+        self.fecha = QDateEdit()
+        self.fecha.setCalendarPopup(True)
+        self.fecha.setDisplayFormat("dd-MM-yyyy")
+        hoy = date.today()
+        self.fecha.setDate(QDate(hoy.year, hoy.month, hoy.day))
+        f = QFormLayout(self)
+        f.addRow(texto)
+        f.addRow("Nº de certificación", self.numero)
+        f.addRow("Fecha", self.fecha)
+        _botones(f, self, self._aceptar)
+
+    def _aceptar(self) -> None:
+        self.resultado = {
+            "numero": self.numero.value(),
+            "fecha": self.fecha.date().toString("yyyy-MM-dd"),
+        }
+        self.accept()

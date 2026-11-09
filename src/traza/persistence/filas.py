@@ -40,6 +40,7 @@ CLAVES: dict[str, tuple[str, ...]] = {
     "factura": ("id",),
     "paquete_cerrado": ("paquete",),
     "prevision": ("id",),
+    "certificacion": ("id",),
 }
 
 

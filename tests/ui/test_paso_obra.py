@@ -24,6 +24,10 @@ def ventana(qtbot, tmp_path):
     bc3.write_bytes(BC3_VENTA.encode("cp1252"))
     p.leer_medicion(p.incorporar_documento(bc3), "presupuesto")
     p.incorporar_documento(comparativo(tmp_path / "Costes.xlsx"))
+    # Las pruebas nunca llaman a la IA real.
+    from tests.integration.test_obra_certificaciones import sin_ia
+
+    p.mapeador_ia = sin_ia
     v._usar_proyecto(p)
     yield v, q
     if v.proyecto is not None:
@@ -168,4 +172,36 @@ def test_prevision_en_pantalla(ventana):
     assert filas["Venta"] == ["26.500,00 €", "—", "27.000,00 €"]
     assert filas["Coste"] == ["23.200,00 €", "0,00 €", "24.000,00 €"]
     assert filas["Margen"] == ["3.300,00 €", "—", "3.000,00 €"]
-    assert "La venta real (lo certificado) llegará con las certificaciones" in pp.resumen.text()
+    assert "Sin certificaciones: la venta real sale de" in pp.resumen.text()
+
+
+def test_importar_certificacion_desde_la_ventana(ventana, tmp_path):
+    from tests.integration.test_obra_certificaciones import SUYO, excel
+
+    v, q = ventana
+    _preparar_obra(v, q)
+    p = v.proyecto
+    p.incorporar_documento(excel(tmp_path / "Cert3.xlsx", SUYO, titulo_en=3))
+    v.refrescar()
+    pc = v.pagina_certificaciones
+    v.ir_a_paso("certificaciones")
+    assert "Sin certificaciones" in pc.resumen.text() and pc.a_importar.isEnabled()
+    docs = [d["nombre_original"] for d in p.documentos() if d["extension"] == ".xlsx"]
+    q.preparar("elegir", docs.index("Cert3.xlsx"))
+    q.preparar("certificacion", {"numero": 3, "fecha": "2026-11-30"})
+    pc.a_importar.trigger()
+    assert not q.avisos, q.avisos
+    explicacion, numero = q.explicaciones[-1]
+    assert numero == 1  # la primera: se propone el nº 1
+    assert "importe a origen en E («Importe a origen»)" in explicacion
+    assert "Certificado a origen: 12.100,00 €" in explicacion
+    assert "no coincide con el TOTAL del Excel" in explicacion
+    fila = [pc.tabla.item(0, j).text() for j in range(5)]
+    assert fila == ["3", "30-11-2026", "12.100,00 €", "12.100,00 €", "45,7 %"]
+    assert "Venta real (certificado a origen, nº 3): 12.100,00 €" in pc.resumen.text()
+    # La previsión ya enseña la venta real.
+    filas = {
+        v.pagina_prevision.tabla.item(i, 0).text(): v.pagina_prevision.tabla.item(i, 2).text()
+        for i in range(v.pagina_prevision.tabla.rowCount())
+    }
+    assert filas["Venta"] == "12.100,00 €" and filas["Margen"] == "12.100,00 €"

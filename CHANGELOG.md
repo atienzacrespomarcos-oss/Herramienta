@@ -2,6 +2,14 @@
 
 ## [Sin publicar]
 
+### Obra · bloque 2b: certificaciones desde cualquier Excel (09-11-2026)
+- Paso **Certificaciones**: importa el Excel de cada certificación, sea la plantilla del
+  usuario o la de un cliente. Columnas por sus títulos o, si no se reconocen, la IA dice
+  qué columna es qué (las cifras las lee TRAZA). Se enseña lo entendido antes de importar.
+- Cruce con la venta por código (capítulos y subtotales no suman), contraste con el TOTAL
+  del Excel, avisos de lo que no casa o pasa del 100 %. Venta real = certificado a origen.
+- Esquema V13.
+
 ### Obra · bloque 2a: coste real y previsión (09-11-2026)
 - **Coste real**: facturas por paquete (proveedor, nº, fecha, importe; abonos en negativo),
   objetivo frente a facturado por paquete, paquetes que se han pasado, cerrar y reabrir.

@@ -11,9 +11,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from traza.app.proyecto import Proyecto  # noqa: E402
 
 
+def _sin_ia(_texto):
+    from traza.ai.claude_code import IaNoDisponible
+
+    raise IaNoDisponible("IA no disponible en las pruebas")
+
+
 @pytest.fixture
 def proyecto(tmp_path: Path):
     p = Proyecto.crear(tmp_path / "Nave prueba", "Nave prueba")
+    p.mapeador_ia = _sin_ia  # ninguna prueba llama a la IA real
     yield p
     p.cerrar()
 

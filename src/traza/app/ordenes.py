@@ -654,6 +654,63 @@ class FijarPrevision(Orden):
         return [Delta("prevision", antes, despues)]
 
 
+@dataclass
+class ImportarCertificacion(Orden):
+    """Una certificación (la hace el usuario; TRAZA la registra): importe a origen por
+    partida de la venta, leído de su Excel (io/certificacion_excel + app/obra)."""
+
+    numero: int
+    fecha: str
+    documento_id: str
+    partidas: dict[str, list[Any]]  # clave → [código, resumen, importe a origen]
+    total_origen: float
+    mapa: dict[str, Any]
+    avisos: list[str]
+    lector: str
+    version_lector: str
+    id: str = field(default_factory=nuevo_id)
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if leer(con, "documento", {"id": self.documento_id}) is None:
+            raise OrdenRechazada("El documento no está incorporado al proyecto.")
+        if isinstance(self.numero, bool) or not isinstance(self.numero, int) or self.numero < 1:
+            raise OrdenRechazada("El número de certificación es un entero desde 1.")
+        if con.execute("SELECT 1 FROM certificacion WHERE numero = ?", (self.numero,)).fetchone():
+            raise OrdenRechazada(f"Ya hay una certificación nº {self.numero}.")
+        if not self.partidas:
+            raise OrdenRechazada("La certificación no tiene ninguna partida de la venta.")
+        return [
+            Delta(
+                "certificacion",
+                None,
+                {
+                    "id": self.id,
+                    "numero": self.numero,
+                    "fecha": _fecha(self.fecha),
+                    "documento_id": self.documento_id,
+                    "total_origen": round(float(self.total_origen), 2),
+                    "partidas": json.dumps(self.partidas, ensure_ascii=False),
+                    "mapa": json.dumps(self.mapa, ensure_ascii=False),
+                    "avisos": json.dumps(self.avisos, ensure_ascii=False),
+                    "lector": self.lector,
+                    "version_lector": self.version_lector,
+                    "leido": ahora(),
+                },
+            )
+        ]
+
+
+@dataclass
+class QuitarCertificacion(Orden):
+    certificacion_id: str
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        c = leer(con, "certificacion", {"id": self.certificacion_id})
+        if c is None:
+            raise OrdenRechazada("Esa certificación no existe.")
+        return [Delta("certificacion", c, None)]
+
+
 #: Los pasos que pueden quedar desactualizados (app/flujo.DEPENDE; un test lo vigila).
 PASOS_CON_DEPENDENCIAS = ("cargas", "redes", "hidronica", "subcuadros")
 

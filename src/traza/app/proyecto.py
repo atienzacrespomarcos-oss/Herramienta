@@ -41,12 +41,14 @@ from traza.app.ordenes import (
     FijarPrevision,
     FijarPropiedad,
     FijarVentaContratada,
+    ImportarCertificacion,
     ImportarCosteObjetivo,
     ImportarMedicion,
     LeerPlano,
     Orden,
     OrdenRechazada,
     PartidaNueva,
+    QuitarCertificacion,
     QuitarFactura,
     QuitarVentaContratada,
     RegistrarDocumento,
@@ -62,6 +64,7 @@ from traza.core.procedencia import Origen, Procedencia
 from traza.io import (
     bc3,
     bc3_modificar,
+    certificacion_excel,
     clima_idae,
     coste_presto,
     dxf,
@@ -101,6 +104,8 @@ class Proyecto:
         self._deshacer: list[_Paso] = []
         #: Quién lee PDF y Excel. Por defecto Claude Code (ADR-0013); las pruebas lo sustituyen.
         self.extractor_ia = claude_code.extraer
+        #: Qué columna es qué en un Excel de certificación (sustituible en pruebas).
+        self.mapeador_ia = claude_code.mapear_columnas
         self._rehacer: list[_Paso] = []
         #: DXF ya leídos en esta sesión (el documento no cambia).
         self._planos_dxf: dict[str, dxf.PlanoDxf] = {}
@@ -655,9 +660,135 @@ class Proyecto:
     def fijar_prevision(self, coste_total: float, venta_total: float, nota: str = "") -> None:
         self.ejecutar(FijarPrevision(coste_total, venta_total, nota))
 
+    # --- Obra, bloque 2b: certificaciones ------------------------------------------------
+
+    def leer_certificacion(
+        self, documento_id: str, esperar: Callable[[Callable], Any] | None = None
+    ) -> tuple[certificacion_excel.Mapa, calculo_obra.ResultadoCertificacion]:
+        """Interpreta un Excel de certificación (no escribe nada): las columnas por sus
+        títulos o, si no se reconocen, por la IA (solo letras de columna; las cifras las
+        lee TRAZA). Devuelve el mapa, para enseñarlo, y lo leído cruzado con la venta."""
+        venta = self.venta_contratada()
+        if venta is None:
+            raise OrdenRechazada(
+                "Elige antes el presupuesto contratado: la certificación se cruza con su venta."
+            )
+        doc = leer(self._con, "documento", {"id": documento_id})
+        if doc is None:
+            raise OrdenRechazada("Documento no incorporado.")
+        if doc["extension"].lower() not in (".xlsx", ".xlsm"):
+            raise OrdenRechazada(
+                f"«{doc['nombre_original']}» no es un Excel (.xlsx): guárdalo desde Excel."
+            )
+        ruta = self.ruta_documento(documento_id)
+        try:
+            candidatos = certificacion_excel.mapas(ruta)
+            mapa = None
+            if candidatos:
+                # Varias hojas con columnas de certificación (resumen y detalle, una por
+                # capítulo…): se lee la que más partidas casa con la venta, y se dice.
+                mapa, leido, resultado = self._mejor_hoja(ruta, candidatos, venta["id"])
+                if len(candidatos) > 1:
+                    otras = ", ".join(f"«{m.hoja}»" for m in candidatos if m is not mapa)
+                    resultado.avisos.append(
+                        f"Se ha leído la hoja «{mapa.hoja}», la que más casa con la venta; "
+                        f"hay más hojas con columnas de certificación: {otras}."
+                    )
+                return mapa, resultado
+            if mapa is None:
+                texto = certificacion_excel.volcado_titulos(ruta)
+                esperar = esperar or (lambda f: f())
+                try:
+                    propuesta = esperar(lambda: self.mapeador_ia(texto))
+                except (claude_code.IaNoDisponible, claude_code.IaError) as exc:
+                    raise OrdenRechazada(
+                        f"TRAZA no reconoce las columnas de «{doc['nombre_original']}» por sus "
+                        f"títulos y no ha podido preguntar a la IA: {exc}"
+                    ) from exc
+                mapa = certificacion_excel.mapa_de_ia(ruta, propuesta)
+            leido = certificacion_excel.leer(ruta, mapa)
+            resultado = calculo_obra.cruzar_certificacion(leido, self.partidas(venta["id"]))
+        except (certificacion_excel.CertificacionNoReconocida, ValueError) as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        return mapa, resultado
+
+    def _mejor_hoja(self, ruta, candidatos, venta_id):
+        partidas = self.partidas(venta_id)
+        mejor, error = None, None
+        for m in candidatos:
+            try:
+                leido = certificacion_excel.leer(ruta, m)
+                r = calculo_obra.cruzar_certificacion(leido, partidas)
+            except (certificacion_excel.CertificacionNoReconocida, ValueError) as exc:
+                error = error or exc
+                continue
+            if mejor is None or len(r.por_partida) > len(mejor[2].por_partida):
+                mejor = (m, leido, r)
+        if mejor is None:
+            raise error
+        return mejor
+
+    def importar_certificacion(
+        self,
+        documento_id: str,
+        numero: int,
+        fecha: str,
+        mapa: certificacion_excel.Mapa,
+        resultado: calculo_obra.ResultadoCertificacion,
+    ) -> str:
+        orden = ImportarCertificacion(
+            numero,
+            fecha,
+            documento_id,
+            {k: list(v) for k, v in resultado.por_partida.items()},
+            resultado.total,
+            {
+                "hoja": mapa.hoja,
+                "fila_titulos": mapa.fila_titulos,
+                "columnas": mapa.columnas,
+                "titulos": mapa.titulos,
+                "origen": mapa.origen,
+            },
+            resultado.avisos,
+            certificacion_excel.LECTOR,
+            certificacion_excel.VERSION,
+        )
+        self.ejecutar(orden)
+        return orden.id
+
+    def certificaciones(self) -> list[dict[str, Any]]:
+        """Por número, con el importe de cada una (a origen menos la anterior) y una nota si
+        abarca varias (números saltados) o baja (a origen menor que la anterior)."""
+        filas = self._filas(
+            "SELECT c.*, d.nombre_original AS documento_nombre FROM certificacion c"
+            " JOIN documento d ON d.id = c.documento_id ORDER BY c.numero"
+        )
+        anterior, numero = 0.0, 0
+        for f in filas:
+            for clave in ("partidas", "mapa", "avisos"):
+                f[clave] = json.loads(f[clave])
+            f["del_mes"] = round(f["total_origen"] - anterior, 2)
+            notas = []
+            if f["numero"] != numero + 1:
+                notas.append(
+                    f"tras la nº {numero}: incluye lo de las que faltan"
+                    if numero
+                    else f"es la primera registrada: incluye lo anterior a la nº {f['numero']}"
+                )
+            if f["del_mes"] < 0:
+                notas.append("a origen menor que la anterior (corrección a la baja)")
+            f["nota"] = "; ".join(notas)
+            anterior, numero = f["total_origen"], f["numero"]
+        return filas
+
+    def quitar_certificacion(self, certificacion_id: str) -> None:
+        self.ejecutar(QuitarCertificacion(certificacion_id))
+
     def certificado_a_origen(self) -> float | None:
-        """Lo certificado a origen (bloque 2b: certificaciones). Hasta entonces, no consta."""
-        return None
+        """La venta real: lo certificado a origen en la última certificación (None si no
+        hay ninguna)."""
+        c = self.certificaciones()
+        return c[-1]["total_origen"] if c else None
 
     def foto_obra(self) -> calculo_obra.Foto:
         return calculo_obra.foto(
