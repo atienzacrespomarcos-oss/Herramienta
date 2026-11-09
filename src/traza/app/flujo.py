@@ -20,13 +20,25 @@ DEPENDE: dict[str, tuple[str, ...]] = {
     "hidronica": ("planos", "cargas"),
     "subcuadros": ("redes", "hidronica"),
 }
-#: Tablas cuyos cambios son «del paso» (registro de cambios).
-TABLAS: dict[str, tuple[str, ...]] = {
-    "planos": ("plano", "geometria"),
-    "cargas": ("cargas_proyecto", "cargas_espacio"),
-    "redes": ("red_aire",),
-    "hidronica": ("sistema_hidraulico",),
-    "subcuadros": ("subcuadro",),
+#: Qué cambios del registro son «del paso»: solo los que cambian datos de cálculo.
+#: `{t}` es el alias de la tabla `cambio`. Planos: la geometría confirmada y los niveles,
+#: espacios y obstáculos con sus propiedades (alturas, cotas); NO la tabla `plano` (capas,
+#: descartes, otro DXF leído), que no cambia ningún cálculo (revisión 09-11-2026: descartar
+#: una propuesta marcaba todo como desactualizado y cambiar una altura no marcaba nada).
+_ELEMENTO_DEL_CAMBIO = (
+    "CASE WHEN {t}.entidad = 'elemento' THEN {t}.entidad_id"
+    " ELSE substr({t}.entidad_id, 1, instr({t}.entidad_id, '/') - 1) END"
+)
+FILTROS: dict[str, str] = {
+    "planos": (
+        "({t}.entidad = 'geometria' OR ({t}.entidad IN ('elemento', 'propiedad') AND "
+        + _ELEMENTO_DEL_CAMBIO
+        + " IN (SELECT id FROM elemento WHERE tipo IN ('nivel', 'espacio', 'obstaculo'))))"
+    ),
+    "cargas": "{t}.entidad IN ('cargas_proyecto', 'cargas_espacio')",
+    "redes": "{t}.entidad = 'red_aire'",
+    "hidronica": "{t}.entidad = 'sistema_hidraulico'",
+    "subcuadros": "{t}.entidad = 'subcuadro'",
 }
 
 
@@ -47,22 +59,18 @@ def _ancestros(paso: str) -> set[str]:
     return vistos
 
 
-def _ultimo(con, tablas, sin_ordenes_de=()) -> int:
-    """Último cambio en `tablas`. Con `sin_ordenes_de`, sin contar las órdenes que también
-    cambiaron esas otras tablas: cuando un plano revisado mueve la red al plano nuevo, o
+def _ultimo(con, paso: str, sin_ordenes_de: tuple[str, ...] = ()) -> int:
+    """Último cambio del paso. Con `sin_ordenes_de` (otros pasos), sin contar las órdenes
+    que también los cambiaron: cuando un plano revisado mueve la red al plano nuevo, o
     quitar un espacio borra sus cargas, eso no es que el usuario haya revisado la red o las
     cargas (revisión 09-11-2026: la red salía «hecha» tras revisar el plano)."""
-    if not tablas:
-        return 0
-    marcas = ",".join("?" * len(tablas))
-    sql = f"SELECT MAX(n) FROM cambio c WHERE entidad IN ({marcas})"
+    sql = "SELECT MAX(n) FROM cambio c WHERE " + FILTROS[paso].format(t="c")
     if sin_ordenes_de:
-        otras = ",".join("?" * len(sin_ordenes_de))
+        otros = " OR ".join(FILTROS[a].format(t="a") for a in sin_ordenes_de)
         sql += (
-            " AND NOT EXISTS (SELECT 1 FROM cambio a WHERE a.orden_id = c.orden_id"
-            f" AND a.entidad IN ({otras}))"
+            f" AND NOT EXISTS (SELECT 1 FROM cambio a WHERE a.orden_id = c.orden_id AND ({otros}))"
         )
-    fila = con.execute(sql, (*tablas, *sin_ordenes_de)).fetchone()
+    fila = con.execute(sql).fetchone()
     return fila[0] or 0
 
 
@@ -130,7 +138,8 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
     if paso == "mediciones":
         return None if p.mediciones() else EstadoPaso(PENDIENTE, "Falta: leer una medición")
     if paso == "modificados":
-        return None if p.modificados() else EstadoPaso(PENDIENTE, "Sin modificados")
+        # Un modificado no siempre hace falta: sin ninguno, el paso no tiene estado.
+        return None if p.modificados() else EstadoPaso("")
     return EstadoPaso("")  # sin estado (p. ej. Equipos)
 
 
@@ -140,10 +149,9 @@ def estado(p: Any, paso: str) -> EstadoPaso:
         return falta
     if paso in DEPENDE:
         con = p._con
-        ancestros = _ancestros(paso)
-        de_ancestros = tuple(t for a in ancestros for t in TABLAS[a])
-        propio = max(_ultimo(con, TABLAS[paso], de_ancestros), _revisado(con, paso))
-        cambiados = [a for a in ancestros if _ultimo(con, TABLAS[a]) > propio]
+        ancestros = tuple(sorted(_ancestros(paso)))
+        propio = max(_ultimo(con, paso, ancestros), _revisado(con, paso))
+        cambiados = [a for a in ancestros if _ultimo(con, a) > propio]
         if cambiados:
             nombres = {"planos": "Planos", "cargas": "Cargas", "redes": "Redes de aire",
                        "hidronica": "Sistema hidráulico"}  # fmt: skip

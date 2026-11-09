@@ -124,3 +124,97 @@ def test_capas_que_faltan_en_el_revisado(red, tmp_path):  # noqa: F811
     doc = p.incorporar_documento(tmp_path / "Otro.dxf")
     with pytest.raises(OrdenRechazada, match="no tiene la capa"):
         p.comparar_plano_revisado(plano_id, doc)
+
+
+def test_rehacer_tras_deshacer(red, tmp_path):  # noqa: F811
+    p, red_id, plano_id, _ = red
+    doc = p.incorporar_documento(
+        _revisado(tmp_path, [("ALMACÉN", ALMACEN), ("OFICINAS", OFICINAS_GRANDES)])
+    )
+    p.revisar_plano(plano_id, doc)
+    p.deshacer()
+    p.rehacer()
+    assert _superficies(p)["OFICINAS"] == pytest.approx(11.8 * 8)
+    assert p.planos()[0]["documento_id"] == doc
+    assert p.red(red_id)["plano_id"] == p.planos()[0]["id"]
+
+
+def test_aprobado_que_cambia_o_se_mueve_no_se_revisa_sin_reabrir(red, tmp_path):  # noqa: F811
+    from traza.app.ordenes import Aprobar
+
+    p, _, plano_id, _ = red
+    ofi = next(e for e in p.espacios() if e["nombre"] == "OFICINAS")
+    p.ejecutar(Aprobar(ofi["id"], "Medido"))
+    # Oficinas desplazadas 1 m: misma superficie y perímetro, otra posición.
+    movidas = [(x, y + 1000) for x, y in [(40200, 0), (50000, 0), (50000, 8000), (40200, 8000)]]
+    doc = p.incorporar_documento(_revisado(tmp_path, [("ALMACÉN", ALMACEN), ("OFICINAS", movidas)]))
+    r, _ = p.comparar_plano_revisado(plano_id, doc)
+    assert [c.nombre for c in r.aprobados_que_cambian] == ["OFICINAS"]
+    with pytest.raises(OrdenRechazada, match="OFICINAS.*Reábrelos"):
+        p.revisar_plano(plano_id, doc)
+    # Sin cambios (el mismo dibujo guardado otra vez), el aprobado no impide revisar.
+    igual = p.incorporar_documento(
+        _revisado(
+            tmp_path,
+            [
+                ("ALMACÉN", ALMACEN),
+                ("OFICINAS", [(40200, 0), (50000, 0), (50000, 8000), (40200, 8000)]),
+            ],
+            nombre="Nave rev C.dxf",
+        )
+    )
+    r = p.revisar_plano(plano_id, igual)
+    assert len(r.iguales) == 2 and not r.cambiados
+
+
+def test_descartes_que_siguen_y_avisos_de_las_redes(red, tmp_path):  # noqa: F811
+    p, _, plano_id, _ = red
+    # Un pilar dibujado en la capa de espacios, descartado en el plano original.
+    pilar = [(10000, 10000), (10400, 10000), (10400, 10400), (10000, 10400)]
+    original = p.plano(plano_id)
+    assert original["descartados"] == []
+    doc = p.incorporar_documento(
+        _revisado(tmp_path, [("ALMACÉN", ALMACEN), ("OFICINAS", OFICINAS_GRANDES), ("", pilar)])
+    )
+    r, siguen = p.comparar_plano_revisado(plano_id, doc)
+    assert siguen == [] and len(r.nuevas) == 1  # el original no tenía el pilar
+    assert not r.avisos
+    sin_ejes = tmp_path / "sin_ejes"
+    sin_ejes.mkdir()
+    d = ezdxf.new("R2013")
+    d.header["$INSUNITS"] = 4
+    for capa in ("A-ESPACIOS", "A-TEXTOS"):
+        d.layers.add(capa)
+    d.modelspace().add_lwpolyline(ALMACEN, close=True, dxfattribs={"layer": "A-ESPACIOS"})
+    d.saveas(sin_ejes / "Nave rev D.dxf")
+    r, _ = p.comparar_plano_revisado(plano_id, p.incorporar_documento(sin_ejes / "Nave rev D.dxf"))
+    assert r.avisos and "Impulsión oficinas" in r.avisos[0] and "m-impulsion" in r.avisos[0]
+
+
+def test_descarte_del_plano_anterior_se_conserva(proyecto, tmp_path):
+    from traza.app.ordenes import CrearNivel
+
+    p = proyecto
+    pilar = [(10000, 10000), (10400, 10000), (10400, 10400), (10000, 10400)]
+    v1 = tmp_path / "v1"
+    v1.mkdir()
+    plano_id = p.leer_plano(
+        p.incorporar_documento(_revisado(v1, [("ALMACÉN", ALMACEN), ("", pilar)], "N.dxf")),
+        "mm",
+        ["A-ESPACIOS"],
+        [],
+        ["A-TEXTOS"],
+    )
+    nivel = CrearNivel("Planta baja", 0.0, 3.0)
+    p.ejecutar(nivel)
+    props = p.propuestas(plano_id)
+    alm = next(x for x in props if x.nombre_sugerido and x.nombre_sugerido.texto == "ALMACÉN")
+    p.confirmar_contorno(plano_id, alm.handle, nivel.id, nombre="ALMACÉN")
+    p.descartar_propuesta(plano_id, next(x for x in props if x is not alm).handle)
+    doc = p.incorporar_documento(
+        _revisado(tmp_path, [("ALMACÉN", ALMACEN), ("", pilar), ("ARCHIVO", ARCHIVO)])
+    )
+    p.revisar_plano(plano_id, doc)
+    nuevo = p.planos()[0]
+    assert len(nuevo["descartados"]) == 1
+    assert [x.nombre_sugerido.texto for x in p.propuestas(nuevo["id"])] == ["ARCHIVO"]

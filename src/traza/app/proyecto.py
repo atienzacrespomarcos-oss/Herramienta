@@ -967,12 +967,36 @@ class Proyecto:
         d = calculo_planos.emparejar(descartes, r.nuevas)
         siguen = sorted(x.despues.handle for x in [*d.iguales, *d.cambiados])
         r.nuevas = [x for x in r.nuevas if x.handle not in set(siguen)]
+        # Las redes de aire pasan al plano revisado: se avisa antes si les falta algo.
+        capas = {c.casefold() for c in revisado.capas}
+        bloques = {b.nombre.casefold() for b in revisado.bloques}
+        for red in self.redes():
+            if red["plano_id"] != plano_id:
+                continue
+            faltan = [f"la capa «{red['capa_ejes']}»"] * (red["capa_ejes"].casefold() not in capas)
+            faltan += [
+                f"el bloque «{b}»"
+                for b in [*red["bloques_terminales"], red["bloque_equipo"] or ""]
+                if b and b.casefold() not in bloques
+            ]
+            if faltan:
+                r.avisos.append(
+                    f"La red «{red['nombre']}» no se podrá calcular: el revisado no tiene "
+                    + ", ".join(faltan)
+                    + "."
+                )
         return r, siguen
 
     def revisar_plano(self, plano_id: str, documento_id: str) -> calculo_planos.Emparejamiento:
         """Sustituye el plano por el revisado (orden RevisarPlano): lo que depende se
         recalcula y queda marcado para revisar."""
         r, descartes = self.comparar_plano_revisado(plano_id, documento_id)
+        if r.aprobados_que_cambian:
+            raise OrdenRechazada(
+                "Están aprobados y cambian o desaparecen en el plano revisado: "
+                + ", ".join(f"«{c.rotulo}»" for c in r.aprobados_que_cambian)
+                + ". Reábrelos indicando el motivo antes de revisar el plano."
+            )
         if r.desaparecidos and not (r.iguales or r.cambiados):
             raise OrdenRechazada(
                 "Ningún espacio u obstáculo del plano anterior coincide con el revisado: "

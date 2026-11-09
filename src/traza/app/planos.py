@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
-from traza.core.geometria import Contorno
+from traza.core.geometria import Contorno, mismo_contorno
 from traza.io.dxf import UNIDADES, PlanoDxf
 
 ROLES = {"espacio": "Espacio", "obstaculo": "Obstáculo"}
@@ -167,10 +167,6 @@ def longitudes_por_capa(plano: PlanoDxf, unidad: str) -> list[FilaLongitud]:
 # de verdad, no solo se tocan); si hay varios, el de superficie más parecida. Los handles
 # no sirven: un DXF guardado otra vez, o exportado de otro programa, los renumera.
 
-#: Por debajo de esto, la superficie y el perímetro son los mismos (redondeo del dibujo).
-TOLERANCIA_M2 = 0.01
-TOLERANCIA_M = 0.01
-
 
 def punto_interior(contorno: Contorno) -> tuple[float, float]:
     """Un punto dentro del contorno: el centroide si cae dentro; si no (una L, una U), el
@@ -225,10 +221,8 @@ class Pareja:
 
     @property
     def cambia(self) -> bool:
-        return (
-            abs(self.despues.superficie - self.antes.contorno.area) > TOLERANCIA_M2
-            or abs(self.despues.perimetro - self.antes.contorno.perimetro) > TOLERANCIA_M
-        )
+        """Lo mismo que decide la orden RevisarPlano (core/geometria.mismo_contorno)."""
+        return not mismo_contorno(self.antes.contorno, self.despues.contorno)
 
 
 @dataclass
@@ -237,6 +231,14 @@ class Emparejamiento:
     cambiados: list[Pareja] = field(default_factory=list)
     desaparecidos: list[Confirmado] = field(default_factory=list)
     nuevas: list[Propuesta] = field(default_factory=list)  # se confirman después, como siempre
+    avisos: list[str] = field(default_factory=list)  # lo rellena Proyecto (redes, etc.)
+
+    @property
+    def aprobados_que_cambian(self) -> list[Confirmado]:
+        """Lo aprobado no se modifica sin reabrirlo (línea roja 5): se dice antes de aplicar."""
+        return [x.antes for x in self.cambiados if x.antes.aprobado] + [
+            c for c in self.desaparecidos if c.aprobado
+        ]
 
 
 def emparejar(confirmados: list[Confirmado], revisado: list[Propuesta]) -> Emparejamiento:

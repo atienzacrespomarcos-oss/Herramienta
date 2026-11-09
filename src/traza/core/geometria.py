@@ -195,6 +195,37 @@ class Contorno:
         return Contorno(tuple(Vertice(v.x * factor, v.y * factor, v.bulge) for v in self.vertices))
 
 
+#: Dos vértices a menos de esto son el mismo (1 mm con el contorno en metros): lo que un
+#: DXF guardado otra vez mueve por redondeo, muy por debajo de lo que se dibuja a propósito.
+TOLERANCIA_VERTICE = 0.001
+
+
+def mismo_contorno(a: Contorno, b: Contorno, tol: float = TOLERANCIA_VERTICE) -> bool:
+    """Misma forma en el mismo sitio: los mismos vértices (a menos de `tol`), empiece donde
+    empiece el contorno y en cualquier sentido, con los mismos arcos. Un contorno desplazado
+    o girado, aunque conserve superficie y perímetro, NO es el mismo (revisión 09-11-2026:
+    un espacio aprobado podía cambiar de forma sin reabrirlo)."""
+    if len(a.vertices) != len(b.vertices):
+        return False
+    libres = list(b.vertices)
+    for v in a.vertices:
+        # En sentido contrario el bulge cambia de signo: se compara su valor absoluto.
+        i = next(
+            (
+                k
+                for k, w in enumerate(libres)
+                if abs(w.x - v.x) <= tol
+                and abs(w.y - v.y) <= tol
+                and abs(abs(w.bulge) - abs(v.bulge)) <= 1e-6
+            ),
+            None,
+        )
+        if i is None:
+            return False
+        libres.pop(i)
+    return True
+
+
 @functools.lru_cache(maxsize=256)  # entradas, no bytes: pocas, que un contorno grande pesa
 def _aplanado_guardado(vertices: tuple[Vertice, ...], flecha: float) -> tuple:
     """El aplanado se reutiliza: clasificar N textos en M contornos no lo recalcula N·M

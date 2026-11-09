@@ -21,7 +21,7 @@ from pathlib import Path
 from traza.core.estados import Estado, transicion_permitida
 from traza.core.geometria import MOTOR as MOTOR_GEOMETRIA
 from traza.core.geometria import VERSION as VERSION_GEOMETRIA
-from traza.core.geometria import Contorno, ContornoInvalido, Vertice
+from traza.core.geometria import Contorno, ContornoInvalido, Vertice, mismo_contorno
 from traza.core.procedencia import Origen, Procedencia
 from traza.core.tipos import TIPOS_DE_PLANO, Clase, tipo, validar_valor
 from traza.io.pdf import pagina_citada
@@ -417,7 +417,6 @@ class ResolverPendiente(Orden):
 
 # --- Tipo de encargo ----------------------------------------------------------------
 
-#: Tipos de encargo del usuario (06-11-2026). Deciden qué pasos del proyecto se muestran.
 #: Tipos de encargo (decisión del usuario, 09-11-2026; docs/modules/flujo.md). Sustituyen a
 #: «diseño + presupuesto + instalación», «presupuesto + instalación» y «solo instalación»;
 #: la migración V10 pasa los dos últimos a «oferta».
@@ -442,6 +441,10 @@ class CambiarEncargo(Orden):
         return [Delta("meta", antes, despues)]
 
 
+#: Los pasos que pueden quedar desactualizados (app/flujo.DEPENDE; un test lo vigila).
+PASOS_CON_DEPENDENCIAS = ("cargas", "redes", "hidronica", "subcuadros")
+
+
 @dataclass
 class DarPorRevisado(Orden):
     """El usuario ha revisado un paso que estaba desactualizado (docs/modules/flujo.md)."""
@@ -449,6 +452,8 @@ class DarPorRevisado(Orden):
     paso: str
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if self.paso not in PASOS_CON_DEPENDENCIAS:
+            raise OrdenRechazada("Ese paso no depende de otros: no hay nada que revisar.")
         # La marca es el último número del registro de cambios en el momento de revisar:
         # lo anterior queda revisado. Se guarda en la tabla (no se lee del registro)
         # porque el registro solo crece y deshacer la revisión también escribe en él.
@@ -857,6 +862,8 @@ def _plano(con: sqlite3.Connection, plano_id: str) -> Fila:
     p = leer(con, "plano", {"id": plano_id})
     if p is None:
         raise OrdenRechazada("Ese plano no está leído en el proyecto.")
+    if p["sustituido_por"]:
+        raise OrdenRechazada("Ese plano está sustituido por su versión revisada.")
     return p
 
 
@@ -1318,8 +1325,6 @@ class RevisarPlano(Orden):
 
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
         antes = _plano(con, self.plano_id)
-        if antes["sustituido_por"]:
-            raise OrdenRechazada("Ese plano ya está sustituido por otro revisado.")
         doc = leer(con, "documento", {"id": self.documento_id})
         if doc is None or doc["extension"].lower() != ".dxf":
             raise OrdenRechazada("El plano revisado tiene que ser un DXF incorporado.")
@@ -1392,11 +1397,12 @@ class RevisarPlano(Orden):
             for clave in ("superficie", "perimetro")
         }
         valores = {"superficie": (contorno.area, "m**2"), "perimetro": (contorno.perimetro, "m")}
-        cambia = any(
-            fila is not None and abs(json.loads(fila["valor"]) - valores[clave][0]) > 1e-9
-            for clave, fila in props.items()
-        )
-        if not cambia:
+        anterior = Contorno(tuple(Vertice(*v) for v in json.loads(geo["contorno"])))
+        # Misma forma en el mismo sitio (a 1 mm): no se recalcula nada, y su registro sigue
+        # explicando el valor. Un contorno movido o girado SÍ cambia aunque conserve
+        # superficie y perímetro (revisión 09-11-2026). Mismo criterio que el resumen
+        # (app/planos.Pareja.cambia).
+        if mismo_contorno(anterior, contorno):
             return deltas
         if contorno.autointersecante():
             raise OrdenRechazada(

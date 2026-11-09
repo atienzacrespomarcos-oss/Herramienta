@@ -269,6 +269,14 @@ class PaginaPlanos(QWidget):
             esperar=lambda f: self.v._en_segundo_plano(f, "Leyendo el plano DXF…", "Leer plano"),
         )
         r, _ = self.proyecto.comparar_plano_revisado(p["id"], doc["id"])
+        if r.aprobados_que_cambian:  # se dice antes de preguntar, no después
+            self.v.preguntas.aviso(
+                "Plano revisado",
+                "Están aprobados y cambian o desaparecen en el plano revisado: "
+                + ", ".join(f"«{c.rotulo}»" for c in r.aprobados_que_cambian)
+                + ". Reábrelos indicando el motivo antes de revisar el plano.",
+            )
+            return
         if not self.v.preguntas.confirmar("Plano revisado", _texto_revision(r)):
             return
         self.proyecto.revisar_plano(p["id"], doc["id"])
@@ -685,13 +693,19 @@ def _texto_revision(r: calculo_planos.Emparejamiento) -> str:
         lineas.append("Cambian:")
         lineas += [
             f"  {x.antes.rotulo}: {_m2(x.antes.contorno.area)} → {_m2(x.despues.superficie)}"
+            + (
+                " (misma superficie, otra forma o posición)"
+                if _m2(x.antes.contorno.area) == _m2(x.despues.superficie)
+                else ""
+            )
             for x in r.cambiados
         ]
     if r.desaparecidos:
-        lineas.append("Ya no están (se quitan):")
+        lineas.append("Ya no están (se quitan, con su uso y sus datos de cargas):")
         lineas += [f"  {c.rotulo}" for c in r.desaparecidos]
     if r.nuevas:
         lineas.append(f"Contornos nuevos para confirmar: {len(r.nuevas)}.")
+    lineas += [f"⚠ {a}" for a in r.avisos]
     lineas.append("")
     lineas.append(
         "Las cargas, redes, hidráulica y cuadros se recalculan con el plano nuevo y quedan "

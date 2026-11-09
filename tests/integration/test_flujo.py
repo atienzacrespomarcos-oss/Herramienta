@@ -76,3 +76,35 @@ def test_en_ampliacion_se_confirman_los_espacios_nuevos(tmp_path):
         assert p.estado_paso("planos").texto == "Falta: confirmar los espacios de la ampliación"
     finally:
         p.cerrar()
+
+
+def test_solo_cuentan_los_cambios_de_datos_de_calculo(red):  # noqa: F811
+    from traza.app.ordenes import FijarAlturaEspacio
+
+    p, _, plano_id, _ = red
+    assert p.estado_paso("cargas").estado == HECHO
+    # Descartar una propuesta no cambia ningún cálculo: no marca nada. (No quedan
+    # propuestas en este plano; cambiar las capas tampoco cambia ningún cálculo.)
+    pl = p.plano(plano_id)
+    p.cambiar_plano(plano_id, pl["unidad"], pl["capas_espacios"], [], [])
+    assert p.estado_paso("cargas").estado == HECHO
+    # Cambiar la altura de un espacio sí cambia las cargas.
+    p.ejecutar(FijarAlturaEspacio(p.espacios()[0]["id"], "propia", altura=4.5))
+    e = p.estado_paso("cargas")
+    assert e.estado == DESACTUALIZADO and "Planos" in e.texto
+
+
+def test_dar_por_revisado_solo_pasos_con_dependencias():
+    from traza.app.flujo import DEPENDE
+    from traza.app.ordenes import PASOS_CON_DEPENDENCIAS
+
+    assert set(PASOS_CON_DEPENDENCIAS) == {k for k, v in DEPENDE.items() if v}
+
+
+def test_dar_por_revisado_rechaza_un_paso_sin_dependencias(proyecto):
+    import pytest
+
+    from traza.app.ordenes import OrdenRechazada
+
+    with pytest.raises(OrdenRechazada, match="no depende"):
+        proyecto.dar_por_revisado("equipos")

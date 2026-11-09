@@ -488,8 +488,9 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
     q.preparar("nuevo_proyecto", (tmp_path / "N", "N", "oferta"))
     v.a_nuevo.trigger()
     textos = [v.lista_pasos.item(i).text() for i in range(v.lista_pasos.count())]
-    # Proyecto nuevo: todo pendiente (○) salvo Equipos, que no tiene estado.
-    assert all(x.startswith("○ ") for x in textos[:-1]) and textos[-1].startswith("9. ")
+    # Proyecto nuevo: todo pendiente (○) salvo Modificados y Equipos, sin estado.
+    assert all(x.startswith("○ ") for x in textos[:-2])
+    assert textos[-2].startswith("8. ") and textos[-1].startswith("9. ")
     textos = [x.removeprefix("○ ") for x in textos]
     assert textos == [
         "1. Documentación",

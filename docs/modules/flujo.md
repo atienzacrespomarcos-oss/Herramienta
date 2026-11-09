@@ -70,7 +70,11 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
   hidráulico → Subcuadros) ha cambiado después del último cambio propio o de la última
   revisión. Se quita cambiando el paso o con **Ver → Dar por revisado este paso** (se
   puede deshacer).
-- Lo que cuenta como «cambio» sale del registro de cambios. Un cambio hecho por la misma
+- Lo que cuenta como «cambio» sale del registro de cambios, y solo si cambia datos de
+  cálculo: en Planos, la geometría confirmada y los niveles, espacios y obstáculos con sus
+  propiedades (alturas, cotas); no las capas, los descartes ni leer otro DXF. En los demás,
+  su propia tabla (cargas del proyecto y de cada espacio, redes, sistemas, subcuadros).
+- Un cambio hecho por la misma
   orden que cambió un paso anterior no cuenta como revisión del paso (al revisar el plano,
   la red pasa al plano nuevo, pero nadie ha revisado la red).
 - Deshacer un cambio también es un cambio: lo que dependía sigue marcado hasta revisarlo
@@ -90,7 +94,11 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
   programa los renumera al guardar.
 - Antes de aplicar se enseña el resumen: sin cambios, los que **cambian** (superficie antes
   → después), los que **ya no están** (se quitan) y cuántos **contornos nuevos** hay para
-  confirmar. Tolerancia de «sin cambios»: 0,01 m² y 0,01 m.
+  confirmar, y si a alguna red de aire le falta su capa o sus bloques en el revisado.
+- **«Sin cambios»** = misma forma en el mismo sitio: los mismos vértices a menos de 1 mm
+  (empiece donde empiece el contorno y en cualquier sentido) y los mismos arcos
+  (`core/geometria.mismo_contorno`). El resumen y la orden usan el mismo criterio. Un
+  contorno desplazado o girado cambia aunque conserve superficie y perímetro.
 - Al aceptar, una sola orden (se deshace entera): plano nuevo con las mismas capas; cada
   elemento conserva su identidad (cargas, circuitos y redes siguen apuntándole) con su
   contorno nuevo, y su superficie y perímetro recalculados con registro nuevo (el anterior
@@ -99,10 +107,17 @@ Estado: **decidido** (09-11-2026); se construye por bloques. **Bloque 1 implemen
 - Todo lo demás se recalcula solo (las cargas, redes, hidráulica y cuadros se calculan
   siempre de lo guardado) y queda **⚠ desactualizado** para revisarlo.
 - Se rechaza: si ningún elemento coincide (dibujo desplazado a otro punto base o en otra
-  unidad); si un elemento **aprobado** cambia o desaparece (hay que reabrirlo con motivo);
+  unidad); si un elemento **aprobado** cambia o desaparece (hay que reabrirlo con motivo;
+  se dice antes de preguntar);
   si uno que ya no está tiene decisiones o pendientes registrados; si un contorno revisado
   se corta a sí mismo.
-- El plano sustituido sigue en la base por la historia, pero ya no se ve ni se trabaja.
+- El plano sustituido sigue en la base por la historia, pero ya no se ve ni se trabaja
+  (ninguna orden lo acepta).
+- Lo que se quita deja de existir para los circuitos hidráulicos y los subcuadros que lo
+  usaban: esos pasos lo dicen («no se calcula») y quedan marcados.
+- Coste: con la guía ya leída, la lista de pasos recalcula cargas, redes e hidráulica a
+  cada cambio. Con los proyectos de prueba es instantáneo; si con un proyecto real se nota,
+  se guardará el último resultado.
 
 ### Ampliación: zonas nuevas
 - Se diseña la parte nueva: en el plano de la ampliación (o el existente con la ampliación
