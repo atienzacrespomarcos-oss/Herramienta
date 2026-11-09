@@ -355,5 +355,35 @@ CREATE TABLE coste_objetivo (
 );
 """
 
-MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11)
+# V12 (09-11-2026): Obra, coste real y previsión (docs/modules/obra.md, bloque 2a).
+# - `factura`: lo facturado a cada paquete de coste (proveedor, nº, fecha, importe sin IVA;
+#   negativo si es un abono). Un mismo proveedor no repite número.
+# - `paquete_cerrado`: los paquetes liquidados (cerrar y reabrir quedan en el registro).
+# - `prevision`: la del usuario, dos totales a fin de obra (TRAZA no la estima).
+V12 = """
+CREATE TABLE factura (
+    id TEXT PRIMARY KEY,
+    paquete TEXT NOT NULL CHECK (length(trim(paquete)) > 0),
+    proveedor TEXT NOT NULL CHECK (length(trim(proveedor)) > 0),
+    numero TEXT NOT NULL CHECK (length(trim(numero)) > 0),
+    fecha TEXT NOT NULL,
+    importe REAL NOT NULL CHECK (importe <> 0),
+    documento_id TEXT REFERENCES documento(id),
+    creado TEXT NOT NULL,
+    UNIQUE (proveedor, numero)
+);
+CREATE TABLE paquete_cerrado (
+    paquete TEXT PRIMARY KEY,
+    fecha TEXT NOT NULL
+);
+CREATE TABLE prevision (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    coste_total REAL NOT NULL CHECK (coste_total >= 0),
+    certificacion_total REAL NOT NULL CHECK (certificacion_total >= 0),
+    nota TEXT,
+    fecha TEXT NOT NULL
+);
+"""
+
+MIGRACIONES: tuple[str, ...] = (V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12)
 VERSION_ACTUAL = len(MIGRACIONES)

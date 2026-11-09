@@ -436,6 +436,20 @@ class Preguntas:
         d = DialogoCapasPlano(self.v, info, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    # --- Obra ----------------------------------------------------------------------------
+
+    def factura(self, paquetes: list[str], actual: dict | None = None):
+        from traza.ui.dialogos_obra import DialogoFactura
+
+        d = DialogoFactura(self.v, paquetes, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
+    def prevision(self, actual: dict | None):
+        from traza.ui.dialogos_obra import DialogoPrevision
+
+        d = DialogoPrevision(self.v, actual)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def nuevo_nivel(self):
         from traza.ui.dialogos_planos import DialogoNivel
 

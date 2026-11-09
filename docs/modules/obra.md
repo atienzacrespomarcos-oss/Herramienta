@@ -1,7 +1,7 @@
 # Obra: control de venta, costes, certificaciones y previsión
 
-Estado: **diseño aprobado** (09-11-2026). **Bloque 1 implementado** (crear obra, venta y
-coste objetivo).
+Estado: **diseño aprobado** (09-11-2026). **Bloques 1 y 2a implementados** (crear obra, venta,
+coste objetivo, coste real y previsión).
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -162,10 +162,41 @@ solo se toma la **estructura** y la forma de trabajar:
   venta. Partidas enlazadas por código (sin espacios a los lados ni mayúsculas); las que
   no casan se cuentan en pantalla.
 
+## Cómo está hecho el bloque 2a (decisiones de método, 09-11-2026)
+
+- **Coste real** (paso «Coste real»): facturas apuntadas a los paquetes del coste objetivo
+  (proveedor, nº, fecha, importe sin IVA; un abono, en negativo). Un proveedor no repite
+  número. Arriba, cada paquete con su objetivo, lo facturado, la diferencia (objetivo −
+  facturado) y si está abierto o cerrado; abajo, las facturas del paquete elegido.
+  - **Descuadres**: se listan los paquetes que ya se han pasado de su objetivo.
+  - **Cerrar paquete**: queda liquidado; no admite facturas nuevas ni cambios en las suyas
+    hasta reabrirlo (cerrar y reabrir quedan en el registro de cambios).
+  - Si se reimporta el coste objetivo y un paquete cambia de nombre, sus facturas se
+    avisan como «de paquetes que ya no están en el coste objetivo» (no se pierden).
+  - Sin facturas al empezar la obra, el paso no lleva marca (no es un pendiente).
+- **Previsión** (paso «Previsión», «Obra → Actualizar mi previsión…»): dos totales que
+  pone el usuario, certificación y coste a fin de obra, con nota opcional y su fecha. Una
+  tabla de tres columnas: **contrato y objetivo** (venta, objetivo, margen), **real a
+  hoy** (certificado, facturado, margen real) y **tu previsión** (certificación, coste,
+  margen previsto, con su %).
+- El certificado a origen llega con las certificaciones (bloque 2b); hasta entonces, no
+  consta. Esquema V12 (`factura`, `paquete_cerrado`, `prevision`).
+
+## Bloque 2b: certificaciones (decidido, por construir)
+
+Usuario (09-11-2026): «No necesitas plantilla (quizá te pase alguna pero al final debes ser
+capaz de interpretar un Excel)». Por eso:
+1. Reconocer las columnas por sus títulos (código, resumen, importe a origen, del mes,
+   anterior, % a origen, importe de presupuesto…), lo específico antes que lo general.
+2. Si no se reconocen, Claude Code (suscripción del usuario, ADR-0013) **solo dice qué
+   columna es qué** mirando las filas de títulos; las cifras las lee TRAZA de las celdas.
+3. Las líneas se enlazan con las partidas de la venta por código (capítulos y subtotales
+   no suman dos veces) y la suma se contrasta con la fila de TOTAL del Excel.
+4. Antes de importar, se enseña lo entendido (qué columna es qué y el total a origen) para
+   que el usuario lo confirme.
+
 ## Pendiente
 
 - Revisión del diseño por el usuario.
-- Un ejemplo del Excel de certificación del usuario (para el bloque 2).
-- Construir por bloques: ~~(1) crear obra, venta y coste objetivo~~ (hecho); (2) coste real,
-  certificaciones, foto de lo real y previsión del usuario; (3) futuribles y Excel de
-  control.
+- Construir por bloques: ~~(1) crear obra, venta y coste objetivo~~; ~~(2a) coste real,
+  foto de lo real y previsión~~; (2b) certificaciones; (3) futuribles y Excel de control.

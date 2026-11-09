@@ -166,6 +166,15 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
         if p.coste_objetivo() is None:
             return EstadoPaso(PENDIENTE, "Falta: importar el Excel de coste objetivo")
         return None
+    if paso == "coste_real":
+        if p.coste_objetivo() is None:
+            return EstadoPaso(PENDIENTE, "Falta: importar el coste objetivo (sus paquetes)")
+        # Al empezar la obra no hay facturas: sin marca, no «pendiente».
+        return None if p.facturas() else EstadoPaso("")
+    if paso == "prevision":
+        if p.prevision() is None:
+            return EstadoPaso(PENDIENTE, "Falta: tu previsión (coste y certificación finales)")
+        return None
     return EstadoPaso("")  # sin estado (p. ej. Equipos)
 
 
