@@ -32,12 +32,15 @@ se documentan en la ficha del módulo.
   herramienta recargada. Una presentación limpia es clave». En pantalla, lo que decide
   (resultado y unidades); el detalle completo, en una pestaña aparte o en el Excel. Tablas
   con pocas columnas, textos de resumen cortos.
-- Organizada en **pasos del proyecto**, adaptados al **tipo de encargo** (diseño +
-  presupuesto + instalación / presupuesto + instalación / solo instalación). **Solo se ven
-  los pasos que funcionan.**
-- Prioridad 1: **leer ofertas, presupuestos y mediciones** (BC3, Excel y PDF), sacar un
-  **Excel con todo** para sus pedidos (los hace en su ERP) y preparar **ampliaciones y
-  modificaciones** (Excel y BC3). Ficha: `docs/modules/mediciones.md`.
+- Organizada en **pasos del proyecto con estado** (hecho / pendiente / desactualizado y
+  qué falta), adaptados al **tipo de encargo**: **Diseño · Oferta · Ampliación**
+  (09-11-2026; ficha `docs/modules/flujo.md`). **Solo se ven los pasos que funcionan.**
+  Planos revisados o de ampliación propuestos por el usuario: **se recalcula todo** lo que
+  depende de ellos. Entregables de un diseño: DXF/LISP, Excel y memoria en Word.
+- Prioridad 1: **leer ofertas, presupuestos y mediciones** (BC3, Excel y PDF) y preparar
+  **ampliaciones y modificaciones** (Excel y BC3). Ficha: `docs/modules/mediciones.md`.
+- **Pedidos: fuera** (09-11-2026: «Ya te dije que olvidaras pedidos»). No proponer Excel de
+  pedidos ni enlazar el diseño con pedidos.
 
 ## Antes de tocar nada
 
