@@ -1,7 +1,6 @@
 # Obra: control de venta, costes, certificaciones y previsión
 
-Estado: **en diseño** (09-11-2026). Documentos vistos; diseño propuesto pendiente de
-la revisión del usuario.
+Estado: **diseño aprobado** (09-11-2026); en construcción por bloques.
 
 ## Decisiones del usuario (09-11-2026)
 
@@ -58,6 +57,9 @@ importes). Lo que importa es su estructura:
 | Certificaciones | «Certifico yo lo que creo, no TRAZA. Solo informo»: TRAZA **registra** lo que el usuario certifica; no calcula la certificación. |
 | Venta | **BC3 o Excel de Presto, y también PDF** del cliente (con Claude Code y las comprobaciones de ADR-0013). |
 | Justificación de cálculos | **Con el formato de sus informes** cuando la plantilla no trae estilos de título (cambio aparte de Obra). |
+| Previsión | «Quiero una **foto de lo real** (coste − venta hasta que yo actualice) y una **previsión que yo haga** de costes y posible certificación para saber». TRAZA no estima: muestra lo real y la previsión que introduce el usuario. |
+| Certificaciones (detalle) | «Lo que te daré será **mi Excel de certificación**. Saco el presupuesto de venta del Presto. Y por meses-certificaciones hago las certificaciones sobre el 100 % de cada capítulo, partida y subpartida». TRAZA lee ese Excel (por partida, a origen, por mes). Falta un ejemplo. |
+| Diseño | Aprobado el resto («Sí, construye»). |
 
 ## Diseño propuesto (para revisar con el usuario antes de construir)
 
@@ -84,17 +86,19 @@ importes). Lo que importa es su estructura:
 - Facturas por paquete: proveedor, nº, fecha, importe (sin IVA), documento opcional.
 - Estado del paquete: **abierto** o **cerrado** (cerrar y reabrir quedan registrados).
 
-### Certificaciones (las hace el usuario)
-- Registro: nº, fecha, **importe certificado del mes** (sin IVA) y documento opcional.
-  TRAZA suma el certificado **a origen** y lo compara con la venta (% certificado).
+### Certificaciones (las hace el usuario, en su Excel)
+- Se lee el **Excel de certificación** del usuario: por capítulo, partida y subpartida, lo
+  certificado a origen de cada mes sobre el 100 % de la venta. TRAZA no decide qué se
+  certifica: lo registra y lo suma (lectura por diseñar con un ejemplo real).
+- Da el certificado del mes y a origen, por partida y total, y el % sobre la venta.
 
-### Previsión a fin de obra
-- **Venta prevista** = contratado + modificados aprobados.
-- **Coste previsto** por paquete: cerrado → lo facturado; abierto → el mayor entre su
-  objetivo y lo ya facturado (un paquete abierto no se da por más barato de lo que va
-  costando). Total = suma de paquetes.
-- **Margen previsto** (importe y % sobre venta), y desviación frente al objetivo.
-- **Pendiente de certificar** = venta prevista − certificado a origen.
+### Foto de lo real y previsión del usuario
+- **Foto de lo real** (a la fecha de la última actualización): venta certificada a origen,
+  coste facturado, y su diferencia (margen real hasta hoy); por paquete, objetivo frente
+  a facturado.
+- **Previsión**: la introduce el usuario (coste y certificación previstos). TRAZA no la
+  estima; la muestra junto a lo real y al objetivo (granularidad por concretar al
+  construir el bloque 2).
 
 ### Futuribles (escenarios sí/no)
 - Ofertas o modificados pendientes de aprobar, con su **venta** y su **coste estimado**.
@@ -108,5 +112,7 @@ importes). Lo que importa es su estructura:
 ## Pendiente
 
 - Revisión del diseño por el usuario.
+- Un ejemplo del Excel de certificación del usuario (para el bloque 2).
 - Construir por bloques: (1) crear obra, venta y coste objetivo; (2) coste real,
-  certificaciones y previsión; (3) futuribles y Excel de control.
+  certificaciones, foto de lo real y previsión del usuario; (3) futuribles y Excel de
+  control.
