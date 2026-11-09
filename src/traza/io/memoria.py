@@ -172,7 +172,8 @@ class _Escritor:
             self._linea(proyecto.upper(), negrita=True, tam=14, centrado=True)
             self._linea(titulo.upper(), negrita=True, tam=13, centrado=True)
             self._linea(subtitulo, negrita=True, centrado=True)
-            self._linea("-" * 120)
+            # La línea de guiones de sus informes, sin justificar (estirada se partía).
+            self._linea("-" * 120).alignment = WD_ALIGN_PARAGRAPH.LEFT
         else:
             self.titulo(titulo, 0)
             self.parrafo(f"Proyecto: {proyecto}")
@@ -211,6 +212,8 @@ class _Escritor:
         estilo = self._estilo("Table Grid")
         if estilo:
             t.style = estilo
+        else:
+            _bordes(t)  # sin «Table Grid» en la plantilla, la tabla salía sin líneas
         for celda, texto in zip(t.rows[0].cells, cabecera, strict=True):
             # La celda nueva ya trae un párrafo vacío: se escribe en él (con `celda.text =
             # ""` quedaba una ejecución vacía sin negrita delante de la buena).
@@ -230,6 +233,30 @@ class _Escritor:
                     for run in parrafo.runs:
                         run.font.size = LETRA_TABLA
         self.doc.add_paragraph()
+
+
+def _bordes(tabla) -> None:
+    """Rejilla fina en toda la tabla (w:tblBorders), para plantillas sin «Table Grid»."""
+    bordes = OxmlElement("w:tblBorders")
+    for lado in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        b = OxmlElement(f"w:{lado}")
+        b.set(qn("w:val"), "single")
+        b.set(qn("w:sz"), "4")
+        b.set(qn("w:space"), "0")
+        b.set(qn("w:color"), "auto")
+        bordes.append(b)
+    # El esquema fija el orden dentro de tblPr (… tblInd, tblBorders, shd, tblLayout,
+    # tblCellMar, tblLook): al final, Word daría el documento por dañado.
+    tblpr = tabla._tbl.tblPr
+    despues = next(
+        (h for h in tblpr if h.tag in {qn("w:shd"), qn("w:tblLayout"), qn("w:tblCellMar"),
+                                       qn("w:tblLook")}),
+        None,
+    )  # fmt: skip
+    if despues is None:
+        tblpr.append(bordes)
+    else:
+        despues.addprevious(bordes)
 
 
 def _sombrear(celda, color: str) -> None:

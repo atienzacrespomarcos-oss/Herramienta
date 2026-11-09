@@ -338,7 +338,7 @@ def _plantilla_solo_normal(tmp_path):
     for s in list(estilos.iterchildren(qn("w:style"))):
         nombre = s.find(qn("w:name"))
         if nombre is not None and nombre.get(qn("w:val")).lower().startswith(
-            ("heading", "title", "list bullet")
+            ("heading", "title", "list bullet", "table grid")
         ):
             estilos.remove(s)
     ruta = tmp_path / "Informe.docx"
@@ -359,9 +359,20 @@ def test_con_plantilla_sin_titulos_sale_con_el_formato_de_sus_informes(completo,
     assert p[1].text == "JUSTIFICACIÓN DE CÁLCULOS" and p[1].runs[0].font.size == Pt(13)
     apartado = next(x for x in p if x.text.startswith("1. "))
     assert apartado.text == "1. CARGAS TÉRMICAS Y VENTILACIÓN" and apartado.runs[0].bold
+    assert apartado.runs[0].font.size == Pt(12)
+    assert p[2].text == "Documento de apoyo" and p[2].runs[0].bold
+    assert set(p[3].text) == {"-"} and p[3].alignment == WD_ALIGN_PARAGRAPH.LEFT
     cuerpo = next(x for x in p if x.text.startswith("Documento de apoyo:"))
     assert cuerpo.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+    assert cuerpo.paragraph_format.space_after == Pt(8)
     celda = doc.tables[0].rows[0].cells[0]
     assert celda._tc.tcPr.find(qn("w:shd")).get(qn("w:fill")) == "ECECEC"
     assert celda.paragraphs[0].runs[0].bold
     assert celda.paragraphs[0].runs[0].font.size == Pt(9.5)
+    dato = doc.tables[0].rows[1].cells[0].paragraphs[0].runs[0]
+    assert dato.font.size == Pt(9.5)
+    # Sin «Table Grid» en la plantilla, la tabla lleva su propia rejilla.
+    hijos = [h.tag for h in doc.tables[0]._tbl.tblPr]
+    assert qn("w:tblBorders") in hijos
+    # En el orden del esquema (antes de tblLook), o Word lo da por dañado.
+    assert hijos.index(qn("w:tblBorders")) < hijos.index(qn("w:tblLook"))
