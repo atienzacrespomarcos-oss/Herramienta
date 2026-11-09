@@ -668,7 +668,10 @@ class PaginaFuturibles(QWidget):
         self.resumen = QLabel()
         self.resumen.setWordWrap(True)
         self.tabla = _tabla(["Futurible", "Venta", "Coste estimado", "Margen", "En el escenario"])
-        self.tabla.cellDoubleClicked.connect(lambda *_: self.accion_marcar())
+        # Por _proteger, como las acciones del menú: en TRAZA.exe no hay consola.
+        self.tabla.cellDoubleClicked.connect(
+            lambda *_: self.v._proteger("Sí / no en el escenario", self.accion_marcar)
+        )
         self.avisos = QLabel()
         self.avisos.setWordWrap(True)
         caja = QVBoxLayout(self)
@@ -718,7 +721,12 @@ class PaginaFuturibles(QWidget):
             "coste": f.coste,
             "nota": f.nota,
         }
-        datos = self.v.preguntas.futurible(self._modificados(f.id), actual)
+        modificados = self._modificados(f.id)
+        if f.modificado_id and all(m["id"] != f.modificado_id for m in modificados):
+            # Ya no es del presupuesto contratado: se ofrece igual, para que el vínculo no se
+            # pierda en silencio (guardarlo se rechaza y lo explica).
+            modificados.append(self.proyecto.modificado(f.modificado_id))
+        datos = self.v.preguntas.futurible(modificados, actual)
         if datos is not None:
             self.proyecto.guardar_futurible(**datos)
             self.v.refrescar()

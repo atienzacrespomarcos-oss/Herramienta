@@ -384,13 +384,13 @@ class Escenario:
 
     @property
     def venta(self) -> float | None:
-        v = self.venta_marcados
-        return None if self.prevision is None or v is None else self.prevision["venta_total"] + v
+        v, p = self.venta_marcados, self.prevision
+        return None if p is None or v is None else round(p["venta_total"] + v, 2)
 
     @property
     def coste(self) -> float | None:
         p = self.prevision
-        return None if p is None else p["coste_total"] + self.coste_marcados
+        return None if p is None else round(p["coste_total"] + self.coste_marcados, 2)
 
     @property
     def margen(self) -> float | None:

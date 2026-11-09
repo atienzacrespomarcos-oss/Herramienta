@@ -15,6 +15,7 @@ from traza.app.ordenes import (
     CrearModificado,
     OrdenRechazada,
     QuitarCambio,
+    QuitarMedicion,
     VariarPartida,
 )
 
@@ -94,7 +95,7 @@ def test_modificado_sin_cambios_o_de_otro_presupuesto(con_venta, tmp_path):
     p.ejecutar(vacio)
     p.guardar_futurible(titulo="Por medir", modificado_id=vacio.id, coste=0)
     f = p.futuribles()[0]
-    assert f.venta == 0 and "aún no tiene cambios" in f.avisos[0]
+    assert f.venta is None and "aún no tiene cambios" in f.avisos[0]  # no consta, no 0
     # Un modificado de otra medición no es una ampliación de esta obra.
     otra = tmp_path / "Otra.bc3"
     otra.write_bytes(BC3_VENTA.replace("Nave", "Nave B").encode("cp1252"))
@@ -103,8 +104,16 @@ def test_modificado_sin_cambios_o_de_otro_presupuesto(con_venta, tmp_path):
     with pytest.raises(OrdenRechazada, match="no es del presupuesto contratado"):
         p.guardar_futurible(titulo="Ajeno", modificado_id=ajeno, coste=1)
     # Si después se elige otro presupuesto contratado, se avisa (no se calla).
+    con_cambios = _modificado(p, med_id, "Con cambios")
+    fid = p.guardar_futurible(titulo="Con cambios", modificado_id=con_cambios, coste=100)
+    p.marcar_futurible(fid, True)
+    p.fijar_prevision(coste_total=24000, venta_total=27000)
+    assert p.escenario().venta == 30000
     p.fijar_venta_contratada(otra_id)
-    assert "ya no es del presupuesto contratado" in p.futuribles()[0].avisos[-1]
+    f = p.futuribles()[1]
+    assert f.venta is None and "ya no es del presupuesto contratado" in f.avisos[0]
+    # Ni suma en el escenario: sin venta, no hay cifra que dar.
+    assert p.escenario().venta is None
 
 
 def test_corregir_y_rechazos(con_venta):
@@ -179,3 +188,53 @@ def test_excel_de_control(con_venta, tmp_path):
 def test_excel_sin_nada_que_controlar(proyecto, tmp_path):
     with pytest.raises(OrdenRechazada, match="nada que controlar"):
         proyecto.exportar_control_obra(tmp_path / "x.xlsx")
+
+
+def test_deshacer_y_rehacer(con_venta):
+    p, med_id = con_venta
+    mod = _modificado(p, med_id)
+    fid = p.guardar_futurible(titulo="Zona de carga", modificado_id=mod, coste=2500)
+    p.guardar_futurible(id=fid, titulo="Zona de carga", modificado_id=mod, coste=2000)
+    p.deshacer()
+    assert p.futuribles()[0].coste == 2500
+    p.rehacer()
+    assert p.futuribles()[0].coste == 2000
+    p.quitar_futurible(fid)
+    assert p.futuribles() == []
+    p.deshacer()
+    assert p.futuribles()[0].venta == 3000  # vuelve atado a su modificado
+    # La base del modificado tampoco se quita mientras haya modificado (y futurible).
+    p.quitar_venta_contratada()
+    with pytest.raises(OrdenRechazada, match="la usa el modificado"):
+        p.ejecutar(QuitarMedicion(med_id))
+
+
+def test_excel_con_certificaciones_y_textos_ajenos(con_venta, tmp_path):
+    from tests.integration.test_obra_certificaciones import CLIENTE, PORCENTAJE, excel, sin_ia
+
+    p, _ = con_venta
+    p.mapeador_ia = sin_ia
+    for n, filas in ((1, PORCENTAJE), (2, CLIENTE)):
+        doc = p.incorporar_documento(excel(tmp_path / f"C{n}.xlsx", filas))
+        mapa, r = p.leer_certificacion(doc)
+        p.importar_certificacion(doc, n, f"2026-1{n - 1}-30", mapa, r)
+    p.guardar_futurible(titulo="=SUMA(A1:A9)", venta=1, coste=1)
+    wb = load_workbook(p.exportar_control_obra(tmp_path / "control.xlsx"))
+    certs = [[c.value for c in f] for f in wb["Certificaciones"].iter_rows(min_row=2)]
+    assert [(c[0], c[3], c[4]) for c in certs] == [(1, 12100, 12100), (2, 12600, 500)]
+    ws = wb["Certificado por partida"]
+    assert [c.value for c in ws[1]] == [
+        "Código",
+        "Descripción",
+        "Venta",
+        "Nº 1 a origen",
+        "Nº 2 a origen",
+        "% certificado",
+    ]
+    filas = {f[0].value: [c.value for c in f] for f in ws.iter_rows(min_row=2)}
+    assert filas["UTA01"][3:] == [10000, 10000, 50.0]
+    assert filas["CND01"][3:] == [2100, 2100, 35.0]
+    assert filas["EXTRA"][3:] == [None, 500, 100.0]  # en la nº 1 no consta
+    assert wb["Resumen"]["C2"].value == 12600  # venta real = a origen de la última
+    celda = wb["Futuribles"]["A2"]
+    assert celda.value == "=SUMA(A1:A9)" and celda.data_type == "s"  # texto, no fórmula

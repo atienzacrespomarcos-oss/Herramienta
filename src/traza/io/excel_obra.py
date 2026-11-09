@@ -140,7 +140,9 @@ def exportar_control(
     ]
     if p and p.get("nota"):
         notas.insert(2, f"Nota de tu previsión: {p['nota']}")
-    for n in [*notas, *(f"Aviso: {a}" for a in resumen.avisos)]:
+    avisos = [*resumen.avisos]
+    avisos += [f"Futurible «{f.titulo}»: {a}." for f in escenario.futuribles for a in f.avisos]
+    for n in [*notas, *(f"Aviso: {a}" for a in avisos)]:
         _fila(ws, [n])
 
     # --- Venta frente a objetivo, por partida -------------------------------------------

@@ -816,24 +816,29 @@ class Proyecto:
             if f["modificado_id"] is not None:
                 mod = self.modificado(f["modificado_id"])
                 origen = f"modificado nº {mod['numero']} «{mod['titulo']}»"
-                cambios = self.resumen_modificado(mod["id"]).cambios
-                difs = [
-                    None
-                    if x.importe_contrato is None or x.importe_modificado is None
-                    else round(x.importe_modificado, 2) - round(x.importe_contrato, 2)
-                    for x in cambios
-                ]
-                if not cambios:
-                    avisos.append("el modificado aún no tiene cambios")
-                if any(d is None for d in difs):
-                    venta = None
-                    avisos.append(
-                        "su venta no consta: hay cambios sin cantidad o sin precio en el modificado"
-                    )
-                else:
-                    venta = round(sum(difs), 2)
+                # Lo que no consta no se suma como 0 (revisión 09-11-2026: un modificado sin
+                # cambios o de otro presupuesto sumaba en el escenario como si fuera real).
+                venta = None
                 if contratada is None or contratada["id"] != mod["medicion_id"]:
-                    avisos.append("su modificado ya no es del presupuesto contratado")
+                    avisos.append(
+                        "su venta no consta: su modificado ya no es del presupuesto contratado"
+                    )
+                elif not (cambios := self.resumen_modificado(mod["id"]).cambios):
+                    avisos.append("su venta no consta: el modificado aún no tiene cambios")
+                else:
+                    difs = [
+                        None
+                        if x.importe_contrato is None or x.importe_modificado is None
+                        else round(x.importe_modificado, 2) - round(x.importe_contrato, 2)
+                        for x in cambios
+                    ]
+                    if any(d is None for d in difs):
+                        avisos.append(
+                            "su venta no consta: hay cambios sin cantidad o sin precio en el "
+                            "modificado"
+                        )
+                    else:
+                        venta = round(sum(difs), 2)
             salida.append(
                 calculo_obra.Futurible(
                     f["id"],
