@@ -84,3 +84,21 @@ Estado: **en desarrollo**.
   de tensión; motores con Ib al 125 % (ITC-BT-47).
 - **Protección**: magnetotérmico de la serie de calibres, curva D en motores (bombas,
   ventiladores, compresores) y C en el resto; diferencial por salida.
+- **Factor de potencia** por defecto **0,85** («a falta de datos se toma 0,85», GUÍA-BT
+  Anexo 2, ejemplo de la LGA); el de la ficha del equipo manda. Ejemplo de comprobación:
+  145 kW, 400 V, cos φ 0,90 → 232,5 A.
+- **Diferencial por salida** (GUÍA-BT-24, jun. 2019, rev. 2,
+  <https://www.plcmadrid.es/wp-content/uploads/rebt/itc24/guia_bt_24_jun19R2_p.pdf>):
+  - sensibilidad **30 mA** en salidas monofásicas de hasta 32 A (unidades terminales: la
+    guía la reconoce como protección complementaria contra contactos directos) y
+    **300 mA** en el resto (la guía la reconoce como protección contra incendio por fugas,
+    UNE-HD 60364-5-53); en esquema TT se comprueba **RA·Ia ≤ 50 V** (24 V en locales
+    húmedos), es decir, RA ≤ 166 Ω con 300 mA y ≤ 1.666 Ω con 30 mA;
+  - **tipo B** en equipos trifásicos con variador (detecta corrientes continuas alisadas
+    y pulsantes rectificadas de varias fases), **tipo F** en monofásicos con convertidor
+    (corrientes compuestas fase-neutro), **tipo A** en el resto (la guía describe los
+    tipos AC, A, F y B).
+- **Reparto de la caída de tensión**: la línea de alimentación del subcuadro se calcula
+  con la carga de todas sus salidas (ITC-BT-47: 125 % del motor mayor más el resto). Se
+  elige la menor sección de esa línea con la que todas las salidas pueden cumplir el
+  límite total (alimentación + salida); después, la menor sección de cada salida.
