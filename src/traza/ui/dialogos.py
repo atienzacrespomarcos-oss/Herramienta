@@ -329,6 +329,23 @@ class Preguntas:
         carpeta = QFileDialog.getExistingDirectory(self.v, "Carpeta donde crear el proyecto")
         return (Path(carpeta) / nombre.strip(), nombre.strip(), encargo) if carpeta else None
 
+    def nueva_obra(self) -> tuple[Path, str] | None:
+        nombre, ok = QInputDialog.getText(self.v, "Nueva obra", "Nombre de la obra:")
+        if not ok or not nombre.strip():
+            return None
+        carpeta = QFileDialog.getExistingDirectory(self.v, "Carpeta donde crear la obra")
+        return (Path(carpeta) / nombre.strip(), nombre.strip()) if carpeta else None
+
+    def ficheros(self, titulo: str) -> list[Path]:
+        rutas, _ = QFileDialog.getOpenFileNames(self.v, titulo)
+        return [Path(r) for r in rutas]
+
+    def plan_obra(self, propuestas: list):
+        from traza.ui.dialogos_obra import DialogoPlanObra
+
+        d = DialogoPlanObra(self.v, propuestas)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def encargo(self, actual: str | None) -> str | None:
         claves = list(ENCARGOS)
         textos = [ENCARGOS[k] for k in claves]

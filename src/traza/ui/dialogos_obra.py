@@ -348,3 +348,68 @@ class DialogoFacturasErp(QDialog):
             return
         self.resultado = elegidas
         self.accept()
+
+
+class DialogoPlanObra(QDialog):
+    """Qué es cada documento (TRAZA propone por su contenido; el usuario confirma o cambia)
+    antes de montar la obra. Lo que se leería con la IA se dice en la fila: su contenido se
+    envía a Anthropic, y elegirlo es el permiso para ese documento (CLAUDE.md, línea 7)."""
+
+    AVISO_IA = "se leerá con la IA (su contenido se envía a Anthropic)"
+
+    def __init__(self, padre: QWidget, propuestas: list):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QTableWidget, QTableWidgetItem
+
+        from traza.app.clasificar import TIPOS
+
+        super().__init__(padre)
+        self.setWindowTitle("Documentos de la obra")
+        self.resultado: list | None = None
+        self._propuestas = propuestas
+        self._tipos = TIPOS
+        self.tabla = QTableWidget(len(propuestas), 3)
+        self.tabla.setHorizontalHeaderLabels(["Documento", "Es", "Nota"])
+        self.tabla.setMinimumSize(820, 300)
+        self._combos: list[QComboBox] = []
+        for r, p in enumerate(propuestas):
+            nombre = QTableWidgetItem(p.nombre)
+            nombre.setFlags(Qt.ItemIsEnabled)
+            self.tabla.setItem(r, 0, nombre)
+            combo = QComboBox()
+            for clave in p.posibles:
+                combo.addItem(TIPOS[clave], clave)
+            combo.setCurrentIndex(p.posibles.index(p.tipo))
+            combo.currentIndexChanged.connect(lambda _i, fila=r: self._nota(fila))
+            self._combos.append(combo)
+            self.tabla.setCellWidget(r, 1, combo)
+            self._nota(r)
+        self.tabla.resizeColumnsToContents()
+        f = QFormLayout(self)
+        f.addRow(
+            QLabel(
+                "TRAZA propone qué es cada documento por su contenido. Cámbialo si no es así; "
+                "luego se monta la obra (lo que pida datos, se pregunta)."
+            )
+        )
+        f.addRow(self.tabla)
+        _botones(f, self, self._aceptar)
+
+    def tipo(self, fila: int) -> str:
+        return self._combos[fila].currentData()
+
+    def _nota(self, fila: int) -> None:
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QTableWidgetItem
+
+        p, tipo = self._propuestas[fila], self.tipo(fila)
+        texto = p.motivo if tipo == p.tipo else "elegido por ti"
+        if p.con_ia(tipo):
+            texto += f"; {self.AVISO_IA}"
+        item = QTableWidgetItem(texto)
+        item.setFlags(Qt.ItemIsEnabled)
+        self.tabla.setItem(fila, 2, item)
+
+    def _aceptar(self) -> None:
+        self.resultado = [(p, self.tipo(r)) for r, p in enumerate(self._propuestas)]
+        self.accept()

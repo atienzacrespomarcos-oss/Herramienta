@@ -555,6 +555,7 @@ class VentanaPrincipal(QMainWindow):
         self.a_nuevo = self._accion(
             m, "Nuevo proyecto…", self.accion_nuevo_proyecto, QKeySequence.New
         )
+        self.a_nueva_obra = self._accion(m, "Nueva obra desde documentos…", self.accion_nueva_obra)
         self.a_abrir = self._accion(
             m, "Abrir proyecto…", self.accion_abrir_proyecto, QKeySequence.Open
         )
@@ -637,8 +638,11 @@ class VentanaPrincipal(QMainWindow):
         self.menu_subcuadros = mb.addMenu("E&lectricidad")
         # Menú del paso Entregables: lo llena ui/paso_entregables.PaginaEntregables.
         self.menu_entregables = mb.addMenu("E&ntregables")
-        # Menú de Obra: lo llena ui/paso_obra.
+        # Menú de Obra: lo llena ui/paso_obra (tras «Añadir documentos», el primero).
         self.menu_obra = mb.addMenu("&Obra")
+        self.a_anadir_documentos = self._accion(
+            self.menu_obra, "Añadir documentos a la obra…", self.accion_anadir_documentos
+        )
 
         m = mb.addMenu("&Ver")
         self.a_historial = self._accion(m, "Historial de cambios", self.accion_historial)
@@ -675,6 +679,8 @@ class VentanaPrincipal(QMainWindow):
             self.pagina_subcuadros.actualizar_estado(hay)
         if hasattr(self, "pagina_entregables"):
             self.pagina_entregables.actualizar_estado(hay)
+        if hasattr(self, "a_anadir_documentos"):
+            self.a_anadir_documentos.setEnabled(hay and self.proyecto.encargo == "obra")
         if hasattr(self, "pagina_coste_objetivo"):
             self.pagina_venta.actualizar_estado(hay)
             self.pagina_coste_objetivo.actualizar_estado(hay)
@@ -1356,6 +1362,17 @@ class VentanaPrincipal(QMainWindow):
         return True
 
     # --- Acciones: proyecto --------------------------------------------------------------
+
+    def accion_nueva_obra(self) -> None:
+        """Echar todos los documentos recibidos y montar la obra (docs/modules/obra.md, 4c)."""
+        from traza.ui import crear_obra
+
+        crear_obra.nueva_obra(self)
+
+    def accion_anadir_documentos(self) -> None:
+        from traza.ui import crear_obra
+
+        crear_obra.anadir_documentos(self)
 
     def accion_nuevo_proyecto(self) -> None:
         r = self.preguntas.nuevo_proyecto()

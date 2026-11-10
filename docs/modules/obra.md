@@ -391,6 +391,41 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
   objetivo). Un paquete cerrado no se propone ni admite facturas.
 - Todas en una sola orden: deshacer las quita todas; con una mal, no entra ninguna.
 
+## Bloque 4c: crear la obra desde sus documentos (decisiones de método, 10-11-2026)
+
+- **Archivo → Nueva obra desde documentos…**: nombre, carpeta y **todos los documentos
+  recibidos** de una vez. **Obra → Añadir documentos a la obra…**: lo mismo durante la obra
+  (otra certificación, el listado de facturas del mes, un presupuesto revisado…).
+- TRAZA **propone qué es cada documento por su contenido**, nunca por su nombre
+  (`app/clasificar.py`):
+  - BC3 con precios: presupuesto contratado (el de mayor importe, y solo si la obra no
+    tiene ya venta; los demás, mediciones). BC3 sin precios: medición.
+  - Hoja de cálculo (bloque 4a): comparativo de costes de Presto, listado de facturas o
+    certificación, por sus columnas. La certificación toma el nº que dice su cabecera o
+    su nombre («Certificación nº 3»).
+  - DXF: plano (se lee en «Planos y espacios»: las capas las confirma el usuario).
+  - PDF, Excel no reconocido y lo demás: **solo documentación**. Un PDF o un Excel que no es
+    nada de lo anterior se lee con la IA, y su contenido se envía a Anthropic: no se
+    propone nunca; el usuario lo elige en la tabla, que dice en esa fila que se leerá con
+    la IA (elegirlo es el permiso para ese documento; CLAUDE.md, línea roja 7).
+- **Tabla de confirmación**: documento, qué es (desplegable con lo que TRAZA sabe leer de
+  ese formato) y por qué. Cancelar deja los documentos en Documentación, sin leer. La fila
+  dice si se leería con la IA: un PDF o un Excel como presupuesto, medición u oferta, y
+  también una hoja **no reconocida** elegida como certificación o facturas (la IA diría qué
+  columna es qué; revisión 10-11-2026).
+- **Un solo presupuesto**: con dos elegidos, se pide elegir uno; si la obra ya tiene venta
+  contratada, sustituirla se confirma (las certificaciones se cruzan con ella).
+- **Echar otra vez un documento** que ya está (se canceló, falló o quedó como documentación)
+  no lo duplica: entra en la tabla para poder leerlo; si ya está leído, sale con su uso.
+  Un BC3 que no se puede leer se dice; un segundo BC3 con precios se propone como medición
+  avisando de que puede ser otro presupuesto o una oferta.
+- **Montaje en orden**: presupuesto (se lee y queda como venta contratada), mediciones y
+  ofertas, coste objetivo, certificaciones por su nº (se piden nº y fecha, como en su
+  paso) y facturas (con su tabla de paquetes). Un documento que falla no para los demás;
+  al final se dice qué se ha hecho, qué queda en Documentación y qué no se ha podido, con
+  el motivo. Un documento ya incorporado no se incorpora otra vez.
+- Cada paso es una orden: todo se deshace como siempre.
+
 ## Pendiente
 
 - Probar el bloque completo con una obra real del usuario (venta, comparativo,
