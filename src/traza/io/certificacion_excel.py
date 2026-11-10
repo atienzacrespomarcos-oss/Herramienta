@@ -24,8 +24,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string, get_column_letter
+
+from traza.io import hoja_calculo
 
 LECTOR = "certificacion_excel"
 VERSION = "1.0.0"
@@ -192,7 +193,7 @@ def _numero(v: Any) -> float | None:
 
 def _libros(ruta: Path):
     try:
-        return load_workbook(ruta, data_only=True), load_workbook(ruta, data_only=False)
+        return hoja_calculo.abrir(ruta)
     except Exception as exc:  # noqa: BLE001 — cualquier fallo de apertura se explica igual
         raise CertificacionNoReconocida(
             f"No se puede abrir «{ruta.name}» como Excel: {exc}"

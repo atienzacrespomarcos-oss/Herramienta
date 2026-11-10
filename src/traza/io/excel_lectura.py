@@ -1,4 +1,5 @@
-"""Lectura de hojas Excel (.xlsx/.xlsm) para la lectura asistida por IA.
+"""Lectura de hojas de cálculo (.xlsx, .xlsm, .xls, .csv: io/hoja_calculo.py) para la lectura
+asistida por IA.
 
 La IA no lee el fichero: recibe un volcado de texto con la referencia de cada celda
 («Hoja!B12: valor»). Las comprobaciones vuelven después a la celda citada y comparan con
@@ -15,10 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
 from openpyxl.utils.cell import coordinate_from_string
 
-EXTENSIONES = (".xlsx", ".xlsm")
+from traza.io import hoja_calculo
+
+EXTENSIONES = hoja_calculo.EXTENSIONES
 
 
 @dataclass
@@ -33,8 +35,7 @@ class Libro:
 def leer_libro(ruta: Path) -> Libro:
     """Abre el libro una vez para valores y otra para fórmulas (para avisar de fórmulas
     sin resultado guardado). Los avisos de fórmulas se agrupan en uno."""
-    wb_val = load_workbook(ruta, data_only=True)
-    wb_form = load_workbook(ruta, data_only=False)
+    wb_val, wb_form = hoja_calculo.abrir(ruta)
     lineas: list[str] = []
     celdas_: dict[str, Any] = {}
     sin_resultado: list[str] = []
@@ -67,8 +68,7 @@ def leer_libro(ruta: Path) -> Libro:
 def volcar(ruta: Path) -> tuple[str, list[str]]:
     """Texto «Hoja!Celda: valor» de todas las celdas con contenido, y avisos."""
     avisos: list[str] = []
-    wb_val = load_workbook(ruta, data_only=True)
-    wb_form = load_workbook(ruta, data_only=False)
+    wb_val, wb_form = hoja_calculo.abrir(ruta)
     lineas: list[str] = []
     try:
         for ws in wb_val.worksheets:
@@ -97,7 +97,7 @@ def valor_celda(ruta: Path, referencia: str) -> Any:
     hoja, celda = referencia.rsplit("!", 1)
     hoja = hoja.strip("'")
     coordinate_from_string(celda)  # valida la referencia (ValueError si no lo es)
-    wb = load_workbook(ruta, data_only=True)
+    wb = hoja_calculo.abrir(ruta)[0]
     try:
         if hoja not in wb.sheetnames:
             raise KeyError(f"No existe la hoja «{hoja}».")
@@ -108,7 +108,7 @@ def valor_celda(ruta: Path, referencia: str) -> Any:
 
 def celdas(ruta: Path) -> dict[str, Any]:
     """Todas las celdas con valor guardado: {"Hoja!B12": valor}."""
-    wb = load_workbook(ruta, data_only=True)
+    wb = hoja_calculo.abrir(ruta)[0]
     try:
         return {
             f"{ws.title}!{c.coordinate}": c.value

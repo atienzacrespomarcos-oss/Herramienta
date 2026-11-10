@@ -239,7 +239,7 @@ def test_importar_otro_sustituye_y_se_deshace(obra, tmp_path):
 
 def test_rechazos(obra, tmp_path, pdf_3_paginas):
     p, med_id = obra
-    with pytest.raises(OrdenRechazada, match="no es un Excel"):
+    with pytest.raises(OrdenRechazada, match="no es una hoja de cálculo"):
         p.importar_coste_objetivo(p.incorporar_documento(pdf_3_paginas))
     wb = Workbook()
     wb.active.append(["nada"])
@@ -287,3 +287,29 @@ def test_avisos_de_la_venta():
     r = resumir([{"codigo": "C", "resumen": "c", "importe": None}], None)
     assert r.venta is None and r.margen is None
     assert "la venta no consta" in r.avisos_venta[0]
+
+
+def test_comparativo_en_xls(obra, tmp_path):
+    """El comparativo guardado como Excel 97-2003 se lee igual que el .xlsx (bloque 4a)."""
+    from tests.unit.test_hoja_calculo import a_xls
+
+    p, med_id = obra
+    p.fijar_venta_contratada(med_id)
+    from openpyxl import load_workbook
+
+    xlsx = comparativo(tmp_path / "Costes.xlsx")
+    # Un .xls real trae el resultado de cada fórmula (cierres de partida y de capítulo):
+    # con números en esas filas, no deben contarse dos veces.
+    resultados = {}
+    for fila in load_workbook(xlsx).active.iter_rows():
+        d = fila[3].value
+        if isinstance(fila[5].value, str) and fila[5].value.startswith("="):
+            precio = {"UTA01": 18400, "CND01": 42, "CAP01": 22600}[d]
+            resultados[fila[5].coordinate] = precio
+            resultados[fila[6].coordinate] = precio * (fila[4].value or 1)
+    xls = a_xls(xlsx, tmp_path / "Costes.xls", resultados)
+    leido = p.importar_coste_objetivo(p.incorporar_documento(xls))
+    r = p.resumen_obra()
+    assert r.objetivo == pytest.approx(23200)
+    assert r.paquetes == {"EQUIPOS": 18600, "CHAPA": 3000, "MANO DE OBRA": 1600}
+    assert any("no guarda fórmulas" in a for a in leido.avisos)

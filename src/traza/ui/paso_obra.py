@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from traza.app.ordenes import OrdenRechazada
 from traza.core.numeros import escribir_numero
+from traza.io.hoja_calculo import es_hoja
 
 
 def _eur(v: float | None) -> str:
@@ -134,9 +135,7 @@ class PaginaCosteObjetivo(_Pagina):
         super().__init__(ventana, ["Paquete", "Objetivo", "% del objetivo"], [self.a_importar])
 
     def accion_importar(self) -> None:
-        docs = [
-            d for d in self.proyecto.documentos() if d["extension"].lower() in (".xlsx", ".xlsm")
-        ]
+        docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
         if not docs:
             self.v.preguntas.aviso(
                 "Coste objetivo",
@@ -549,9 +548,7 @@ class PaginaCertificaciones(QWidget):
         return self.v.proyecto
 
     def accion_importar(self) -> None:
-        docs = [
-            d for d in self.proyecto.documentos() if d["extension"].lower() in (".xlsx", ".xlsm")
-        ]
+        docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
         if not docs:
             self.v.preguntas.aviso(
                 "Certificación",

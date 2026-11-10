@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
+from traza.io import hoja_calculo
 
 LECTOR = "coste_presto"
 VERSION = "1.0.0"
@@ -136,8 +136,7 @@ def _cabecera(ws) -> tuple[int, dict[str, int], list[tuple[str, int, int, int]]]
 def leer(ruta: Path) -> CosteObjetivo:
     ruta = Path(ruta)
     try:
-        wb_v = load_workbook(ruta, data_only=True, read_only=False)
-        wb_f = load_workbook(ruta, data_only=False, read_only=False)
+        wb_v, wb_f = hoja_calculo.abrir(ruta)
     except Exception as exc:  # noqa: BLE001 — cualquier fallo de apertura se explica igual
         raise CosteNoReconocido(f"No se puede abrir «{ruta.name}» como Excel: {exc}") from exc
     errores = []
@@ -234,6 +233,13 @@ def _leer_hoja(wv, wf) -> CosteObjetivo:
             r.avisos.append(f"{codigo or resumen} (fila {fila}): importe negativo.")
     if not r.partidas:
         raise CosteNoReconocido("La hoja no tiene ninguna partida («Nat» = Partida).")
+    if wf is wv and any("Línea añadida a mano" in a for a in r.avisos):
+        # Un .xls o un CSV no guardan fórmulas: no se distingue un precio escrito de uno
+        # calculado (revisión 10-11-2026). Se dice; el contraste con el TOTAL lo confirma.
+        r.avisos.append(
+            "Este formato no guarda fórmulas: las líneas tomadas como añadidas a mano pueden "
+            "ser subtotales calculados. Compruébalas con el TOTAL."
+        )
     if sin_valor:
         r.avisos.append(
             f"Fórmula sin resultado guardado en la(s) fila(s) {_filas(sin_valor)}: abre el "

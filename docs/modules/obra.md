@@ -271,6 +271,81 @@ Cómo está hecho (`io/certificacion_excel.py`, `app/obra.cruzar_certificacion`)
   Las reglas de todos los Excel de TRAZA: números como números, lo que no consta vacío
   (nunca 0), textos ajenos nunca como fórmula, guardado atómico. Esquema V14.
 
+## Crear obra desde documentos (decisiones del usuario, 10-11-2026)
+
+| Tema | Decisión |
+|---|---|
+| Cómo nace | Echar **todos los documentos recibidos** (unas veces más, otras menos) y que TRAZA genere la obra. |
+| Presupuesto | «Habrá **1 presupuesto** y mediciones, planos, etc.»: el presupuesto es la venta contratada, sin preguntar. |
+| Facturas | «Las **exporto de mi ERP** y te las subo»: TRAZA interpreta ese listado (sin plantilla fija). |
+| Formatos | «Deberás tener la estructura para que **lo que yo te pase, sea lo que sea, te valga**». |
+| Datos reales | «No quiero darte nada hasta que no esté hecho»; «no voy a pasarte obra real hasta terminar la herramienta 100 %». Todo se prueba con documentos inventados de muchas formas. |
+
+Bloques: (4a) cualquier hoja de cálculo (.xlsx, .xlsm, .xls, .csv) en todos los lectores;
+(4b) facturas desde el listado del ERP; (4c) crear obra desde documentos (reconocer cada
+uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la obra).
+
+## Bloque 4a: cualquier hoja de cálculo (decisiones de método, 10-11-2026)
+
+- Todos los lectores (presupuesto en Excel con la IA, comparativo de Presto,
+  certificaciones y, después, facturas) abren lo mismo: **.xlsx, .xlsm, .xls y .csv**
+  (`io/hoja_calculo.py`). Se convierte al mismo libro, celda a celda en la misma posición:
+  las referencias «Hoja!B12» que citan las comprobaciones siguen valiendo.
+- **.xls** (Excel 97-2003, xlrd, licencia BSD): guarda el resultado de cada fórmula, no la
+  fórmula; las fechas salen como fechas y se conserva el formato de número (para reconocer
+  porcentajes).
+- **Se mira el contenido, no la extensión**: muchos ERP guardan como «.xls» una tabla HTML,
+  un XML de Excel 2003, texto con separadores o un .xlsx; todos se leen. Un binario que no
+  es hoja (un PDF renombrado) se rechaza diciéndolo.
+- **.csv y tablas de texto**: UTF-8 o Windows-1252 (lo habitual en un ERP español); el
+  separador es el que da a casi todas las líneas el mismo número de campos (a igualdad,
+  «;»). Regla de oro (revisión 10-11-2026): **solo se convierte lo inequívoco**; lo demás
+  queda como texto y los lectores lo tratan como «no consta».
+  - **Códigos, no números**: con un cero delante («01», «08001», «0001234») o con varios
+    separadores que no son de miles («01.02.03»), se quedan como texto, y **toda su
+    columna** también («1.001» junto a «01.002» es un código, no mil uno). Así el cruce por
+    código con la venta no se rompe.
+  - **Fechas solo con el año de 4 cifras** (dd/mm/aaaa, dd.mm.aaaa, dd-mm-aaaa,
+    aaaa-mm-dd): «01.02.03» es un código, no una fecha.
+  - Importes con «€», negativos entre paréntesis o con el signo detrás, miles con espacio
+    («1 234,56»), porcentajes («21 %» → 0,21).
+  - **Columnas de códigos**, de tres formas:
+    1. Por su título en una fila de títulos (de las 15 primeras, las que tienen dos o más
+       textos: delante suele haber cabecera del documento), palabra entera
+       al principio: «Código», «Cód.», «Ref.», «Capítulo», «Partida», «Nº», «Número»,
+       «Factura», «Pos.», «Orden», «Línea», «Artículo», «Ítem», «NIF», «CP»… («Cantidad
+       partida», «Partida alzada», «Nº uds.», «Noviembre», «Capacidad» no).
+    2. Porque al menos el 30 % de sus valores tienen forma de código.
+    3. Porque dos textos distintos darían el mismo número con distintos decimales («1.1» y
+       «1.10»: capítulos distintos, no la misma cantidad).
+    Sus valores no votan la convención y una celda suelta («01» encima de los importes) no
+    convierte en texto una columna de importes.
+  - La **convención decimal se decide por fichero**, con lo que demuestran las columnas
+    que no son de códigos:
+    1. Un número con punto y coma a la vez («1.234,56») es prueba fuerte.
+    2. Coma con 1-2 o 4+ cifras («12,5») demuestra la coma decimal. Punto igual («12.50»)
+       demuestra el punto, pero **no basta para leer los ambiguos** («1.250»: mil
+       doscientos cincuenta o uno con veinticinco), que quedan como texto: «1.10» puede ser
+       un código de capítulo sin título (los códigos usan puntos, no comas).
+    3. Sin prueba: con «;» o en una tabla HTML, coma decimal como Excel en España; con otro
+       separador, punto, y los ambiguos quedan como texto. Con pruebas contradictorias,
+       los ambiguos quedan siempre como texto.
+  - Un número que **contradice** la convención («1234.56» donde la coma es el decimal) o
+    con un grupo de miles mal formado («0,125» con coma de miles) **se queda como texto**:
+    reinterpretarlo sería inventar una cifra.
+  - Fechas siempre día/mes/año (convención española).
+- **Tablas HTML y XML de Excel 2003**: cada celda en su columna (`colspan`, `ss:Index`,
+  `ss:MergeAcross`), también si una `<td>` no se cierra; una celda combinada en varias
+  filas, una tabla dentro de otra o posiciones que se pisan descolocarían las celdas, y el
+  fichero se rechaza diciéndolo. Cada hoja del XML (o cada tabla del HTML) es una hoja.
+  Los comentarios de celda no son su valor. En el XML, un dato «Number» o «DateTime» se
+  toma con su tipo (números con punto); uno «String» (hay ERP que escriben así los
+  importes) se interpreta con las reglas de arriba.
+- En el comparativo de costes, un .xls o un CSV no guardan fórmulas: no se distingue un
+  precio escrito de uno calculado, y se avisa de que las líneas tomadas como añadidas a mano
+  pueden ser subtotales (el contraste con el TOTAL lo confirma).
+- Un texto ajeno que empieza por «=» se guarda como texto, nunca como fórmula.
+
 ## Pendiente
 
 - Probar el bloque completo con una obra real del usuario (venta, comparativo,
