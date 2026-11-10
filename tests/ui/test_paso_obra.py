@@ -28,6 +28,7 @@ def ventana(qtbot, tmp_path):
     from tests.integration.test_obra_certificaciones import sin_ia
 
     p.mapeador_ia = sin_ia
+    p.mapeador_facturas_ia = sin_ia
     v._usar_proyecto(p)
     yield v, q
     if v.proyecto is not None:
@@ -271,3 +272,39 @@ def test_futuribles_escenario_y_excel_de_control(ventana, tmp_path):
     pf.tabla.selectRow(1)
     pf.a_quitar.trigger()
     assert pf.tabla.rowCount() == 1
+
+
+def test_importar_facturas_del_erp_desde_la_ventana(ventana, tmp_path):
+    from tests.integration.test_obra_facturas_erp import CSV
+
+    v, q = ventana
+    _preparar_obra(v, q)
+    pc = v.pagina_coste_real
+    v.ir_a_paso("coste_real")
+    ruta = tmp_path / "Facturas.csv"
+    ruta.write_bytes(CSV.encode("cp1252"))
+    v.proyecto.incorporar_documento(ruta)
+    v.refrescar()
+    assert pc.a_erp.isEnabled()
+    docs = [d["nombre_original"] for d in v.proyecto.documentos()]
+    q.preparar("elegir", lambda opciones: opciones.index("Facturas.csv"))  # el listado
+    q.preparar("elegir", 0)  # de las dos obras del listado, la primera
+
+    def tabla(propuestas, paquetes):
+        assert [x.leida.obra for x in propuestas] == ["OB-25 Nave"] * 3
+        assert "MANO DE OBRA" in paquetes
+        return [
+            {"paquete": "CHAPA" if x.leida.proveedor.startswith("Chapas") else "EQUIPOS",
+             "proveedor": x.leida.proveedor, "numero": x.leida.numero,
+             "fecha": x.leida.fecha, "importe": x.leida.importe}
+            for x in propuestas
+        ]  # fmt: skip
+
+    q.preparar("facturas_erp", tabla)
+    pc.a_erp.trigger()
+    assert not q.avisos, q.avisos
+    assert "He entendido (por sus títulos)" in q.explicaciones[-1]
+    assert "3 factura(s); 3 nueva(s)" in q.explicaciones[-1]
+    filas = {pc.tabla.item(i, 0).text(): pc.tabla.item(i, 2).text() for i in range(3)}
+    assert filas["EQUIPOS"] == "12.000,00 €" and filas["CHAPA"] == "900,50 €"
+    assert "Facturas.csv" in docs

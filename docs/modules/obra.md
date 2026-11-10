@@ -346,6 +346,34 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
   pueden ser subtotales (el contraste con el TOTAL lo confirma).
 - Un texto ajeno que empieza por «=» se guarda como texto, nunca como fórmula.
 
+## Bloque 4b: facturas desde el listado del ERP (decisiones de método, 10-11-2026)
+
+- «Obra → Importar facturas del ERP…» (paso Coste real) lee el listado tal como lo exporta
+  el ERP (cualquier hoja de cálculo, bloque 4a), sin plantilla: columnas por sus títulos
+  (proveedor, nº de factura, fecha, base imponible, total, cuota de IVA, retención, obra o
+  centro de coste, concepto); si no se reconocen, Claude Code dice qué columna es qué
+  (solo letras) y TRAZA lo comprueba con las mismas reglas (un «% IVA» no es la cuota; una
+  fecha de vencimiento, de pago o contable no es la de la factura; una columna de importe
+  tiene números y la de fecha, fechas).
+- El coste de una factura es su **base imponible** (sin IVA, como todo el coste de la
+  obra). Sin columna de base: **total − cuota de IVA + retención** (la retención se resta
+  de lo que se paga, no del coste), y se dice. Una fila sin proveedor, número, fecha o
+  importe, o con importe 0, no se importa: se lista con el motivo. Las filas de total del
+  listado no cuentan.
+- **Solo las nuevas**: el ERP suele exportar el acumulado; una factura ya apuntada
+  (mismo proveedor y número, sin mayúsculas ni espacios de más) no se repite. Si viene con
+  otro importe o fecha, **no se cambia**: se avisa para corregirla a mano (lo apuntado no
+  se modifica en silencio).
+- **Varias obras en el listado**: si hay columna de obra o centro de coste con varios
+  valores, el usuario elige cuál es esta obra.
+- **Paquete**: TRAZA lo **propone**, el usuario decide en una tabla antes de importar:
+  1. si el listado trae en «obra» o «concepto» exactamente el nombre de un paquete;
+  2. si no, el paquete donde están las demás facturas de ese proveedor en esta obra (si
+     están todas en uno; en varios, elige el usuario).
+  Un paquete cerrado no se propone ni admite facturas.
+- Se importan todas en una sola orden: deshacer las quita todas; con una mal (paquete que
+  no existe, repetida en el listado), no se importa ninguna.
+
 ## Pendiente
 
 - Probar el bloque completo con una obra real del usuario (venta, comparativo,

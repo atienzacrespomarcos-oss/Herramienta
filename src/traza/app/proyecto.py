@@ -44,6 +44,7 @@ from traza.app.ordenes import (
     GuardarFuturible,
     ImportarCertificacion,
     ImportarCosteObjetivo,
+    ImportarFacturas,
     ImportarMedicion,
     LeerPlano,
     MarcarFuturible,
@@ -73,6 +74,7 @@ from traza.io import (
     dxf,
     esquema_hidraulico_dxf,
     excel_obra,
+    facturas_erp,
     hoja_calculo,
     informe_cargas,
     informe_hidronica,
@@ -111,6 +113,8 @@ class Proyecto:
         self.extractor_ia = claude_code.extraer
         #: Qué columna es qué en un Excel de certificación (sustituible en pruebas).
         self.mapeador_ia = claude_code.mapear_columnas
+        #: Lo mismo para el listado de facturas del ERP (sustituible en pruebas).
+        self.mapeador_facturas_ia = claude_code.mapear_columnas_facturas
         self._rehacer: list[_Paso] = []
         #: DXF ya leídos en esta sesión (el documento no cambia).
         self._planos_dxf: dict[str, dxf.PlanoDxf] = {}
@@ -655,6 +659,63 @@ class Proyecto:
 
     def quitar_factura(self, factura_id: str) -> None:
         self.ejecutar(QuitarFactura(factura_id))
+
+    def leer_facturas_erp(
+        self, documento_id: str, esperar: Callable[[Callable], Any] | None = None
+    ) -> tuple[facturas_erp.Mapa, facturas_erp.Leido, list[calculo_obra.FacturaPropuesta]]:
+        """Interpreta el listado de facturas del ERP (no escribe nada): columnas por sus
+        títulos o, si no se reconocen, por la IA (solo letras; las cifras las lee TRAZA).
+        Devuelve el mapa, lo leído y, por factura, si es nueva y el paquete propuesto."""
+        if self.coste_objetivo() is None:
+            raise OrdenRechazada(
+                "Importa antes el coste objetivo: las facturas se apuntan a sus paquetes."
+            )
+        doc = leer(self._con, "documento", {"id": documento_id})
+        if doc is None:
+            raise OrdenRechazada("Documento no incorporado.")
+        if not hoja_calculo.es_hoja(doc["extension"]):
+            raise OrdenRechazada(
+                f"«{doc['nombre_original']}» no es una hoja de cálculo (.xlsx, .xlsm, .xls o .csv)."
+            )
+        ruta = self.ruta_documento(documento_id)
+        try:
+            candidatos = facturas_erp.mapas(ruta)
+            if candidatos:
+                # Varias hojas con columnas de facturas: la que más facturas lee.
+                leidos = []
+                for m in candidatos:
+                    try:
+                        leidos.append((m, facturas_erp.leer(ruta, m)))
+                    except facturas_erp.FacturasNoReconocidas:
+                        continue
+                if not leidos:
+                    facturas_erp.leer(ruta, candidatos[0])  # da el motivo
+                mapa, leido = max(leidos, key=lambda x: len(x[1].facturas))
+            else:
+                texto = facturas_erp.volcado_titulos(ruta)
+                esperar = esperar or (lambda f: f())
+                try:
+                    propuesta = esperar(lambda: self.mapeador_facturas_ia(texto))
+                except (claude_code.IaNoDisponible, claude_code.IaError) as exc:
+                    raise OrdenRechazada(
+                        f"TRAZA no reconoce las columnas de «{doc['nombre_original']}» por sus "
+                        f"títulos y no ha podido preguntar a la IA: {exc}"
+                    ) from exc
+                mapa = facturas_erp.mapa_de_ia(ruta, propuesta)
+                leido = facturas_erp.leer(ruta, mapa)
+        except facturas_erp.FacturasNoReconocidas as exc:
+            raise OrdenRechazada(f"«{doc['nombre_original']}»: {exc}") from exc
+        propuestas = calculo_obra.proponer_facturas(
+            leido.facturas,
+            self.facturas(),
+            list(self.resumen_obra().paquetes),
+            self.paquetes_cerrados(),
+        )
+        return mapa, leido, propuestas
+
+    def importar_facturas(self, documento_id: str, facturas: list[dict[str, Any]]) -> None:
+        """Las facturas elegidas del listado, cada una con su paquete (una sola orden)."""
+        self.ejecutar(ImportarFacturas(facturas, documento_id))
 
     def paquetes_cerrados(self) -> set[str]:
         return {f["paquete"] for f in self._filas("SELECT paquete FROM paquete_cerrado")}

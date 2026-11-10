@@ -21,6 +21,7 @@ def _sin_ia(_texto):
 def proyecto(tmp_path: Path):
     p = Proyecto.crear(tmp_path / "Nave prueba", "Nave prueba")
     p.mapeador_ia = _sin_ia  # ninguna prueba llama a la IA real
+    p.mapeador_facturas_ia = _sin_ia
     yield p
     p.cerrar()
 

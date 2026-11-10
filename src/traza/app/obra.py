@@ -421,3 +421,77 @@ def venta_por_codigo(
         else:
             salida[clave] = (p["codigo"].strip(), p["resumen"] or "", imp)
     return salida
+
+
+# --- Bloque 4b: facturas desde el listado del ERP -------------------------------------------
+
+
+def clave_factura(proveedor: str, numero: str) -> tuple[str, str]:
+    """La misma que RegistrarFactura: «ACME» y «Acme», o con espacios de más, son la misma."""
+    return " ".join(proveedor.split()).casefold(), " ".join(numero.split()).casefold()
+
+
+@dataclass(frozen=True)
+class FacturaPropuesta:
+    leida: Any  # io/facturas_erp.FacturaLeida
+    #: «nueva», «apuntada» (ya está, igual) o «distinta» (ya está con otro importe o fecha:
+    #: no se sobrescribe; se avisa).
+    estado: str
+    paquete: str | None  # el que propone TRAZA (None: lo elige el usuario)
+    motivo: str  # por qué ese paquete, o por qué ninguno
+
+
+def proponer_facturas(
+    leidas: list[Any],
+    existentes: list[dict[str, Any]],
+    paquetes: list[str],
+    cerrados: set[str],
+) -> list[FacturaPropuesta]:
+    """Qué facturas del listado son nuevas y a qué paquete irían. El paquete se propone,
+    nunca se impone (lo confirma el usuario):
+    1. Si el listado trae en «obra» o «concepto» exactamente el nombre de un paquete.
+    2. Si no, el paquete donde están las demás facturas de ese proveedor en esta obra
+       (si están todas en uno).
+    Un paquete cerrado no se propone (no admite facturas)."""
+    por_clave = {clave_factura(f["proveedor"], f["numero"]): f for f in existentes}
+    historial: dict[str, set[str]] = {}
+    for f in existentes:
+        historial.setdefault(clave_factura(f["proveedor"], "")[0], set()).add(f["paquete"])
+    nombres = {p.casefold(): p for p in paquetes}
+    salida = []
+    for x in leidas:
+        previa = por_clave.get(clave_factura(x.proveedor, x.numero))
+        if previa is not None:
+            igual = (
+                round(previa["importe"], 2) == round(x.importe, 2) and previa["fecha"] == x.fecha
+            )
+            salida.append(
+                FacturaPropuesta(
+                    x,
+                    "apuntada" if igual else "distinta",
+                    previa["paquete"],
+                    "ya está apuntada"
+                    if igual
+                    else (
+                        f"ya está apuntada con {previa['importe']:.2f} € del "
+                        f"{previa['fecha']}: no se cambia (corrígela a mano si hace falta)"
+                    ).replace(".", ",", 1),
+                )
+            )
+            continue
+        paquete, motivo = None, "elige el paquete"
+        for texto in (x.obra, x.concepto):
+            candidato = nombres.get(" ".join(texto.split()).casefold())
+            if candidato:
+                paquete, motivo = candidato, "el listado lo dice"
+                break
+        if paquete is None:
+            usados = historial.get(clave_factura(x.proveedor, "")[0], set())
+            if len(usados) == 1:
+                paquete, motivo = next(iter(usados)), "sus otras facturas van ahí"
+            elif len(usados) > 1:
+                motivo = "el proveedor tiene facturas en varios paquetes: elige"
+        if paquete is not None and paquete in cerrados:
+            paquete, motivo = None, f"«{paquete}» está cerrado: elige otro o reábrelo"
+        salida.append(FacturaPropuesta(x, "nueva", paquete, motivo))
+    return salida

@@ -593,6 +593,44 @@ class RegistrarFactura(Orden):
 
 
 @dataclass
+class ImportarFacturas(Orden):
+    """Varias facturas de una vez, del listado del ERP (docs/modules/obra.md, bloque 4b):
+    las mismas reglas que una a una (RegistrarFactura) y, además, ninguna repetida dentro
+    del listado. Deshacer las quita todas."""
+
+    facturas: list[dict[str, Any]]  # paquete, proveedor, numero, fecha, importe
+    documento_id: str | None = None
+
+    def planificar(self, con: sqlite3.Connection) -> list[Delta]:
+        if not self.facturas:
+            raise OrdenRechazada("No hay ninguna factura que importar.")
+        vistas: set[tuple[str, str]] = set()
+        deltas: list[Delta] = []
+        for f in self.facturas:
+            clave = (
+                " ".join(str(f["proveedor"]).split()).casefold(),
+                " ".join(str(f["numero"]).split()).casefold(),
+            )
+            if clave in vistas:
+                raise OrdenRechazada(
+                    f"La factura {f['numero']} de {f['proveedor']} está dos veces en el listado."
+                )
+            vistas.add(clave)
+            try:
+                deltas += RegistrarFactura(
+                    paquete=f["paquete"],
+                    proveedor=f["proveedor"],
+                    numero=f["numero"],
+                    fecha=f["fecha"],
+                    importe=f["importe"],
+                    documento_id=self.documento_id,
+                ).planificar(con)
+            except OrdenRechazada as exc:
+                raise OrdenRechazada(f"{f['proveedor']}, {f['numero']}: {exc}") from exc
+        return deltas
+
+
+@dataclass
 class QuitarFactura(Orden):
     factura_id: str
 

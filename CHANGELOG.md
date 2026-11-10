@@ -2,6 +2,14 @@
 
 ## [Sin publicar]
 
+### Obra · bloque 4b: facturas desde el listado del ERP (10-11-2026)
+- **Coste real → Importar facturas del ERP…**: el listado tal como lo exporta el ERP
+  (Excel, .xls, CSV), sin plantilla. Columnas por título o por la IA (solo el mapa).
+- Base imponible (o total − IVA + retención, dicho); solo las facturas nuevas; las ya
+  apuntadas con otro importe se avisan sin cambiarlas; obra elegida si hay varias.
+- Paquete propuesto (por el listado o por las otras facturas del proveedor) y confirmado
+  en una tabla; todo en una orden que se deshace de una vez.
+
 ### Obra · bloque 4a: cualquier hoja de cálculo (10-11-2026)
 - Presupuestos, comparativo de costes y certificaciones se leen también en **.xls** (Excel
   97-2003) y **.csv** (exportaciones de un ERP), además de .xlsx y .xlsm.
