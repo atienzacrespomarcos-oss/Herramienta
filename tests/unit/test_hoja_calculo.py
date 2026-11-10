@@ -71,9 +71,10 @@ def test_solo_enteros_ambiguos_decide_el_separador(tmp_path):
     con_punto_y_coma = tmp_path / "a.csv"
     con_punto_y_coma.write_text("Importe;X\n1.234;1\n", encoding="utf-8")
     assert _filas(con_punto_y_coma)[1][0] == 1234  # como Excel en España
+    # Con otro separador y sin prueba, «1.234» es ambiguo (mil o uno con 234): texto.
     con_coma = tmp_path / "b.csv"
     con_coma.write_text("Importe,X\n1.234,1\n", encoding="utf-8")
-    assert _filas(con_coma)[1][0] == 1.234
+    assert _filas(con_coma)[1][0] == "1.234"
 
 
 def test_xls_antiguo(tmp_path):
@@ -145,13 +146,17 @@ def test_identificadores_con_cero_delante_y_espacios(tmp_path):
 
 
 def test_tres_decimales_y_miles_a_la_inglesa(tmp_path):
-    """«0,125» no es 125 ni «1,234» en un fichero a la inglesa es 1,234."""
+    """«0,125» no es 125; y en un fichero a la inglesa con solo «12.50» de prueba, «1,234»
+    (mil doscientos treinta y cuatro o uno con 234) no se elige: queda como texto."""
     es = tmp_path / "es.csv"
     es.write_text("A;B\n0,125;7,1%\n", encoding="utf-8")
     assert _filas(es)[1] == [0.125, 0.071]
     en = tmp_path / "en.csv"
     en.write_text('A,B\n"1,234",12.50\n"0,125",1\n', encoding="utf-8")
-    assert _filas(en)[1:] == [[1234, 12.5], ["0,125", 1]]
+    assert _filas(en)[1:] == [["1,234", 12.5], ["0,125", 1]]
+    claro = tmp_path / "claro.csv"
+    claro.write_text('A,B\n"1,234",1\n"2,345.67",2\n', encoding="utf-8")
+    assert _filas(claro)[1:] == [[1234, 1], [2345.67, 2]]  # prueba fuerte: se leen
 
 
 def test_separador_con_importes_de_coma_en_cada_linea(tmp_path):
@@ -190,6 +195,75 @@ def test_xls_que_no_lo_es(tmp_path):
     renombrado = tmp_path / "renombrado.xls"
     wb.save(renombrado)
     assert _filas(renombrado) == [["Código", 7]]
+
+
+def test_xml_de_excel_con_celdas_saltadas_y_tipos(tmp_path):
+    """Revisión 10-11-2026: sin respetar `ss:Index`, el importe tras celdas vacías se corría
+    de columna; y sus números van siempre con punto («1.234» es 1,234)."""
+    ruta = tmp_path / "erp.xls"
+    ruta.write_text(
+        '<?xml version="1.0"?>'
+        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
+        'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet><Table>'
+        '<Row><Cell><Data ss:Type="String">Código</Data></Cell>'
+        '<Cell ss:MergeAcross="1"><Data ss:Type="String">Título</Data></Cell>'
+        '<Cell><Data ss:Type="String">Importe</Data></Cell></Row>'
+        '<Row ss:Index="3"><Cell><Data ss:Type="String">01.02</Data></Cell>'
+        '<Cell ss:Index="4"><Data ss:Type="Number">1.234</Data></Cell></Row>'
+        '<Row><Cell><Data ss:Type="DateTime">2026-11-03T00:00:00.000</Data></Cell></Row>'
+        "</Table></Worksheet></Workbook>",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert f[0] == ["Código", "Título", None, "Importe"]
+    assert f[1] == [None, None, None, None]  # la fila 2 no existe en el XML: vacía
+    assert f[2] == ["01.02", None, None, 1.234]  # en su columna, y con punto decimal
+    assert f[3][0] == datetime(2026, 11, 3)
+
+
+def test_html_con_colspan_y_rowspan(tmp_path):
+    con_colspan = tmp_path / "a.xls"
+    con_colspan.write_text(
+        "<table><tr><td colspan=2>Partida</td><td>Importe</td></tr>"
+        "<tr><td>A</td><td>x</td><td>1.234,56</td></tr></table>",
+        encoding="utf-8",
+    )
+    assert _filas(con_colspan) == [["Partida", None, "Importe"], ["A", "x", 1234.56]]
+    con_rowspan = tmp_path / "b.xls"
+    con_rowspan.write_text(
+        "<table><tr><td rowspan=2>Cap</td><td>1</td></tr><tr><td>2</td></tr></table>",
+        encoding="utf-8",
+    )
+    with pytest.raises(HojaNoLegible, match="combinadas en varias filas"):
+        abrir(con_rowspan)
+
+
+def test_codigos_de_dos_niveles_no_cambian_la_convencion(tmp_path):
+    """Revisión 10-11-2026: «1.10» (código de capítulo) votaba «punto decimal» y «12.500»
+    se leía 12,5. La columna se reconoce por su título y no vota."""
+    ruta = tmp_path / "ppto.csv"
+    ruta.write_text(
+        "Cód.;Resumen;Importe\n1.1;Climatización;12.500\n1.10;Ventilación;1.250\n",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert [x[0] for x in f[1:]] == ["1.1", "1.10"]
+    assert [x[2] for x in f[1:]] == [12500, 1250]
+    # Sin título y con tabuladores (sin prueba de convención): ambiguo, texto.
+    tab = tmp_path / "tab.csv"
+    tab.write_text("1.1\tClima\t12.500\n1.10\tVent\t1.250\n", encoding="utf-8")
+    assert [x[2] for x in _filas(tab)] == ["12.500", "1.250"]
+
+
+def test_una_celda_suelta_no_convierte_en_texto_los_importes(tmp_path):
+    ruta = tmp_path / "cert.csv"
+    ruta.write_text(
+        "Certificación nº;01\nPartida;Importe\nA;1.234,56\nB;10\nC;20,5\nD;3\n",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert f[0] == ["Certificación nº", "01"] or f[0][1] == "01"
+    assert [x[1] for x in f[2:]] == [1234.56, 10, 20.5, 3]
 
 
 # --- Ayudas para otras pruebas: el mismo contenido en .xls y en .csv ------------------------

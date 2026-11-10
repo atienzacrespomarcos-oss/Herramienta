@@ -198,27 +198,65 @@ def _texto_de(ruta: Path) -> str:
     return datos.decode("latin-1")
 
 
+def _entero_attr(texto, defecto: int = 0) -> int:
+    try:
+        return int(texto)
+    except (TypeError, ValueError):
+        return defecto
+
+
 class _Tabla(HTMLParser):
     """Filas y celdas de una tabla HTML (<tr><td>) o de un XML de Excel 2003
-    (<Row><Cell><Data>), que es lo que muchos ERP guardan con extensión .xls."""
+    (<Row><Cell><Data>), que es lo que muchos ERP guardan con extensión .xls.
+
+    Cada celda va en su columna (revisión 10-11-2026: sin esto, un importe tras celdas
+    vacías se corría a la izquierda): el XML de Excel salta las vacías con `ss:Index` y
+    combina con `ss:MergeAcross`; el HTML, con `colspan`. Una celda combinada en varias
+    filas (`rowspan`, `ss:MergeDown`) movería las de debajo: el fichero se rechaza y se
+    dice. Del XML se guarda además el tipo que declara cada dato (`ss:Type`): sus números
+    van siempre con punto, sin convención que adivinar."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.filas: list[list[str]] = []
+        self.filas: list[list[tuple[str, str | None]]] = []
         self._celda: list[str] | None = None
+        self._tipo: str | None = None
+        self._extra = 0
 
     def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v or "") for k, v in attrs}
         if tag in ("tr", "row"):
+            indice = _entero_attr(a.get("ss:index"))
+            while indice and len(self.filas) < indice - 1:
+                self.filas.append([])
             self.filas.append([])
         elif tag in ("td", "th", "cell") and self.filas:
-            self._celda = []
+            if _entero_attr(a.get("rowspan"), 1) > 1 or _entero_attr(a.get("ss:mergedown")) > 0:
+                raise HojaNoLegible(
+                    "tiene celdas combinadas en varias filas, que descolocarían las de debajo. "
+                    "Ábrelo en Excel y guárdalo como .xlsx."
+                )
+            fila = self.filas[-1]
+            indice = _entero_attr(a.get("ss:index"))
+            if indice:
+                if indice - 1 < len(fila):
+                    raise HojaNoLegible("tiene celdas en posiciones que se pisan.")
+                fila.extend([("", None)] * (indice - 1 - len(fila)))
+            self._celda, self._tipo = [], None
+            self._extra = max(
+                _entero_attr(a.get("colspan"), 1) - 1, _entero_attr(a.get("ss:mergeacross"))
+            )
+        elif tag == "data" and self._celda is not None:
+            self._tipo = a.get("ss:type") or None
         elif tag == "br" and self._celda is not None:
             self._celda.append(" ")
 
     def handle_endtag(self, tag):
         if tag in ("td", "th", "cell") and self._celda is not None and self.filas:
-            self.filas[-1].append(" ".join("".join(self._celda).split()))
-            self._celda = None
+            texto = " ".join("".join(self._celda).split())
+            self.filas[-1].append((texto, self._tipo))
+            self.filas[-1].extend([("", None)] * self._extra)
+            self._celda, self._tipo, self._extra = None, None, 0
 
     def handle_data(self, data):
         if self._celda is not None:
@@ -248,13 +286,18 @@ def _desde_texto(ruta: Path) -> Workbook:
     texto = _texto_de(ruta)
     if texto.lstrip()[:1] == "<":
         tabla = _Tabla()
-        tabla.feed(texto)
+        try:
+            tabla.feed(texto)
+        except HojaNoLegible as exc:
+            raise HojaNoLegible(f"«{ruta.name}» {exc}") from exc
         filas, separador = tabla.filas, ""
-        if not filas:
+        if not any(filas):
             raise HojaNoLegible(f"«{ruta.name}» no tiene ninguna tabla.")
     else:
         separador = _separador(texto)
-        filas = list(csv.reader(io.StringIO(texto), delimiter=separador))
+        filas = [
+            [(v, None) for v in f] for f in csv.reader(io.StringIO(texto), delimiter=separador)
+        ]
     return _desde_filas(filas, _titulo(ruta.stem, set()), separador)
 
 
@@ -288,41 +331,83 @@ def _es_codigo(t: str | None) -> bool:
     return (
         bool(_VARIOS_SEPARADORES.match(t.lstrip("+-")))
         and not _CON_AMBOS.match(t)
-        and not (
-            re.match(r"^\d{1,3}([.,]\d{3}){2,}$", t)  # 1.234.567: miles
-        )
+        and not re.match(r"^\d{1,3}([.,]\d{3}){2,}$", t)  # 1.234.567: miles (ambiguo, aceptado)
     )
 
 
-def _convencion(textos: list[str], separador: str) -> str:
-    """«,» si la coma es el decimal (convención española) o «.» si lo es el punto.
+#: Títulos de columna de identificadores: sus valores nunca son cantidades ni votan la
+#: convención decimal (revisión 10-11-2026: «1.10», código de capítulo, votaba «punto
+#: decimal» y «1.250» pasaba a 1,25). Por el principio del título: «Cantidad partida» no.
+_TITULO_DE_CODIGOS = re.compile(
+    r"^(c[oó]d(igo|\.)?|ref(erencia|\.)?|cap([ií]tulo|\.)?|partida|n[ºo°.]|n[uú]m(ero|\.)?"
+    r"|item|[ií]tem|id\b|nif|cif|c\.?p\.?\b|tel[eé]fono|factura\b)",
+    re.IGNORECASE,
+)
 
-    Por orden, lo que el fichero demuestra (solo con las columnas que no son de códigos):
-    1. Números con punto y coma a la vez («1.234,56» o «1,234.56»): el último es el decimal.
-    2. Si no, coma con 1-2 o 4+ cifras detrás («12,5») solo puede ser decimal con coma;
-       punto igual («12.50»), decimal con punto. Si aparecen las dos (contradicción), o
-       ninguna (solo enteros o «1.234»), decide el separador de campos, como Excel en
-       España: con «;», coma decimal. Lo que contradice la convención elegida queda como
-       texto (`_numero`), no se reinterpreta.
+
+def _columnas_de_codigos(filas, limpios, ancho: int) -> set[int]:
+    """Una columna es de códigos si su título lo dice o si al menos el 30 % de sus valores
+    con cifras tienen forma de código. Una celda suelta («01», nº de certificación encima
+    de los importes) no convierte en texto una columna de importes."""
+    codigos = set()
+    for c in range(ancho):
+        titulos = [
+            f[c][0].strip()
+            for r, f in enumerate(filas[:15])
+            if c < len(f) and f[c][0].strip() and f[c][1] is None and limpios[r][c][0] is None
+        ]
+        if any(len(t) <= 25 and _TITULO_DE_CODIGOS.match(t) for t in titulos):
+            codigos.add(c)
+            continue
+        con_cifras = [f[c] for f in limpios if c < len(f) and f[c][0] is not None]
+        forma = sum(1 for t, _n, pct in con_cifras if not pct and _es_codigo(t))
+        if forma and forma >= 0.3 * len(con_cifras):
+            codigos.add(c)
+    return codigos
+
+
+def _convencion(textos: list[str], separador: str) -> tuple[str, bool]:
+    """(«,» si la coma es el decimal o «.» si lo es el punto; si los valores ambiguos como
+    «1.250» —mil doscientos cincuenta o uno con veinticinco— se pueden leer).
+
+    Lo que el fichero demuestra, solo con las columnas que no son de códigos:
+    1. Números con punto y coma a la vez («1.234,56» o «1,234.56»): el último es el
+       decimal. Prueba fuerte: los ambiguos se leen.
+    2. Coma con 1-2 o 4+ cifras detrás («12,5»): coma decimal, y los ambiguos se leen (un
+       código no lleva comas). Punto igual («12.50»): punto decimal, pero los ambiguos
+       quedan como texto: «1.10» puede ser un código de capítulo sin título que lo diga
+       (revisión 10-11-2026: «12.500» se leía 12,5).
+    3. Sin prueba: con «;» (o una tabla HTML), la coma, como Excel en España, y los
+       ambiguos se leen; con otro separador, el punto, y quedan como texto. Con pruebas
+       que se contradicen, igual pero los ambiguos quedan siempre como texto.
     """
     votos = {",": 0, ".": 0}
     for t in textos:
         if "," in t and "." in t and _CON_AMBOS.match(t):
             votos["," if t.rfind(",") > t.rfind(".") else "."] += 1
     if votos[","] != votos["."]:
-        return "," if votos[","] > votos["."] else "."
+        return ("," if votos[","] > votos["."] else "."), True
     coma = any(_COMA_DECIMAL.match(t) for t in textos)
     punto = any(_PUNTO_DECIMAL.match(t) for t in textos)
-    if coma != punto:
-        return "," if coma else "."
-    return "," if separador in (";", "") else "."
+    if coma and not punto:
+        return ",", True
+    if punto and not coma:
+        return ".", False
+    espanola = separador in (";", "")
+    return ("," if espanola else "."), espanola and not (coma and punto)
 
 
-def _numero(t: str, decimal: str):
+_AMBIGUO = re.compile(r"^[+-]?[1-9]\d{0,2}[.,]\d{3}$")
+
+
+def _numero(t: str, decimal: str, ambiguos: bool = True):
     """None si el texto no encaja con la convención del fichero: el separador de miles
     solo va de 3 en 3, el primer grupo no empieza por 0 («0,125» con coma de miles no es
     125) y el decimal va una vez («1234.56» en un fichero con coma decimal se queda como
-    texto; leerlo como 123456 sería inventar una cifra)."""
+    texto; leerlo como 123456 sería inventar una cifra). Sin `ambiguos`, «1.250» queda
+    como texto."""
+    if not ambiguos and _AMBIGUO.match(t):
+        return None
     miles = "." if decimal == "," else ","
     d, m = re.escape(decimal), re.escape(miles)
     entera = rf"(0|[1-9]\d*|[1-9]\d{{0,2}}({m}\d{{3}})+)"
@@ -339,7 +424,8 @@ def _numero(t: str, decimal: str):
 
 
 def _fecha(t: str):
-    """Solo con el año de 4 cifras: «01.02.03» es un código de partida, no una fecha."""
+    """Solo con el año de 4 cifras: «01.02.03» es un código de partida, no una fecha.
+    Siempre día/mes/año (convención española)."""
     try:
         m = _FECHA_AMD.match(t)
         if m:
@@ -352,11 +438,34 @@ def _fecha(t: str):
     return None
 
 
-def _desde_filas(filas: list[list[str]], titulo: str, separador: str) -> Workbook:
-    limpios = [[_limpio(v) if v.strip() else (None, False, False) for v in f] for f in filas]
+def _tipado(texto: str, tipo: str):
+    """Un dato del XML de Excel con su tipo declarado: número con punto, fecha ISO."""
+    if tipo == "Number":
+        try:
+            v = float(texto)
+        except ValueError:
+            return texto
+        return _entero_si_lo_es(v) if v == v and abs(v) != float("inf") else texto
+    if tipo == "DateTime":
+        try:
+            return datetime.fromisoformat(texto[:19])
+        except ValueError:
+            return texto
+    if tipo == "Boolean":
+        return texto.strip() == "1"
+    return texto  # String: texto tal cual
+
+
+def _desde_filas(
+    filas: list[list[tuple[str, str | None]]], titulo: str, separador: str
+) -> Workbook:
+    limpios = [
+        [_limpio(v) if v.strip() and t is None else (None, False, False) for v, t in f]
+        for f in filas
+    ]
     ancho = max((len(f) for f in filas), default=0)
-    codigos = {c for c in range(ancho) if any(c < len(f) and _es_codigo(f[c][0]) for f in limpios)}
-    decimal = _convencion(
+    codigos = _columnas_de_codigos(filas, limpios, ancho)
+    decimal, ambiguos = _convencion(
         [x[0] for f in limpios for c, x in enumerate(f) if x[0] and c not in codigos],
         separador,
     )
@@ -364,25 +473,27 @@ def _desde_filas(filas: list[list[str]], titulo: str, separador: str) -> Workboo
     ws = wb.active
     ws.title = titulo
     for r, fila in enumerate(filas, start=1):
-        for c, crudo in enumerate(fila):
+        for c, (crudo, tipo) in enumerate(fila):
             texto = crudo.strip()
             if not texto:
                 continue
-            if c in codigos:
+            if tipo is not None:
+                _poner(ws, r, c + 1, _tipado(texto, tipo))
+            elif c in codigos:
                 _poner(ws, r, c + 1, texto)
-                continue
-            valor, formato = _convertir(texto, limpios[r - 1][c], decimal)
-            _poner(ws, r, c + 1, valor, formato)
+            else:
+                valor, formato = _convertir(texto, limpios[r - 1][c], decimal, ambiguos)
+                _poner(ws, r, c + 1, valor, formato)
     return wb
 
 
-def _convertir(texto: str, limpio, decimal: str):
+def _convertir(texto: str, limpio, decimal: str, ambiguos: bool = True):
     t, negativo, pct = limpio
     fecha = None if pct else _fecha(texto)
     if fecha is not None:
         return fecha, None
     if t is not None:
-        n = _numero(t, decimal)
+        n = _numero(t, decimal, ambiguos)
         if n is not None:
             n = -n if negativo else n
             if pct:

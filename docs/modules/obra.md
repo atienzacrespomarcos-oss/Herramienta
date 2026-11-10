@@ -309,14 +309,29 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
     aaaa-mm-dd): «01.02.03» es un código, no una fecha.
   - Importes con «€», negativos entre paréntesis o con el signo detrás, miles con espacio
     («1 234,56»), porcentajes («21 %» → 0,21).
+  - **Columnas de códigos**: por su título («Código», «Cód.», «Ref.», «Capítulo»,
+    «Partida», «Nº», «Factura», «NIF», «CP»…; «Cantidad partida» no) o porque al menos el
+    30 % de sus valores tienen forma de código. Sus valores no votan la convención y una
+    celda suelta («01» encima de los importes) no convierte en texto una columna de
+    importes.
   - La **convención decimal se decide por fichero**, con lo que demuestran las columnas
-    que no son de códigos: un número con punto y coma a la vez («1.234,56») dice cuál es
-    el decimal; si no, coma o punto con 1-2 o 4+ cifras detrás («12,5», «12.50»); con 3
-    cifras («1,234», «0,125») no demuestra nada. Si no hay prueba, o se contradicen,
-    decide el separador de campos, como Excel en España (con «;», coma decimal).
+    que no son de códigos:
+    1. Un número con punto y coma a la vez («1.234,56») es prueba fuerte.
+    2. Coma con 1-2 o 4+ cifras («12,5») demuestra la coma decimal. Punto igual («12.50»)
+       demuestra el punto, pero **no basta para leer los ambiguos** («1.250»: mil
+       doscientos cincuenta o uno con veinticinco), que quedan como texto: «1.10» puede ser
+       un código de capítulo sin título (los códigos usan puntos, no comas).
+    3. Sin prueba: con «;» o en una tabla HTML, coma decimal como Excel en España; con otro
+       separador, punto, y los ambiguos quedan como texto. Con pruebas contradictorias,
+       los ambiguos quedan siempre como texto.
   - Un número que **contradice** la convención («1234.56» donde la coma es el decimal) o
     con un grupo de miles mal formado («0,125» con coma de miles) **se queda como texto**:
     reinterpretarlo sería inventar una cifra.
+  - Fechas siempre día/mes/año (convención española).
+- **Tablas HTML y XML de Excel 2003**: cada celda en su columna (`colspan`, `ss:Index`,
+  `ss:MergeAcross`); una celda combinada en varias filas descolocaría las de debajo, y el
+  fichero se rechaza diciéndolo. En el XML, cada dato con el tipo que declara (sus números
+  van siempre con punto).
 - En el comparativo de costes, un .xls o un CSV no guardan fórmulas: no se distingue un
   precio escrito de uno calculado, y se avisa de que las líneas tomadas como añadidas a mano
   pueden ser subtotales (el contraste con el TOTAL lo confirma).
