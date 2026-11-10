@@ -110,7 +110,7 @@ def test_sin_base_imponible_total_menos_iva_mas_retencion(con_coste, tmp_path): 
                "Concepto"])  # fmt: skip
     # Base 1000, IVA 21 % (210), retención 15 % (150): total 1060.
     ws.append(["Instalador SL", 1234, datetime(2026, 10, 5), 1060.0, 210.0, 150.0, "MANO DE OBRA"])
-    ws.append(["Instalador SL", "1235", "sin fecha", 100.0, 21.0, 0, ""])
+    ws.append(["Instalador SL", "1235", "sin fecha", 121.0, 21.0, 0, ""])
     ruta = tmp_path / "erp.xlsx"
     wb.save(ruta)
     mapa, leido, propuestas = _leer(con_coste, ruta)
@@ -206,7 +206,7 @@ def test_proveedores_que_empiezan_por_total_no_son_filas_de_total(con_coste, tmp
     ])  # fmt: skip
     _m, leido, _p = _leer(con_coste, ruta)
     assert [x.proveedor for x in leido.facturas] == ["Totalenergies SA", "Sumasa"]
-    assert leido.descartadas == []
+    assert leido.descartadas == [(4, "fila de total del listado")]
 
 
 def test_abono_con_retencion_sin_base(con_coste, tmp_path):  # noqa: F811
@@ -294,3 +294,25 @@ def test_la_orden_no_admite_paquetes_cerrados(con_coste, tmp_path):  # noqa: F81
     p.cerrar_paquete("EQUIPOS")
     with pytest.raises(OrdenRechazada, match="cerrado"):
         p.importar_facturas(p.documentos()[-1]["id"], _elegir(propuestas[:1]))
+
+
+def test_total_neto_es_la_base_y_garantia_no_es_irpf(con_coste, tmp_path):  # noqa: F811
+    """Revisión 10-11-2026: «Total neto» tomado por total daba una base un 21 % corta que
+    pasaba la comprobación del tipo con recargo (21/79 ≈ 26,2 %)."""
+    ruta = _xlsx(tmp_path, "h.xlsx", [
+        ["Proveedor", "Nº factura", "Fecha", "Total neto", "Cuota IVA", "Retención garantía"],
+        ["Subcontrata SL", "S-1", D, 1000.0, 210.0, 50.0],
+    ])  # fmt: skip
+    mapa, leido, _p = _leer(con_coste, ruta)
+    assert mapa.columnas["base"] == "D" and "retencion" not in mapa.columnas
+    assert leido.facturas[0].importe == 1000
+
+
+def test_inversion_del_sujeto_pasivo_con_cuota_cero(con_coste, tmp_path):  # noqa: F811
+    """Subcontratas de obra: IVA 0 por inversión del sujeto pasivo (art. 84.Uno.2.f)."""
+    ruta = _xlsx(tmp_path, "i.xlsx", [
+        ["Proveedor", "Nº factura", "Fecha", "Total factura", "Cuota IVA"],
+        ["Subcontrata SL", "S-2", D, 1000.0, 0.0],
+    ])  # fmt: skip
+    _m, leido, _p = _leer(con_coste, ruta)
+    assert leido.facturas[0].importe == 1000

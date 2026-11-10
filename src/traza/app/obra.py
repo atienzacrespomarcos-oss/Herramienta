@@ -438,7 +438,12 @@ def clave_factura(proveedor: str, numero: str) -> tuple[str, str]:
     «CHAPAS NORTE, S.A.» y «Chapas Norte SA», o «F-001» y «F001» (revisión 10-11-2026: el
     ERP y lo escrito a mano no siempre coinciden). La usan RegistrarFactura e
     ImportarFacturas."""
-    return _solo_letras_y_cifras(proveedor), _solo_letras_y_cifras(numero)
+    # Si no queda nada (todo símbolos, otro alfabeto), el texto tal cual: dos claves vacías
+    # fundirían facturas distintas.
+    return (
+        _solo_letras_y_cifras(proveedor) or " ".join(proveedor.split()).casefold(),
+        _solo_letras_y_cifras(numero) or " ".join(numero.split()).casefold(),
+    )
 
 
 @dataclass(frozen=True)

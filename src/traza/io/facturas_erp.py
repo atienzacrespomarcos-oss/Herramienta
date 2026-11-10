@@ -61,9 +61,12 @@ NOMBRES_ROL = {
 }
 
 #: Tipos de IVA en España (%): general 21, reducido 10, superreducido 4 (Ley 37/1992 del
-#: IVA, arts. 90 y 91), 5 (tipo temporal de algunos productos, RDL 20/2022) y 0; y con
-#: recargo de equivalencia (art. 161: 5,2; 1,4; 0,5; 0,62; 1,75): 26,2; 11,4; 4,5.
-TIPOS_IVA = (0.0, 4.0, 4.5, 5.0, 5.62, 10.0, 11.4, 21.0, 26.2)
+#: IVA, arts. 90 y 91), 5 (tipo temporal de algunos productos, RDL 20/2022) y 0 (exentas,
+#: e inversión del sujeto pasivo en obra, art. 84.Uno.2.f). Sin los tipos con recargo de
+#: equivalencia: es régimen del comercio minorista (art. 154), no de una instaladora; y
+#: 26,2 y 11,4 coinciden con 21/79 y 10/90, lo que dejaba pasar un «Total neto» tomado por
+#: total con la base un 21 % corta (revisión 10-11-2026).
+TIPOS_IVA = (0.0, 4.0, 5.0, 10.0, 21.0)
 #: Retenciones de IRPF sobre facturas de proveedores (%): profesionales 15 y 7 (inicio de
 #: actividad), arrendamientos 19, actividades en módulos 1, agrarias y forestales 2 (Ley
 #: 35/2006 del IRPF y su Reglamento, RD 439/2007, arts. 95 y 101).
@@ -167,14 +170,19 @@ def _vale_para(rol: str, t: str) -> bool:
     ):
         return False
     con_iva = "con iva" in t or "iva incl" in t
-    if rol == "retencion" and _tiene(t, ("base",)):
-        return False  # «Base retención» es una base, no la retención
+    if rol == "retencion" and _tiene(t, ("base", "garantia")):
+        # «Base retención» es una base; la retención de garantía (5-10 % en subcontratas)
+        # se descuenta del pago, no es IRPF ni cambia el coste.
+        return False
     if rol == "cuota_iva" and (_tiene(t, ("base", "sin")) or con_iva):
         return False  # «Total IVA» sí es la cuota; «Total con IVA», no
-    if rol == "total" and _tiene(t, ("iva",)) and not con_iva:
-        return False
-    if rol == "base" and _tiene(t, ("pagar", "liquido", "total", "cuota", "retencion")):
-        return False  # «Neto a pagar» es lo que se paga (con IVA y retención)
+    if rol == "total" and (_tiene(t, ("neto",)) or (_tiene(t, ("iva",)) and not con_iva)):
+        return False  # «Total neto» es la base
+    if rol == "base" and (
+        _tiene(t, ("pagar", "liquido", "cuota", "retencion"))
+        or (_tiene(t, ("total",)) and not _tiene(t, ("neto",)))
+    ):
+        return False  # «Neto a pagar» es lo que se paga; «Total neto» sí es la base
     if rol == "proveedor" and _tiene(t, ("cod", "codigo", "nif", "cif", "obra", "proyecto")):
         return False  # «Cód. proveedor», «Nombre obra»
     if rol == "fecha" and _tiene(t, ("vencimiento", "vto", "pago", "contable", "registro",
@@ -433,6 +441,7 @@ def leer(ruta: Path, mapa: Mapa) -> Leido:
         if not any((proveedor, numero, base, total)):
             continue  # fila vacía
         if _es_fila_de_total(proveedor, numero, concepto):
+            leido.descartadas.append((r, "fila de total del listado"))
             continue
         calculada = False
         if base is None and total is not None and cuota is not None:
@@ -445,7 +454,12 @@ def leer(ruta: Path, mapa: Mapa) -> Leido:
                 retencion and not _tipo_legal(retencion, base, TIPOS_RETENCION)
             ):
                 leido.descartadas.append(
-                    (r, "la cuota de IVA o la retención no cuadra con un tipo legal (¿es el %?)")
+                    (
+                        r,
+                        "la cuota de IVA o la retención no cuadra con un tipo legal (¿es la "
+                        "columna del %?, ¿varios tipos o suplidos en la misma línea?): "
+                        "apúntala a mano",
+                    )
                 )
                 continue
         elif base is not None and total is not None and cuota is not None:

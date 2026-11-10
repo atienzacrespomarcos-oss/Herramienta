@@ -364,10 +364,15 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
 - El coste es la **base imponible** (sin IVA). Sin columna de base: **total − cuota de IVA
   ± retención**, con el signo del total (un abono resta). Y se comprueba que la cuota y la
   retención cuadran con un **tipo legal**: IVA 21, 10, 4 % (Ley 37/1992, arts. 90 y 91), 5 %
-  (RDL 20/2022), 0 % y con recargo de equivalencia (art. 161); retención de IRPF 15, 7, 19,
-  2 o 1 % (Ley 35/2006 y RD 439/2007, arts. 95 y 101), con 0,6 puntos de margen por
-  redondeo. Si no cuadran, la columna es el porcentaje y no el importe: la factura no se
-  importa y se dice. Con base, cuota y total, si no cuadran entre sí, se avisa.
+  (RDL 20/2022) y 0 % (exentas, e inversión del sujeto pasivo en obra, art. 84.Uno.2.f);
+  retención de IRPF 15, 7, 19, 2 o 1 % (Ley 35/2006 y RD 439/2007, arts. 95 y 101), con 0,6
+  puntos de margen por redondeo. Sin tipos con recargo de equivalencia: es régimen del
+  comercio minorista (art. 154), no de una instaladora, y 26,2 y 11,4 coinciden con 21/79 y
+  10/90, lo que dejaba pasar una base un 21 % corta (revisión 10-11-2026). Si no cuadran
+  (la columna es el %, o la línea mezcla tipos o suplidos), la factura no se importa y se
+  dice que se apunte a mano. Con base, cuota y total, si no cuadran entre sí, se avisa.
+  «Total neto» es la base; «Neto a pagar» y la **retención de garantía** (se descuenta del
+  pago, no es IRPF ni cambia el coste) no se usan.
 - **Filas**: una de total («Total», «Suma»… como palabra entera y sin nº de factura) no
   cuenta; «Totalenergies» o «Sumasa» son proveedores. Una fila sin proveedor, número, fecha
   o importe, o con importe 0, no se importa y se lista con el motivo. Una factura en varias
