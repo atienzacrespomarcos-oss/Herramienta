@@ -297,6 +297,10 @@ class _Tabla(HTMLParser):
             self._cerrar_celda()
             self._tablas_abiertas = max(0, self._tablas_abiertas - 1)
 
+    def close(self):
+        super().close()
+        self._cerrar_celda()  # un fichero cortado no pierde su última celda
+
     def handle_data(self, data):
         if self._celda is not None and not self._en_comentario:
             self._celda.append(data)
@@ -387,7 +391,7 @@ def _es_codigo(t: str | None) -> bool:
 _FIN = r"(?![a-zñáéíóúü])"
 _TITULO_DE_CODIGOS = re.compile(
     rf"^(c[oó]d(igo)?{_FIN}|c[oó]d\.|ref(erencia)?{_FIN}|ref\.|cap([ií]tulo)?{_FIN}|cap\."
-    rf"|partida{_FIN}(?!\s+alzada)|n[º°](?!\s*(de\s+)?(ud|unid|uds))|n\.?\s*o\.?{_FIN}"
+    rf"|partida{_FIN}(?!\s+alzada)|n\.?[º°](?!\s*(de\s+)?(ud|unid|uds))|n\.?\s*o\.?{_FIN}"
     rf"|n[uú]m(ero)?{_FIN}(?!\s*(de\s+)?(ud|unid|uds))|n[uú]m\.(?!\s*(de\s+)?(ud|unid|uds))"
     rf"|[ií]tem{_FIN}|id{_FIN}|nif{_FIN}|cif{_FIN}|c\.?p\.?{_FIN}|tel[eé]fono{_FIN}"
     rf"|factura{_FIN}|pos(ici[oó]n)?{_FIN}|pos\.|orden{_FIN}|l[ií]nea{_FIN}|art[ií]culo{_FIN}"
@@ -396,9 +400,11 @@ _TITULO_DE_CODIGOS = re.compile(
 )
 
 
-def _fila_de_titulos(filas, limpios) -> int | None:
-    """La primera de las 15 primeras con al menos dos textos que no son números: la de los
-    títulos de columna (una fila de título de documento tiene uno solo)."""
+def _filas_de_titulos(filas, limpios) -> list[int]:
+    """Las de las 15 primeras con al menos dos textos que no son números: candidatas a fila
+    de títulos. Se miran todas: delante de los títulos suele haber filas de cabecera del
+    documento («Obra:;Nave 3», «Cliente:;X;Fecha:;03/11/2026»; revisión 10-11-2026)."""
+    salida = []
     for r, f in enumerate(filas[:15]):
         textos = sum(
             1
@@ -406,23 +412,22 @@ def _fila_de_titulos(filas, limpios) -> int | None:
             if v.strip() and _heuristico(t) and limpios[r][c][0] is None
         )
         if textos >= 2:
-            return r
-    return None
+            salida.append(r)
+    return salida
 
 
 def _columnas_de_codigos(filas, limpios, ancho: int) -> set[int]:
-    """Una columna es de códigos si su título (en la fila de títulos) lo dice o si al menos
+    """Una columna es de códigos si su título (en una fila de títulos) lo dice o si al menos
     el 30 % de sus valores con cifras tienen forma de código. Una celda suelta («01», nº
     de certificación encima de los importes) no convierte en texto una columna de
     importes."""
     codigos = set()
-    r_titulos = _fila_de_titulos(filas, limpios)
+    candidatas = _filas_de_titulos(filas, limpios)
     for c in range(ancho):
-        if r_titulos is not None and c < len(filas[r_titulos]):
-            titulo = filas[r_titulos][c][0].strip()
-            if titulo and len(titulo) <= 30 and _TITULO_DE_CODIGOS.match(titulo):
-                codigos.add(c)
-                continue
+        titulos = [filas[r][c][0].strip() for r in candidatas if c < len(filas[r])]
+        if any(t and len(t) <= 30 and _TITULO_DE_CODIGOS.match(t) for t in titulos):
+            codigos.add(c)
+            continue
         con_cifras = [f[c] for f in limpios if c < len(f) and f[c][0] is not None]
         forma = sum(1 for t, _n, pct in con_cifras if not pct and _es_codigo(t))
         if forma and forma >= 0.3 * len(con_cifras):

@@ -310,7 +310,8 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
   - Importes con «€», negativos entre paréntesis o con el signo detrás, miles con espacio
     («1 234,56»), porcentajes («21 %» → 0,21).
   - **Columnas de códigos**, de tres formas:
-    1. Por su título en la fila de títulos (la primera con dos o más textos), palabra entera
+    1. Por su título en una fila de títulos (de las 15 primeras, las que tienen dos o más
+       textos: delante suele haber cabecera del documento), palabra entera
        al principio: «Código», «Cód.», «Ref.», «Capítulo», «Partida», «Nº», «Número»,
        «Factura», «Pos.», «Orden», «Línea», «Artículo», «Ítem», «NIF», «CP»… («Cantidad
        partida», «Partida alzada», «Nº uds.», «Noviembre», «Capacidad» no).

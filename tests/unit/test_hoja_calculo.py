@@ -326,6 +326,27 @@ def test_html_y_xml_raros(tmp_path):
     ]
 
 
+def test_cabecera_del_documento_antes_de_los_titulos(tmp_path):
+    ruta = tmp_path / "ppto.csv"
+    ruta.write_text(
+        "Obra:;Nave 3;;\nCliente:;X;Fecha:;03/11/2026\nN.º;Resumen;Ud;Importe\n"
+        "1.001;UTA;ud;1.234,56\n1.002;Conducto;m2;20,5\n",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert [x[0] for x in f[3:]] == ["1.001", "1.002"]  # códigos, no mil uno
+    assert [x[3] for x in f[3:]] == [1234.56, 20.5]
+
+
+def test_mismo_importe_con_distintos_decimales_queda_como_texto(tmp_path):
+    """«12,5» y «12,50» en una columna se toman como códigos (regla del choque): quedan
+    como texto, nunca un número elegido. En una exportación real el formato de una
+    columna es uniforme."""
+    ruta = tmp_path / "x.csv"
+    ruta.write_text("Concepto;Importe\nA;12,5\nB;12,50\n", encoding="utf-8")
+    assert [x[1] for x in _filas(ruta)[1:]] == ["12,5", "12,50"]
+
+
 # --- Ayudas para otras pruebas: el mismo contenido en .xls y en .csv ------------------------
 
 
