@@ -271,6 +271,41 @@ Cómo está hecho (`io/certificacion_excel.py`, `app/obra.cruzar_certificacion`)
   Las reglas de todos los Excel de TRAZA: números como números, lo que no consta vacío
   (nunca 0), textos ajenos nunca como fórmula, guardado atómico. Esquema V14.
 
+## Crear obra desde documentos (decisiones del usuario, 10-11-2026)
+
+| Tema | Decisión |
+|---|---|
+| Cómo nace | Echar **todos los documentos recibidos** (unas veces más, otras menos) y que TRAZA genere la obra. |
+| Presupuesto | «Habrá **1 presupuesto** y mediciones, planos, etc.»: el presupuesto es la venta contratada, sin preguntar. |
+| Facturas | «Las **exporto de mi ERP** y te las subo»: TRAZA interpreta ese listado (sin plantilla fija). |
+| Formatos | «Deberás tener la estructura para que **lo que yo te pase, sea lo que sea, te valga**». |
+| Datos reales | «No quiero darte nada hasta que no esté hecho»; «no voy a pasarte obra real hasta terminar la herramienta 100 %». Todo se prueba con documentos inventados de muchas formas. |
+
+Bloques: (4a) cualquier hoja de cálculo (.xlsx, .xlsm, .xls, .csv) en todos los lectores;
+(4b) facturas desde el listado del ERP; (4c) crear obra desde documentos (reconocer cada
+uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la obra).
+
+## Bloque 4a: cualquier hoja de cálculo (decisiones de método, 10-11-2026)
+
+- Todos los lectores (presupuesto en Excel con la IA, comparativo de Presto,
+  certificaciones y, después, facturas) abren lo mismo: **.xlsx, .xlsm, .xls y .csv**
+  (`io/hoja_calculo.py`). Se convierte al mismo libro, celda a celda en la misma posición:
+  las referencias «Hoja!B12» que citan las comprobaciones siguen valiendo.
+- **.xls** (Excel 97-2003, xlrd, licencia BSD): guarda el resultado de cada fórmula, no la
+  fórmula; las fechas salen como fechas y se conserva el formato de número (para reconocer
+  porcentajes).
+- **.csv**: UTF-8 o Windows-1252 (lo habitual en un ERP español); separador detectado (;
+  , tabulador o |). Números con «€», espacios, negativos entre paréntesis o con el signo
+  detrás, porcentajes («21 %» → 0,21) y fechas (dd/mm/aaaa, dd.mm.aaaa, aaaa-mm-dd).
+  - La **convención decimal se decide por fichero**, con lo que el fichero demuestra: un
+    número con punto y coma a la vez («1.234,56») dice cuál es el decimal; si no, «12,5»
+    solo puede ser coma decimal y «12.50», punto; si solo hay enteros o «1.234», decide el
+    separador de campos, como Excel en España (con «;», coma decimal).
+  - Un número que **contradice** la convención del fichero («1234.56» donde la coma es el
+    decimal) **se queda como texto**: leerlo como 123 456 sería inventar una cifra. Los
+    lectores lo tratan como «no consta» y lo dicen.
+- Un texto ajeno que empieza por «=» se guarda como texto, nunca como fórmula.
+
 ## Pendiente
 
 - Probar el bloque completo con una obra real del usuario (venta, comparativo,

@@ -239,7 +239,7 @@ def test_importar_otro_sustituye_y_se_deshace(obra, tmp_path):
 
 def test_rechazos(obra, tmp_path, pdf_3_paginas):
     p, med_id = obra
-    with pytest.raises(OrdenRechazada, match="no es un Excel"):
+    with pytest.raises(OrdenRechazada, match="no es una hoja de cálculo"):
         p.importar_coste_objetivo(p.incorporar_documento(pdf_3_paginas))
     wb = Workbook()
     wb.active.append(["nada"])
@@ -287,3 +287,16 @@ def test_avisos_de_la_venta():
     r = resumir([{"codigo": "C", "resumen": "c", "importe": None}], None)
     assert r.venta is None and r.margen is None
     assert "la venta no consta" in r.avisos_venta[0]
+
+
+def test_comparativo_en_xls(obra, tmp_path):
+    """El comparativo guardado como Excel 97-2003 se lee igual que el .xlsx (bloque 4a)."""
+    from tests.unit.test_hoja_calculo import a_xls
+
+    p, med_id = obra
+    p.fijar_venta_contratada(med_id)
+    xls = a_xls(comparativo(tmp_path / "Costes.xlsx"), tmp_path / "Costes.xls")
+    p.importar_coste_objetivo(p.incorporar_documento(xls))
+    r = p.resumen_obra()
+    assert r.objetivo == pytest.approx(23200)
+    assert r.paquetes == {"EQUIPOS": 18600, "CHAPA": 3000, "MANO DE OBRA": 1600}

@@ -103,6 +103,7 @@ EXTENSIONES_ABRIBLES = {
     ".docx",
     ".xls",
     ".xlsx",
+    ".xlsm",
     ".csv",
     ".txt",
     ".dxf",

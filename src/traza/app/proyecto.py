@@ -73,6 +73,7 @@ from traza.io import (
     dxf,
     esquema_hidraulico_dxf,
     excel_obra,
+    hoja_calculo,
     informe_cargas,
     informe_hidronica,
     informe_redes,
@@ -428,8 +429,8 @@ class Proyecto:
 
     #: Formatos que se pueden leer como medición. Se amplía con cada lector (Excel, PDF).
     #: BC3 se lee sin IA (exacto). PDF y Excel se leen con IA + comprobaciones (ADR-0013).
-    FORMATOS_MEDICION = (".bc3", ".pdf", ".xlsx", ".xlsm")
-    FORMATOS_CON_IA = (".pdf", ".xlsx", ".xlsm")
+    FORMATOS_MEDICION = (".bc3", ".pdf", *hoja_calculo.EXTENSIONES)
+    FORMATOS_CON_IA = (".pdf", *hoja_calculo.EXTENSIONES)
 
     def leer_medicion(
         self,
@@ -574,9 +575,9 @@ class Proyecto:
         doc = leer(self._con, "documento", {"id": documento_id})
         if doc is None:
             raise OrdenRechazada("Documento no incorporado.")
-        if doc["extension"].lower() not in (".xlsx", ".xlsm"):
+        if not hoja_calculo.es_hoja(doc["extension"]):
             raise OrdenRechazada(
-                f"«{doc['nombre_original']}» no es un Excel (.xlsx): guárdalo desde Excel."
+                f"«{doc['nombre_original']}» no es una hoja de cálculo (.xlsx, .xlsm, .xls o .csv)."
             )
         try:
             r = coste_presto.leer(self.ruta_documento(documento_id))
@@ -680,9 +681,9 @@ class Proyecto:
         doc = leer(self._con, "documento", {"id": documento_id})
         if doc is None:
             raise OrdenRechazada("Documento no incorporado.")
-        if doc["extension"].lower() not in (".xlsx", ".xlsm"):
+        if not hoja_calculo.es_hoja(doc["extension"]):
             raise OrdenRechazada(
-                f"«{doc['nombre_original']}» no es un Excel (.xlsx): guárdalo desde Excel."
+                f"«{doc['nombre_original']}» no es una hoja de cálculo (.xlsx, .xlsm, .xls o .csv)."
             )
         ruta = self.ruta_documento(documento_id)
         try:

@@ -143,7 +143,7 @@ def test_rechazos(obra, tmp_path, pdf_3_paginas):  # noqa: F811
     with pytest.raises(OrdenRechazada, match="presupuesto contratado"):
         _leer(p, ruta)
     p.fijar_venta_contratada(med_id)
-    with pytest.raises(OrdenRechazada, match="no es un Excel"):
+    with pytest.raises(OrdenRechazada, match="no es una hoja de cálculo"):
         p.leer_certificacion(p.incorporar_documento(pdf_3_paginas))
     ajena = [["Código", "Descripción", "Importe a origen"], ["ZZZ", "Otra obra", 100]]
     with pytest.raises(OrdenRechazada, match="¿es la certificación de esta obra"):
@@ -279,3 +279,22 @@ def test_formato_y_palabras():
     assert not _formato_porcentaje('0"%"') and not _formato_porcentaje("0\\%")
     assert not _tiene("longitud total", ("ud",)) and _tiene("uds a origen", ("uds",))
     assert not _tiene("total relativa", ("iva",)) and _tiene("total con iva", ("iva",))
+
+
+def test_certificacion_en_csv_y_en_xls(venta, tmp_path):
+    """La del cliente exportada a CSV (punto y coma, coma decimal) y la del usuario en
+    Excel 97-2003 se leen igual que en .xlsx (bloque 4a)."""
+    from tests.unit.test_hoja_calculo import a_csv, a_xls
+
+    p = venta
+    filas = [CLIENTE[0], *([*f[:2], *(float(x) for x in f[2:])] for f in CLIENTE[1:])]
+    doc = p.incorporar_documento(a_csv(filas, tmp_path / "Cliente.csv"))
+    mapa, r = p.leer_certificacion(doc)
+    assert mapa.origen == "títulos" and r.total == 12600
+    p.importar_certificacion(doc, 1, "2026-10-31", mapa, r)
+    xls = a_xls(excel(tmp_path / "C3.xlsx", SUYO, titulo_en=3), tmp_path / "C3.xls")
+    doc = p.incorporar_documento(xls)
+    mapa, r = p.leer_certificacion(doc)
+    assert mapa.fila_titulos == 3 and r.total == 12100
+    p.importar_certificacion(doc, 2, "2026-11-30", mapa, r)
+    assert p.certificado_a_origen() == 12100

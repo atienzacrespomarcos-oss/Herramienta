@@ -2,6 +2,12 @@
 
 ## [Sin publicar]
 
+### Obra · bloque 4a: cualquier hoja de cálculo (10-11-2026)
+- Presupuestos, comparativo de costes y certificaciones se leen también en **.xls** (Excel
+  97-2003) y **.csv** (exportaciones de un ERP), además de .xlsx y .xlsm.
+- CSV: codificación, separador, decimales, negativos, porcentajes y fechas a la española;
+  lo que no encaja con la convención del fichero no se reinterpreta.
+
 ### Obra · bloque 3: futuribles y Excel de control (09-11-2026)
 - Paso **Futuribles**: ofertas y modificados pendientes de aprobar, con su venta y tu
   coste estimado, marcados sí/no. La venta de un modificado de TRAZA se calcula al día.
