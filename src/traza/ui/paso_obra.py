@@ -287,22 +287,26 @@ class PaginaCosteReal(QWidget):
 
     # --- Acciones ------------------------------------------------------------------------
 
-    def accion_erp(self) -> None:
-        """El listado de facturas exportado del ERP (docs/modules/obra.md, bloque 4b)."""
-        docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
-        if not docs:
-            self.v.preguntas.aviso(
-                "Facturas del ERP",
-                "Incorpora antes en «Documentación» el listado de facturas que exportas de tu "
-                "ERP (Excel o CSV).",
+    def accion_erp(self, documento: dict | None = None) -> bool:
+        """El listado de facturas exportado del ERP (docs/modules/obra.md, bloque 4b). Con
+        `documento` (crear obra desde documentos), sin preguntar cuál. Devuelve si se ha
+        importado alguna."""
+        if documento is None:
+            docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
+            if not docs:
+                self.v.preguntas.aviso(
+                    "Facturas del ERP",
+                    "Incorpora antes en «Documentación» el listado de facturas que exportas de "
+                    "tu ERP (Excel o CSV).",
+                )
+                return False
+            i = self.v.preguntas.elegir(
+                "Facturas del ERP", "Listado de facturas:", [d["nombre_original"] for d in docs]
             )
-            return
-        i = self.v.preguntas.elegir(
-            "Facturas del ERP", "Listado de facturas:", [d["nombre_original"] for d in docs]
-        )
-        if i is None:
-            return
-        doc = docs[i]
+            if i is None:
+                return False
+            documento = docs[i]
+        doc = documento
         mapa, leido, propuestas = self.proyecto.leer_facturas_erp(
             doc["id"],
             lambda f: self.v._en_segundo_plano(
@@ -320,7 +324,7 @@ class PaginaCosteReal(QWidget):
                     "Facturas del ERP",
                     f"Las facturas del listado son de la obra «{obras[0]}». ¿Es esta obra?",
                 ):
-                    return
+                    return False
             else:
                 opciones.append("Todas las del listado")
                 j = self.v.preguntas.elegir(
@@ -329,7 +333,7 @@ class PaginaCosteReal(QWidget):
                     opciones,
                 )
                 if j is None:
-                    return
+                    return False
                 elegido = opciones[j]
                 if elegido == sin:
                     propuestas = [p for p in propuestas if not p.leida.obra]
@@ -349,10 +353,11 @@ class PaginaCosteReal(QWidget):
         abiertos = [p for p in self.proyecto.coste_objetivo()["paquetes"] if p not in cerrados]
         elegidas = self.v.preguntas.facturas_erp(texto, propuestas, abiertos)
         if not elegidas:
-            return
+            return False
         self.proyecto.importar_facturas(doc["id"], elegidas)
         self.v.refrescar()
         self.v.statusBar().showMessage(f"{len(elegidas)} factura(s) importadas.", 10000)
+        return True
 
     def _pedir(self, actual: dict | None) -> None:
         paquetes = list(self.proyecto.coste_objetivo()["paquetes"])
@@ -631,20 +636,24 @@ class PaginaCertificaciones(QWidget):
     def proyecto(self):
         return self.v.proyecto
 
-    def accion_importar(self) -> None:
-        docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
-        if not docs:
-            self.v.preguntas.aviso(
-                "Certificación",
-                "Incorpora antes en «Documentación» el Excel de la certificación.",
+    def accion_importar(self, documento: dict | None = None, numero: int | None = None) -> bool:
+        """Con `documento` (crear obra desde documentos), sin preguntar cuál. Devuelve si se
+        ha importado."""
+        if documento is None:
+            docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
+            if not docs:
+                self.v.preguntas.aviso(
+                    "Certificación",
+                    "Incorpora antes en «Documentación» el Excel de la certificación.",
+                )
+                return False
+            i = self.v.preguntas.elegir(
+                "Certificación", "Excel de la certificación:", [d["nombre_original"] for d in docs]
             )
-            return
-        i = self.v.preguntas.elegir(
-            "Certificación", "Excel de la certificación:", [d["nombre_original"] for d in docs]
-        )
-        if i is None:
-            return
-        doc = docs[i]
+            if i is None:
+                return False
+            documento = docs[i]
+        doc = documento
         mapa, r = self.proyecto.leer_certificacion(
             doc["id"],
             lambda f: self.v._en_segundo_plano(
@@ -664,11 +673,13 @@ class PaginaCertificaciones(QWidget):
             + ("\n\n" + "\n".join(f"⚠ {a}" for a in r.avisos) if r.avisos else "")
         )
         hechas = self.proyecto.certificaciones()
-        datos = self.v.preguntas.certificacion(texto, (hechas[-1]["numero"] + 1) if hechas else 1)
+        siguiente = (hechas[-1]["numero"] + 1) if hechas else 1
+        datos = self.v.preguntas.certificacion(texto, numero or siguiente)
         if datos is None:
-            return
+            return False
         self.proyecto.importar_certificacion(doc["id"], datos["numero"], datos["fecha"], mapa, r)
         self.v.refrescar()
+        return True
 
     def accion_quitar(self) -> None:
         fila = self.tabla.currentRow()

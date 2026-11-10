@@ -2,6 +2,13 @@
 
 ## [Sin publicar]
 
+### Obra · bloque 4c: crear la obra desde sus documentos (10-11-2026)
+- **Archivo → Nueva obra desde documentos…** y **Obra → Añadir documentos a la obra…**:
+  se echan todos los documentos recibidos; TRAZA propone qué es cada uno por su contenido
+  (presupuesto, medición, coste objetivo, certificación, facturas, plano o documentación),
+  el usuario lo confirma en una tabla y se monta la obra en orden. Nada se envía a la IA sin
+  elegirlo; lo que falla se dice sin parar el resto.
+
 ### Obra · bloque 4b: facturas desde el listado del ERP (10-11-2026)
 - **Coste real → Importar facturas del ERP…**: el listado tal como lo exporta el ERP
   (Excel, .xls, CSV), sin plantilla. Columnas por título o por la IA (solo el mapa).

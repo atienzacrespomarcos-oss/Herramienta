@@ -96,6 +96,17 @@ class PreguntasPreparadas:
         self.explicaciones = [*getattr(self, "explicaciones", []), (explicacion, numero)]
         return self._siguiente("certificacion")
 
+    def nueva_obra(self):
+        return self._siguiente("nueva_obra")
+
+    def ficheros(self, titulo):
+        return self._siguiente("ficheros")
+
+    def plan_obra(self, propuestas):
+        self.planes = [*getattr(self, "planes", []), propuestas]
+        r = self._siguiente("plan_obra")
+        return r(propuestas) if callable(r) else r
+
     def encargo(self, actual):
         return self._siguiente("encargo")
 
@@ -271,7 +282,13 @@ def test_restaurar_sin_copias_avisa(ventana, tmp_path):
 def test_sin_proyecto_solo_se_puede_crear_abrir_salir_y_ayuda(ventana):
     v, _ = ventana
     activas = {a.text() for a in _acciones(v) if a.isEnabled()}
-    assert activas == {"Nuevo proyecto…", "Abrir proyecto…", "Salir", "Acerca de TRAZA"}
+    assert activas == {
+        "Nuevo proyecto…",
+        "Nueva obra desde documentos…",  # también crea (docs/modules/obra.md, bloque 4c)
+        "Abrir proyecto…",
+        "Salir",
+        "Acerca de TRAZA",
+    }
 
 
 def _fila(v: VentanaPrincipal, etiqueta: str) -> list[str]:
