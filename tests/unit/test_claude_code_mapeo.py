@@ -25,3 +25,13 @@ def test_las_instrucciones_no_piden_cifras():
     from traza.io.certificacion_excel import ROLES
 
     assert roles == set(ROLES)  # el esquema y el lector hablan de los mismos datos
+
+
+def test_facturas_mismos_roles_que_el_lector_y_sin_cifras():
+    """El esquema de la pregunta y el lector de facturas hablan de los mismos datos
+    (vocabulario atado entre IA y lector, CLAUDE.md)."""
+    assert "no leas ni devuelvas ninguna cifra" in claude_code.INSTRUCCIONES_MAPEO_FACTURAS
+    roles = set(claude_code.ESQUEMA_MAPEO_FACTURAS["properties"]["columnas"]["properties"])
+    from traza.io.facturas_erp import ROLES
+
+    assert roles == set(ROLES)

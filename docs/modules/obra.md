@@ -346,6 +346,51 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
   pueden ser subtotales (el contraste con el TOTAL lo confirma).
 - Un texto ajeno que empieza por «=» se guarda como texto, nunca como fórmula.
 
+## Bloque 4b: facturas desde el listado del ERP (decisiones de método, 10-11-2026)
+
+- «Obra → Importar facturas del ERP…» (paso Coste real) lee el listado tal como lo exporta
+  el ERP (cualquier hoja de cálculo, bloque 4a), sin plantilla.
+- **Columnas** (proveedor, nº de factura, fecha, base imponible, total, cuota de IVA,
+  retención, obra o centro de coste, concepto) por sus títulos. Cada título vale para un
+  solo dato, con exclusiones («% IVA», «Tipo», «Cód. IVA» no son la cuota; «Total con IVA»
+  no es la base; una fecha de vencimiento, de pago o contable no es la de la factura;
+  «Tipo/Estado factura» no es el número). Entre varias columnas que valen para lo mismo,
+  **gana el título más específico** («Fecha factura» antes que «Fecha»; «Base imponible»
+  antes que «Base»); si dos columnas de importe empatan («Base 1», «Base 2»: varios tipos
+  de IVA), no se elige ninguna y se dice que se exporte con el total por factura.
+- Si no se reconocen, Claude Code dice qué columna es qué (solo letras). TRAZA lo comprueba
+  con las mismas reglas y, además, **rechaza una columna cuyo título es, por sí solo, de
+  otro dato** («Total con IVA» propuesta como base).
+- El coste es la **base imponible** (sin IVA). Sin columna de base: **total − cuota de IVA
+  ± retención**, con el signo del total (un abono resta). Y se comprueba que la cuota y la
+  retención cuadran con un **tipo legal**: IVA 21, 10, 4 % (Ley 37/1992, arts. 90 y 91), 5 %
+  (RDL 20/2022) y 0 % (exentas, e inversión del sujeto pasivo en obra, art. 84.Uno.2.f);
+  retención de IRPF 15, 7, 19, 2 o 1 % (Ley 35/2006 y RD 439/2007, arts. 95 y 101), con 0,6
+  puntos de margen por redondeo. Sin tipos con recargo de equivalencia: es régimen del
+  comercio minorista (art. 154), no de una instaladora, y 26,2 y 11,4 coinciden con 21/79 y
+  10/90, lo que dejaba pasar una base un 21 % corta (revisión 10-11-2026). Si no cuadran
+  (la columna es el %, o la línea mezcla tipos o suplidos), la factura no se importa y se
+  dice que se apunte a mano. Con base, cuota y total, si no cuadran entre sí, se avisa.
+  «Total neto» es la base; «Neto a pagar» y la **retención de garantía** (se descuenta del
+  pago, no es IRPF ni cambia el coste) no se usan.
+- **Filas**: una de total («Total», «Suma»… como palabra entera y sin nº de factura) no
+  cuenta; «Totalenergies» o «Sumasa» son proveedores. Una fila sin proveedor, número, fecha
+  o importe, o con importe 0, no se importa y se lista con el motivo. Una factura en varias
+  líneas (una por tipo de IVA) se suma; una línea repetida igual, no.
+- **La misma factura** es la del mismo proveedor y número aunque cambien mayúsculas,
+  acentos, espacios o puntuación («CHAPAS NORTE, S.A.» y «Chapas Norte SA»; «F-001» y
+  «F001»), también al escribirlas a mano.
+- **Solo las nuevas**: una ya apuntada no se repite; con otro importe o fecha, **no se
+  cambia** (se avisa para corregirla a mano). El mismo proveedor y número con otra fecha
+  dentro del listado se enseña como repetida y no se importa.
+- **Obra**: si el listado tiene columna de obra, se confirma siempre: con una sola obra, se
+  pregunta si es esta; con varias (o facturas sin obra), se elige.
+- **Paquete**: TRAZA lo **propone**, el usuario decide en una tabla antes de importar: (1) si
+  el listado trae en «obra» o «concepto» exactamente el nombre de un paquete; (2) si no, el
+  paquete donde están las demás facturas de ese proveedor (si todas en uno y sigue en el
+  objetivo). Un paquete cerrado no se propone ni admite facturas.
+- Todas en una sola orden: deshacer las quita todas; con una mal, no entra ninguna.
+
 ## Pendiente
 
 - Probar el bloque completo con una obra real del usuario (venta, comparativo,

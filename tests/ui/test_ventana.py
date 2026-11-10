@@ -83,6 +83,11 @@ class PreguntasPreparadas:
     def prevision(self, actual):
         return self._siguiente("prevision")
 
+    def facturas_erp(self, explicacion, propuestas, paquetes):
+        self.explicaciones = [*getattr(self, "explicaciones", []), explicacion]
+        r = self._siguiente("facturas_erp")
+        return r(propuestas, paquetes) if callable(r) else r
+
     def futurible(self, modificados, actual=None):
         r = self._siguiente("futurible")
         return r(modificados, actual) if callable(r) else r

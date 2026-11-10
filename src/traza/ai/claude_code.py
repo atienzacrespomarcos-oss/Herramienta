@@ -308,3 +308,68 @@ def mapear_columnas(contenido: str, comando: list[str] | None = None) -> dict[st
             )
         base = [str(claude)]
     return _ejecutar(base, contenido, None, INSTRUCCIONES_MAPEO, ESQUEMA_MAPEO, "columnas")
+
+
+# --- Qué columna es qué en el listado de facturas del ERP (docs/modules/obra.md, 4b) ------
+#
+# Usuario (10-11-2026): «Facturas las exporto de mi ERP y te las subo». Igual que con las
+# certificaciones: la IA SOLO dice qué columna es qué; las cifras las lee TRAZA.
+
+_ROLES_FACTURAS = (
+    "proveedor",
+    "numero",
+    "fecha",
+    "base",
+    "total",
+    "cuota_iva",
+    "retencion",
+    "obra",
+    "concepto",
+)
+
+ESQUEMA_MAPEO_FACTURAS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "hoja": {"type": "string"},
+        "fila_titulos": {"type": "integer"},
+        "columnas": {
+            "type": "object",
+            "properties": {rol: _COLUMNA for rol in _ROLES_FACTURAS},
+            "required": list(_ROLES_FACTURAS),
+            "additionalProperties": False,
+        },
+    },
+    "required": ["hoja", "fila_titulos", "columnas"],
+    "additionalProperties": False,
+}
+
+INSTRUCCIONES_MAPEO_FACTURAS = """Eres un jefe de obra en España. Te paso las primeras filas \
+de un LISTADO DE FACTURAS DE PROVEEDORES exportado de un ERP, con la referencia de cada \
+celda. Di solo QUÉ COLUMNA ES QUÉ; no leas ni devuelvas ninguna cifra.
+
+- "hoja" y "fila_titulos": la hoja y la fila donde están los títulos de las columnas.
+- "columnas": la letra de la columna de cada dato, o null si no está:
+  proveedor (nombre o razón social del proveedor, no su código), numero (número de la \
+factura del proveedor), fecha (fecha de la factura, no de vencimiento ni contable), base \
+(base imponible: importe SIN IVA), total (importe total de la factura), cuota_iva (importe \
+del IVA en euros, no el %), retencion (retención o IRPF en euros), obra (obra, proyecto o \
+centro de coste), concepto (descripción).
+- Si dudas entre dos columnas para un dato, pon null: es mejor no saberlo que equivocarse.
+El listado viene a continuación."""
+
+
+def mapear_columnas_facturas(contenido: str, comando: list[str] | None = None) -> dict[str, Any]:
+    """Pregunta a Claude Code qué columna es qué en un listado de facturas (sin cifras)."""
+    if comando is not None:
+        base = comando
+    else:
+        claude = disponible()
+        if claude is None or claude.suffix.lower() in (".cmd", ".bat"):
+            raise IaNoDisponible(
+                "Para interpretar este listado hace falta Claude Code (versión nativa) con tu "
+                "suscripción: TRAZA no ha reconocido sus columnas por los títulos."
+            )
+        base = [str(claude)]
+    return _ejecutar(
+        base, contenido, None, INSTRUCCIONES_MAPEO_FACTURAS, ESQUEMA_MAPEO_FACTURAS, "columnas"
+    )

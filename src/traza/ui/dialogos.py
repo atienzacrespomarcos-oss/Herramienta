@@ -456,6 +456,12 @@ class Preguntas:
         d = DialogoPrevision(self.v, actual)
         return d.resultado if d.exec() == QDialog.Accepted else None
 
+    def facturas_erp(self, explicacion: str, propuestas: list, paquetes: list[str]):
+        from traza.ui.dialogos_obra import DialogoFacturasErp
+
+        d = DialogoFacturasErp(self.v, explicacion, propuestas, paquetes)
+        return d.resultado if d.exec() == QDialog.Accepted else None
+
     def futurible(self, modificados: list[dict], actual: dict | None = None):
         from traza.ui.dialogos_obra import DialogoFuturible
 

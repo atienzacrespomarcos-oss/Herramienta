@@ -238,6 +238,7 @@ class PaginaCosteReal(QWidget):
         m.addSeparator()
         a = ventana._accion
         self.a_factura = a(m, "Nueva factura…", lambda: self.accion_factura())
+        self.a_erp = a(m, "Importar facturas del ERP…", lambda: self.accion_erp())
         self.a_corregir = a(m, "Corregir factura…", lambda: self.accion_corregir())
         self.a_quitar = a(m, "Quitar factura", lambda: self.accion_quitar())
         self.a_cerrar = a(m, "Cerrar paquete", lambda: self.accion_cerrar(True))
@@ -251,7 +252,16 @@ class PaginaCosteReal(QWidget):
         self.avisos.setWordWrap(True)
         caja = QVBoxLayout(self)
         caja.addWidget(
-            _barra([self.a_factura, self.a_corregir, self.a_quitar, self.a_cerrar, self.a_reabrir])
+            _barra(
+                [
+                    self.a_erp,
+                    self.a_factura,
+                    self.a_corregir,
+                    self.a_quitar,
+                    self.a_cerrar,
+                    self.a_reabrir,
+                ]
+            )
         )
         caja.addWidget(self.resumen)
         caja.addWidget(self.tabla, 2)
@@ -276,6 +286,73 @@ class PaginaCosteReal(QWidget):
         return item.data(Qt.UserRole) if item else None
 
     # --- Acciones ------------------------------------------------------------------------
+
+    def accion_erp(self) -> None:
+        """El listado de facturas exportado del ERP (docs/modules/obra.md, bloque 4b)."""
+        docs = [d for d in self.proyecto.documentos() if es_hoja(d["extension"])]
+        if not docs:
+            self.v.preguntas.aviso(
+                "Facturas del ERP",
+                "Incorpora antes en «Documentación» el listado de facturas que exportas de tu "
+                "ERP (Excel o CSV).",
+            )
+            return
+        i = self.v.preguntas.elegir(
+            "Facturas del ERP", "Listado de facturas:", [d["nombre_original"] for d in docs]
+        )
+        if i is None:
+            return
+        doc = docs[i]
+        mapa, leido, propuestas = self.proyecto.leer_facturas_erp(
+            doc["id"],
+            lambda f: self.v._en_segundo_plano(
+                f, "Preguntando a la IA qué columna es qué…", "Facturas del ERP"
+            ),
+        )
+        # La obra del listado se confirma siempre (revisión 10-11-2026: un listado de otra
+        # obra con una sola entraba entero; las facturas sin obra se perdían sin decirlo).
+        obras, sin_obra, de_la_obra = leido.obras, leido.sin_obra, ""
+        if obras:
+            sin = "(facturas sin obra)"
+            opciones = [*obras, *([sin] if sin_obra else [])]
+            if len(opciones) == 1:
+                if not self.v.preguntas.confirmar(
+                    "Facturas del ERP",
+                    f"Las facturas del listado son de la obra «{obras[0]}». ¿Es esta obra?",
+                ):
+                    return
+            else:
+                opciones.append("Todas las del listado")
+                j = self.v.preguntas.elegir(
+                    "Facturas del ERP",
+                    "El listado tiene facturas de varias obras. ¿Cuáles son de esta?",
+                    opciones,
+                )
+                if j is None:
+                    return
+                elegido = opciones[j]
+                if elegido == sin:
+                    propuestas = [p for p in propuestas if not p.leida.obra]
+                elif elegido != "Todas las del listado":
+                    propuestas = [p for p in propuestas if p.leida.obra == elegido]
+                de_la_obra = f" De la obra: {elegido}."
+        from traza.io.facturas_erp import descripcion
+
+        nuevas = sum(1 for p in propuestas if p.estado == "nueva")
+        texto = (
+            ("He entendido (por sus títulos): " if mapa.origen == "títulos" else "La IA dice: ")
+            + descripcion(mapa)
+            + f"\n{len(propuestas)} factura(s); {nuevas} nueva(s).{de_la_obra}"
+            + ("\n" + "\n".join(f"⚠ {a}" for a in leido.avisos) if leido.avisos else "")
+        )
+        cerrados = self.proyecto.paquetes_cerrados()
+        abiertos = [p for p in self.proyecto.coste_objetivo()["paquetes"] if p not in cerrados]
+        elegidas = self.v.preguntas.facturas_erp(texto, propuestas, abiertos)
+        if not elegidas:
+            return
+        self.proyecto.importar_facturas(doc["id"], elegidas)
+        self.v.refrescar()
+        self.v.statusBar().showMessage(f"{len(elegidas)} factura(s) importadas.", 10000)
 
     def _pedir(self, actual: dict | None) -> None:
         paquetes = list(self.proyecto.coste_objetivo()["paquetes"])
@@ -402,7 +479,14 @@ class PaginaCosteReal(QWidget):
 
     def actualizar_estado(self, hay: bool) -> None:
         con = _es_obra(self, hay) and self.proyecto.coste_objetivo() is not None
-        for a in (self.a_factura, self.a_corregir, self.a_quitar, self.a_cerrar, self.a_reabrir):
+        for a in (
+            self.a_erp,
+            self.a_factura,
+            self.a_corregir,
+            self.a_quitar,
+            self.a_cerrar,
+            self.a_reabrir,
+        ):
             a.setEnabled(con)
 
 

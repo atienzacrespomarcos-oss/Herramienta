@@ -28,6 +28,7 @@ def ventana(qtbot, tmp_path):
     from tests.integration.test_obra_certificaciones import sin_ia
 
     p.mapeador_ia = sin_ia
+    p.mapeador_facturas_ia = sin_ia
     v._usar_proyecto(p)
     yield v, q
     if v.proyecto is not None:
@@ -271,3 +272,86 @@ def test_futuribles_escenario_y_excel_de_control(ventana, tmp_path):
     pf.tabla.selectRow(1)
     pf.a_quitar.trigger()
     assert pf.tabla.rowCount() == 1
+
+
+def test_importar_facturas_del_erp_desde_la_ventana(ventana, tmp_path):
+    from tests.integration.test_obra_facturas_erp import CSV
+
+    v, q = ventana
+    _preparar_obra(v, q)
+    pc = v.pagina_coste_real
+    v.ir_a_paso("coste_real")
+    ruta = tmp_path / "Facturas.csv"
+    ruta.write_bytes(CSV.encode("cp1252"))
+    v.proyecto.incorporar_documento(ruta)
+    v.refrescar()
+    assert pc.a_erp.isEnabled()
+    q.preparar("elegir", lambda opciones: opciones.index("Facturas.csv"))  # el listado
+    q.preparar("elegir", 0)  # de las dos obras del listado, la primera
+
+    def tabla(propuestas, paquetes):
+        assert [x.leida.obra for x in propuestas] == ["OB-25 Nave"] * 3
+        assert "MANO DE OBRA" in paquetes
+        return [
+            {"paquete": "CHAPA" if x.leida.proveedor.startswith("Chapas") else "EQUIPOS",
+             "proveedor": x.leida.proveedor, "numero": x.leida.numero,
+             "fecha": x.leida.fecha, "importe": x.leida.importe}
+            for x in propuestas
+        ]  # fmt: skip
+
+    q.preparar("facturas_erp", tabla)
+    pc.a_erp.trigger()
+    assert not q.avisos, q.avisos
+    assert "He entendido (por sus títulos)" in q.explicaciones[-1]
+    assert "3 factura(s); 3 nueva(s)" in q.explicaciones[-1]
+    filas = {pc.tabla.item(i, 0).text(): pc.tabla.item(i, 2).text() for i in range(3)}
+    assert filas["EQUIPOS"] == "12.000,00 €" and filas["CHAPA"] == "900,50 €"
+    assert "De la obra: OB-25 Nave" in q.explicaciones[-1]
+
+
+def test_listado_de_una_sola_obra_se_confirma(ventana, tmp_path):
+    from tests.integration.test_obra_facturas_erp import CSV
+
+    v, q = ventana
+    _preparar_obra(v, q)
+    pc = v.pagina_coste_real
+    v.ir_a_paso("coste_real")
+    una = "\r\n".join(x for x in CSV.split("\r\n") if "OB-31" not in x)
+    ruta = tmp_path / "Otra obra.csv"
+    ruta.write_bytes(una.encode("cp1252"))
+    v.proyecto.incorporar_documento(ruta)
+    v.refrescar()
+    q.preparar("elegir", lambda opciones: opciones.index("Otra obra.csv"))
+    q.preparar("confirmar", False)  # «no es esta obra»: no se importa nada
+    pc.a_erp.trigger()
+    assert not q.avisos and v.proyecto.facturas() == []
+
+
+def test_dialogo_de_facturas_del_erp(qtbot):
+    """La tabla de confirmación: las nuevas marcadas con el paquete propuesto; las ya
+    apuntadas, sin marcar y sin poder marcarse; sin paquete, no deja aceptar."""
+    from PySide6.QtCore import Qt
+
+    from traza.app.obra import FacturaPropuesta
+    from traza.io.facturas_erp import FacturaLeida
+    from traza.ui.dialogos_obra import SIN_PAQUETE, DialogoFacturasErp
+
+    def leida(n):
+        return FacturaLeida(n, "Pérez SL", str(n), "2026-10-05", 100.0 * n, "", "", False)
+
+    propuestas = [
+        FacturaPropuesta(leida(1), "nueva", "CHAPA", "sus otras facturas van ahí"),
+        FacturaPropuesta(leida(2), "nueva", None, "elige el paquete"),
+        FacturaPropuesta(leida(3), "apuntada", "EQUIPOS", "ya está apuntada"),
+    ]
+    d = DialogoFacturasErp(None, "explicación", propuestas, ["EQUIPOS", "CHAPA"])
+    qtbot.addWidget(d)
+    assert d.marcada(0) and d.marcada(1) and not d.marcada(2)
+    assert not (d.tabla.item(2, 0).flags() & Qt.ItemIsEnabled)  # no se puede marcar
+    assert d._combos[0].currentText() == "CHAPA" and d._combos[1].currentText() == SIN_PAQUETE
+    assert not d._combos[2].isEnabled()
+    d._aceptar()
+    assert d.resultado is None and "Elige el paquete de 1" in d.error.text()
+    d._combos[1].setCurrentText("EQUIPOS")
+    d._aceptar()
+    assert [(x["numero"], x["paquete"]) for x in d.resultado] == [("1", "CHAPA"), ("2", "EQUIPOS")]

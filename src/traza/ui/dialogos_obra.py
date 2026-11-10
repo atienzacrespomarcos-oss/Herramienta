@@ -246,3 +246,105 @@ class DialogoFuturible(QDialog):
         if self._id:
             self.resultado["id"] = self._id
         self.accept()
+
+
+SIN_PAQUETE = "— elige —"
+
+
+class DialogoFacturasErp(QDialog):
+    """Lo leído del listado del ERP antes de importar: qué columna es qué, y por factura si
+    se importa y a qué paquete (TRAZA propone; el usuario decide). Las ya apuntadas se
+    enseñan sin marcar, con el motivo."""
+
+    def __init__(self, padre: QWidget, explicacion: str, propuestas: list, paquetes: list[str]):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QPlainTextEdit, QTableWidget, QTableWidgetItem
+
+        from traza.ui.ventana import _dinero
+
+        super().__init__(padre)
+        self.setWindowTitle("Importar facturas del ERP")
+        self.resultado: list[dict] | None = None
+        self._propuestas = propuestas
+        texto = QPlainTextEdit(explicacion)
+        texto.setReadOnly(True)
+        texto.setMaximumHeight(110)
+        self.tabla = QTableWidget(len(propuestas), 7)
+        self.tabla.setHorizontalHeaderLabels(
+            ["", "Proveedor", "Nº", "Fecha", "Importe", "Paquete", "Nota"]
+        )
+        self.tabla.setMinimumSize(820, 320)
+        self._combos: list[QComboBox] = []
+        for r, p in enumerate(propuestas):
+            x = p.leida
+            marca = QTableWidgetItem()
+            nueva = p.estado == "nueva"
+            marca.setFlags(
+                (Qt.ItemIsUserCheckable | Qt.ItemIsEnabled) if nueva else Qt.ItemIsUserCheckable
+            )
+            marca.setCheckState(Qt.Checked if nueva else Qt.Unchecked)
+            self.tabla.setItem(r, 0, marca)
+            fecha = "-".join(reversed(x.fecha.split("-")))
+            for c, v in enumerate(
+                [x.proveedor, x.numero, fecha, f"{_dinero(x.importe)} €"], start=1
+            ):
+                item = QTableWidgetItem(v)
+                item.setFlags(Qt.ItemIsEnabled)
+                self.tabla.setItem(r, c, item)
+            combo = QComboBox()
+            combo.addItems([SIN_PAQUETE, *paquetes])
+            if p.paquete:
+                if p.paquete not in paquetes:
+                    combo.addItem(p.paquete)
+                combo.setCurrentText(p.paquete)
+            combo.setEnabled(nueva)
+            self._combos.append(combo)
+            self.tabla.setCellWidget(r, 5, combo)
+            nota = QTableWidgetItem(p.motivo)
+            nota.setFlags(Qt.ItemIsEnabled)
+            self.tabla.setItem(r, 6, nota)
+        self.tabla.resizeColumnsToContents()
+        self.error = QLabel()
+        self.error.setStyleSheet("color: #c0392b")
+        self.error.setWordWrap(True)
+        f = QFormLayout(self)
+        f.addRow(texto)
+        f.addRow(self.tabla)
+        f.addRow(self.error)
+        _botones(f, self, self._aceptar)
+
+    def marcada(self, fila: int) -> bool:
+        from PySide6.QtCore import Qt
+
+        return self.tabla.item(fila, 0).checkState() == Qt.Checked
+
+    def _aceptar(self) -> None:
+        elegidas, sin = [], 0
+        for r, p in enumerate(self._propuestas):
+            if p.estado != "nueva" or not self.marcada(r):
+                continue
+            paquete = self._combos[r].currentText()
+            if paquete == SIN_PAQUETE:
+                sin += 1
+                continue
+            x = p.leida
+            elegidas.append(
+                {
+                    "paquete": paquete,
+                    "proveedor": x.proveedor,
+                    "numero": x.numero,
+                    "fecha": x.fecha,
+                    "importe": x.importe,
+                }
+            )
+        if sin:
+            self.error.setText(
+                f"Elige el paquete de {sin} factura(s) marcada(s), o desmárcalas para no "
+                "importarlas."
+            )
+            return
+        if not elegidas:
+            self.error.setText("No hay ninguna factura marcada para importar.")
+            return
+        self.resultado = elegidas
+        self.accept()
