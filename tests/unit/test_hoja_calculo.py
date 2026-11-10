@@ -266,6 +266,66 @@ def test_una_celda_suelta_no_convierte_en_texto_los_importes(tmp_path):
     assert [x[1] for x in f[2:]] == [1234.56, 10, 20.5, 3]
 
 
+def test_codigos_que_chocan_no_son_cantidades(tmp_path):
+    """Revisión 10-11-2026 (tercera): «Pos.» no estaba entre los títulos y «1.1» y «1.10»
+    se leían los dos 1,1 en un fichero con punto decimal. Dos textos que dan el mismo
+    número con distintos decimales son códigos."""
+    ruta = tmp_path / "en.csv"
+    ruta.write_text(
+        "Línea X,Descripción,Importe\n1.1,Clima,1234.50\n1.10,Vent,99.90\n2.15,Otro,10\n",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert [x[0] for x in f[1:]] == ["1.1", "1.10", "2.15"]
+    assert [x[2] for x in f[1:]] == [1234.5, 99.9, 10]
+
+
+def test_titulos_que_no_son_de_codigos(tmp_path):
+    ruta = tmp_path / "meses.csv"
+    ruta.write_text(
+        "Concepto;Noviembre;Nº uds.;Capacidad;Refrigeración;Partida alzada;Nº factura\n"
+        "A;1.234,56;3;12,5;7;100;0012\n",
+        encoding="utf-8",
+    )
+    assert _filas(ruta)[1] == ["A", 1234.56, 3, 12.5, 7, 100, "0012"]
+
+
+def test_html_y_xml_raros(tmp_path):
+    sin_cerrar = tmp_path / "a.xls"
+    sin_cerrar.write_text(
+        "<table><tr><td>Código<td>Importe</tr><tr><td>A<td>1.234,56</tr></table>",
+        encoding="utf-8",
+    )
+    assert _filas(sin_cerrar) == [["Código", "Importe"], ["A", 1234.56]]
+    anidada = tmp_path / "b.xls"
+    anidada.write_text(
+        "<table><tr><td><table><tr><td>1</td></tr></table></td><td>2</td></tr></table>",
+        encoding="utf-8",
+    )
+    with pytest.raises(HojaNoLegible, match="tabla dentro de otra"):
+        abrir(anidada)
+    xml = tmp_path / "c.xls"
+    xml.write_text(
+        '<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
+        'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
+        '<Worksheet ss:Name="Resumen"><Table><Row><Cell><Data ss:Type="String">T</Data>'
+        "</Cell></Row></Table></Worksheet>"
+        '<Worksheet ss:Name="Detalle"><Table><Row><Cell><Data ss:Type="String">Importe</Data>'
+        '</Cell><Cell><Data ss:Type="String">X</Data></Cell></Row><Row><Cell>'
+        '<Data ss:Type="String">1.234,56</Data><Comment><ss:Data>revisar</ss:Data></Comment>'
+        '</Cell><Cell><Data ss:Type="Number">7</Data></Cell></Row></Table></Worksheet>'
+        "</Workbook>",
+        encoding="utf-8",
+    )
+    valores = abrir(xml)[0]
+    assert valores.sheetnames == ["Resumen", "Detalle"]  # «Hoja!B12» sigue valiendo
+    # Importe escrito como texto por el ERP: se interpreta; el comentario no es su valor.
+    assert [[c.value for c in f] for f in valores["Detalle"].iter_rows()] == [
+        ["Importe", "X"],
+        [1234.56, 7],
+    ]
+
+
 # --- Ayudas para otras pruebas: el mismo contenido en .xls y en .csv ------------------------
 
 

@@ -206,37 +206,74 @@ def _entero_attr(texto, defecto: int = 0) -> int:
 
 
 class _Tabla(HTMLParser):
-    """Filas y celdas de una tabla HTML (<tr><td>) o de un XML de Excel 2003
-    (<Row><Cell><Data>), que es lo que muchos ERP guardan con extensión .xls.
+    """Hojas, filas y celdas de tablas HTML (<table><tr><td>) o de un XML de Excel 2003
+    (<Worksheet><Row><Cell><Data>), que es lo que muchos ERP guardan con extensión .xls.
 
     Cada celda va en su columna (revisión 10-11-2026: sin esto, un importe tras celdas
     vacías se corría a la izquierda): el XML de Excel salta las vacías con `ss:Index` y
     combina con `ss:MergeAcross`; el HTML, con `colspan`. Una celda combinada en varias
-    filas (`rowspan`, `ss:MergeDown`) movería las de debajo: el fichero se rechaza y se
-    dice. Del XML se guarda además el tipo que declara cada dato (`ss:Type`): sus números
-    van siempre con punto, sin convención que adivinar."""
+    filas (`rowspan`, `ss:MergeDown`), una tabla dentro de otra o posiciones que se pisan
+    descolocarían las celdas: el fichero se rechaza y se dice. Cada <Worksheet> (o cada
+    <table> de un HTML) es una hoja. Los comentarios de celda del XML no son su valor. Del
+    XML se guarda el tipo que declara cada dato (`ss:Type`)."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.filas: list[list[tuple[str, str | None]]] = []
+        self.hojas: list[tuple[str, list[list[tuple[str, str | None]]]]] = []
         self._celda: list[str] | None = None
         self._tipo: str | None = None
         self._extra = 0
+        self._en_xml = False
+        self._tablas_abiertas = 0
+        self._en_comentario = 0
+
+    @property
+    def _filas(self):
+        if not self.hojas:
+            self.hojas.append(("Hoja", []))
+        return self.hojas[-1][1]
+
+    def _cerrar_celda(self) -> None:
+        if self._celda is not None:
+            texto = " ".join("".join(self._celda).split())
+            self._filas[-1].append((texto, self._tipo))
+            self._filas[-1].extend([("", None)] * self._extra)
+            self._celda, self._tipo, self._extra = None, None, 0
 
     def handle_starttag(self, tag, attrs):
         a = {k.lower(): (v or "") for k, v in attrs}
-        if tag in ("tr", "row"):
+        if tag == "worksheet":
+            self._en_xml = True
+            self.hojas.append((a.get("ss:name") or f"Hoja{len(self.hojas) + 1}", []))
+        elif tag == "table":
+            self._tablas_abiertas += 1
+            if self._tablas_abiertas > 1:
+                raise HojaNoLegible(
+                    "tiene una tabla dentro de otra: sus celdas no tienen una posición clara."
+                )
+            if not self._en_xml:
+                self.hojas.append((f"Tabla{len(self.hojas) + 1}", []))
+        elif tag == "comment":
+            self._en_comentario += 1
+        elif tag in ("tr", "row"):
+            self._cerrar_celda()  # una <td> sin cerrar no se pierde
+            filas = self._filas
             indice = _entero_attr(a.get("ss:index"))
-            while indice and len(self.filas) < indice - 1:
-                self.filas.append([])
-            self.filas.append([])
-        elif tag in ("td", "th", "cell") and self.filas:
+            if indice and indice - 1 < len(filas):
+                raise HojaNoLegible("tiene filas en posiciones que se pisan.")
+            while indice and len(filas) < indice - 1:
+                filas.append([])
+            filas.append([])
+        elif tag in ("td", "th", "cell"):
+            self._cerrar_celda()
+            if not self._filas:
+                self._filas.append([])
             if _entero_attr(a.get("rowspan"), 1) > 1 or _entero_attr(a.get("ss:mergedown")) > 0:
                 raise HojaNoLegible(
                     "tiene celdas combinadas en varias filas, que descolocarían las de debajo. "
                     "Ábrelo en Excel y guárdalo como .xlsx."
                 )
-            fila = self.filas[-1]
+            fila = self._filas[-1]
             indice = _entero_attr(a.get("ss:index"))
             if indice:
                 if indice - 1 < len(fila):
@@ -246,20 +283,22 @@ class _Tabla(HTMLParser):
             self._extra = max(
                 _entero_attr(a.get("colspan"), 1) - 1, _entero_attr(a.get("ss:mergeacross"))
             )
-        elif tag == "data" and self._celda is not None:
+        elif tag == "data" and self._celda is not None and not self._en_comentario:
             self._tipo = a.get("ss:type") or None
         elif tag == "br" and self._celda is not None:
             self._celda.append(" ")
 
     def handle_endtag(self, tag):
-        if tag in ("td", "th", "cell") and self._celda is not None and self.filas:
-            texto = " ".join("".join(self._celda).split())
-            self.filas[-1].append((texto, self._tipo))
-            self.filas[-1].extend([("", None)] * self._extra)
-            self._celda, self._tipo, self._extra = None, None, 0
+        if tag in ("td", "th", "cell"):
+            self._cerrar_celda()
+        elif tag == "comment":
+            self._en_comentario = max(0, self._en_comentario - 1)
+        elif tag == "table":
+            self._cerrar_celda()
+            self._tablas_abiertas = max(0, self._tablas_abiertas - 1)
 
     def handle_data(self, data):
-        if self._celda is not None:
+        if self._celda is not None and not self._en_comentario:
             self._celda.append(data)
 
 
@@ -288,17 +327,23 @@ def _desde_texto(ruta: Path) -> Workbook:
         tabla = _Tabla()
         try:
             tabla.feed(texto)
+            tabla.close()
         except HojaNoLegible as exc:
             raise HojaNoLegible(f"«{ruta.name}» {exc}") from exc
-        filas, separador = tabla.filas, ""
-        if not any(filas):
+        hojas = [(n, f) for n, f in tabla.hojas if any(f)]
+        if not hojas:
             raise HojaNoLegible(f"«{ruta.name}» no tiene ninguna tabla.")
+        separador = ""
     else:
         separador = _separador(texto)
-        filas = [
-            [(v, None) for v in f] for f in csv.reader(io.StringIO(texto), delimiter=separador)
-        ]
-    return _desde_filas(filas, _titulo(ruta.stem, set()), separador)
+        filas = csv.reader(io.StringIO(texto), delimiter=separador)
+        hojas = [(ruta.stem, [[(v, None) for v in f] for f in filas])]
+    wb = Workbook()
+    wb.remove(wb.active)
+    usados: set[str] = set()
+    for nombre, filas in hojas:
+        _a_hoja(wb.create_sheet(_titulo(nombre, usados)), filas, separador)
+    return wb
 
 
 def _limpio(texto: str) -> tuple[str | None, bool, bool]:
@@ -337,33 +382,77 @@ def _es_codigo(t: str | None) -> bool:
 
 #: Títulos de columna de identificadores: sus valores nunca son cantidades ni votan la
 #: convención decimal (revisión 10-11-2026: «1.10», código de capítulo, votaba «punto
-#: decimal» y «1.250» pasaba a 1,25). Por el principio del título: «Cantidad partida» no.
+#: decimal» y «1.250» pasaba a 1,25). Palabra entera al principio del título: «Cantidad
+#: partida», «Noviembre», «Capacidad», «Refrigeración» o «Nº uds.» no lo son.
+_FIN = r"(?![a-zñáéíóúü])"
 _TITULO_DE_CODIGOS = re.compile(
-    r"^(c[oó]d(igo|\.)?|ref(erencia|\.)?|cap([ií]tulo|\.)?|partida|n[ºo°.]|n[uú]m(ero|\.)?"
-    r"|item|[ií]tem|id\b|nif|cif|c\.?p\.?\b|tel[eé]fono|factura\b)",
+    rf"^(c[oó]d(igo)?{_FIN}|c[oó]d\.|ref(erencia)?{_FIN}|ref\.|cap([ií]tulo)?{_FIN}|cap\."
+    rf"|partida{_FIN}(?!\s+alzada)|n[º°](?!\s*(de\s+)?(ud|unid|uds))|n\.?\s*o\.?{_FIN}"
+    rf"|n[uú]m(ero)?{_FIN}(?!\s*(de\s+)?(ud|unid|uds))|n[uú]m\.(?!\s*(de\s+)?(ud|unid|uds))"
+    rf"|[ií]tem{_FIN}|id{_FIN}|nif{_FIN}|cif{_FIN}|c\.?p\.?{_FIN}|tel[eé]fono{_FIN}"
+    rf"|factura{_FIN}|pos(ici[oó]n)?{_FIN}|pos\.|orden{_FIN}|l[ií]nea{_FIN}|art[ií]culo{_FIN}"
+    rf"|art\.)",
     re.IGNORECASE,
 )
 
 
+def _fila_de_titulos(filas, limpios) -> int | None:
+    """La primera de las 15 primeras con al menos dos textos que no son números: la de los
+    títulos de columna (una fila de título de documento tiene uno solo)."""
+    for r, f in enumerate(filas[:15]):
+        textos = sum(
+            1
+            for c, (v, t) in enumerate(f)
+            if v.strip() and _heuristico(t) and limpios[r][c][0] is None
+        )
+        if textos >= 2:
+            return r
+    return None
+
+
 def _columnas_de_codigos(filas, limpios, ancho: int) -> set[int]:
-    """Una columna es de códigos si su título lo dice o si al menos el 30 % de sus valores
-    con cifras tienen forma de código. Una celda suelta («01», nº de certificación encima
-    de los importes) no convierte en texto una columna de importes."""
+    """Una columna es de códigos si su título (en la fila de títulos) lo dice o si al menos
+    el 30 % de sus valores con cifras tienen forma de código. Una celda suelta («01», nº
+    de certificación encima de los importes) no convierte en texto una columna de
+    importes."""
     codigos = set()
+    r_titulos = _fila_de_titulos(filas, limpios)
     for c in range(ancho):
-        titulos = [
-            f[c][0].strip()
-            for r, f in enumerate(filas[:15])
-            if c < len(f) and f[c][0].strip() and f[c][1] is None and limpios[r][c][0] is None
-        ]
-        if any(len(t) <= 25 and _TITULO_DE_CODIGOS.match(t) for t in titulos):
-            codigos.add(c)
-            continue
+        if r_titulos is not None and c < len(filas[r_titulos]):
+            titulo = filas[r_titulos][c][0].strip()
+            if titulo and len(titulo) <= 30 and _TITULO_DE_CODIGOS.match(titulo):
+                codigos.add(c)
+                continue
         con_cifras = [f[c] for f in limpios if c < len(f) and f[c][0] is not None]
         forma = sum(1 for t, _n, pct in con_cifras if not pct and _es_codigo(t))
         if forma and forma >= 0.3 * len(con_cifras):
             codigos.add(c)
     return codigos
+
+
+def _decimales(t: str, decimal: str) -> int:
+    return len(t) - t.rfind(decimal) - 1 if decimal in t else 0
+
+
+def _codigos_por_choque(limpios, ancho: int, codigos: set[int], decimal: str, ambiguos) -> set[int]:
+    """Columnas donde dos textos distintos darían el mismo número con distinto número de
+    decimales («1.1» y «1.10»): son códigos (capítulo 1.1 y capítulo 1.10), no cantidades
+    (revisión 10-11-2026: los dos se leían 1,1 y se rompía el cruce por código)."""
+    nuevos = set()
+    for c in range(ancho):
+        if c in codigos:
+            continue
+        vistos: dict[float, set[int]] = {}
+        for f in limpios:
+            if c >= len(f) or f[c][0] is None or f[c][2]:
+                continue
+            n = _numero(f[c][0], decimal, ambiguos)
+            if n is None:
+                continue
+            vistos.setdefault(float(n), set()).add(_decimales(f[c][0], decimal))
+        if any(len(d) > 1 for d in vistos.values()):
+            nuevos.add(c)
+    return nuevos
 
 
 def _convencion(textos: list[str], separador: str) -> tuple[str, bool]:
@@ -456,35 +545,43 @@ def _tipado(texto: str, tipo: str):
     return texto  # String: texto tal cual
 
 
-def _desde_filas(
-    filas: list[list[tuple[str, str | None]]], titulo: str, separador: str
-) -> Workbook:
+def _heuristico(tipo: str | None) -> bool:
+    """Sin tipo declarado (CSV, HTML) o declarado texto (un ERP que escribe los importes
+    como texto en el XML): se interpreta con las reglas de este módulo."""
+    return tipo in (None, "String")
+
+
+def _a_hoja(ws, filas: list[list[tuple[str, str | None]]], separador: str) -> None:
     limpios = [
-        [_limpio(v) if v.strip() and t is None else (None, False, False) for v, t in f]
+        [_limpio(v) if v.strip() and _heuristico(t) else (None, False, False) for v, t in f]
         for f in filas
     ]
     ancho = max((len(f) for f in filas), default=0)
     codigos = _columnas_de_codigos(filas, limpios, ancho)
-    decimal, ambiguos = _convencion(
-        [x[0] for f in limpios for c, x in enumerate(f) if x[0] and c not in codigos],
-        separador,
-    )
-    wb = Workbook()
-    ws = wb.active
-    ws.title = titulo
+
+    def convencion():
+        return _convencion(
+            [x[0] for f in limpios for c, x in enumerate(f) if x[0] and c not in codigos],
+            separador,
+        )
+
+    decimal, ambiguos = convencion()
+    choques = _codigos_por_choque(limpios, ancho, codigos, decimal, ambiguos)
+    if choques:
+        codigos |= choques
+        decimal, ambiguos = convencion()  # sin sus votos
     for r, fila in enumerate(filas, start=1):
         for c, (crudo, tipo) in enumerate(fila):
             texto = crudo.strip()
             if not texto:
                 continue
-            if tipo is not None:
+            if not _heuristico(tipo):
                 _poner(ws, r, c + 1, _tipado(texto, tipo))
             elif c in codigos:
                 _poner(ws, r, c + 1, texto)
             else:
                 valor, formato = _convertir(texto, limpios[r - 1][c], decimal, ambiguos)
                 _poner(ws, r, c + 1, valor, formato)
-    return wb
 
 
 def _convertir(texto: str, limpio, decimal: str, ambiguos: bool = True):

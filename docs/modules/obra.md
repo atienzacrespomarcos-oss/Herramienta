@@ -309,11 +309,16 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
     aaaa-mm-dd): «01.02.03» es un código, no una fecha.
   - Importes con «€», negativos entre paréntesis o con el signo detrás, miles con espacio
     («1 234,56»), porcentajes («21 %» → 0,21).
-  - **Columnas de códigos**: por su título («Código», «Cód.», «Ref.», «Capítulo»,
-    «Partida», «Nº», «Factura», «NIF», «CP»…; «Cantidad partida» no) o porque al menos el
-    30 % de sus valores tienen forma de código. Sus valores no votan la convención y una
-    celda suelta («01» encima de los importes) no convierte en texto una columna de
-    importes.
+  - **Columnas de códigos**, de tres formas:
+    1. Por su título en la fila de títulos (la primera con dos o más textos), palabra entera
+       al principio: «Código», «Cód.», «Ref.», «Capítulo», «Partida», «Nº», «Número»,
+       «Factura», «Pos.», «Orden», «Línea», «Artículo», «Ítem», «NIF», «CP»… («Cantidad
+       partida», «Partida alzada», «Nº uds.», «Noviembre», «Capacidad» no).
+    2. Porque al menos el 30 % de sus valores tienen forma de código.
+    3. Porque dos textos distintos darían el mismo número con distintos decimales («1.1» y
+       «1.10»: capítulos distintos, no la misma cantidad).
+    Sus valores no votan la convención y una celda suelta («01» encima de los importes) no
+    convierte en texto una columna de importes.
   - La **convención decimal se decide por fichero**, con lo que demuestran las columnas
     que no son de códigos:
     1. Un número con punto y coma a la vez («1.234,56») es prueba fuerte.
@@ -329,9 +334,12 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
     reinterpretarlo sería inventar una cifra.
   - Fechas siempre día/mes/año (convención española).
 - **Tablas HTML y XML de Excel 2003**: cada celda en su columna (`colspan`, `ss:Index`,
-  `ss:MergeAcross`); una celda combinada en varias filas descolocaría las de debajo, y el
-  fichero se rechaza diciéndolo. En el XML, cada dato con el tipo que declara (sus números
-  van siempre con punto).
+  `ss:MergeAcross`), también si una `<td>` no se cierra; una celda combinada en varias
+  filas, una tabla dentro de otra o posiciones que se pisan descolocarían las celdas, y el
+  fichero se rechaza diciéndolo. Cada hoja del XML (o cada tabla del HTML) es una hoja.
+  Los comentarios de celda no son su valor. En el XML, un dato «Number» o «DateTime» se
+  toma con su tipo (números con punto); uno «String» (hay ERP que escriben así los
+  importes) se interpreta con las reglas de arriba.
 - En el comparativo de costes, un .xls o un CSV no guardan fórmulas: no se distingue un
   precio escrito de uno calculado, y se avisa de que las líneas tomadas como añadidas a mano
   pueden ser subtotales (el contraste con el TOTAL lo confirma).
