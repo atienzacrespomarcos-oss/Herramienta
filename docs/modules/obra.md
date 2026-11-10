@@ -409,7 +409,16 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
     propone nunca; el usuario lo elige en la tabla, que dice en esa fila que se leerá con
     la IA (elegirlo es el permiso para ese documento; CLAUDE.md, línea roja 7).
 - **Tabla de confirmación**: documento, qué es (desplegable con lo que TRAZA sabe leer de
-  ese formato) y por qué. Cancelar deja los documentos en Documentación, sin leer.
+  ese formato) y por qué. Cancelar deja los documentos en Documentación, sin leer. La fila
+  dice si se leería con la IA: un PDF o un Excel como presupuesto, medición u oferta, y
+  también una hoja **no reconocida** elegida como certificación o facturas (la IA diría qué
+  columna es qué; revisión 10-11-2026).
+- **Un solo presupuesto**: con dos elegidos, se pide elegir uno; si la obra ya tiene venta
+  contratada, sustituirla se confirma (las certificaciones se cruzan con ella).
+- **Echar otra vez un documento** que ya está (se canceló, falló o quedó como documentación)
+  no lo duplica: entra en la tabla para poder leerlo; si ya está leído, sale con su uso.
+  Un BC3 que no se puede leer se dice; un segundo BC3 con precios se propone como medición
+  avisando de que puede ser otro presupuesto o una oferta.
 - **Montaje en orden**: presupuesto (se lee y queda como venta contratada), mediciones y
   ofertas, coste objetivo, certificaciones por su nº (se piden nº y fecha, como en su
   paso) y facturas (con su tabla de paquetes). Un documento que falla no para los demás;

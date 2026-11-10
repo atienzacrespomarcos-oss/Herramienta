@@ -66,11 +66,21 @@ class Propuesta:
     motivo: str
     posibles: tuple[str, ...]
     numero: int | None = None  # certificación: el nº que dice el documento, si lo dice
+    #: Lo que TRAZA ha reconocido por los títulos de una hoja (coste objetivo, certificación
+    #: o facturas), o None. Elegir otro de esos tipos necesita la IA para saber qué columna
+    #: es qué.
+    reconocido: str | None = None
+    #: Ya leído (como medición, coste objetivo, certificación o facturas): no se lee otra vez.
+    uso: str | None = None
 
     def con_ia(self, tipo: str | None = None) -> bool:
-        """Leerlo como `tipo` necesita la IA (su contenido se envía a Anthropic)."""
+        """Leerlo como `tipo` necesita la IA (su contenido, o sus títulos y unas filas, se
+        envían a Anthropic). Revisión 10-11-2026: una hoja no reconocida elegida como
+        certificación o facturas también va a la IA, y la tabla tiene que decirlo."""
         t = tipo or self.tipo
-        return t in LEIDOS_CON_MEDICION and self.extension != ".bc3"
+        if t in LEIDOS_CON_MEDICION:
+            return self.extension != ".bc3"
+        return t in ("certificacion", "facturas") and t != self.reconocido
 
 
 def _formato(extension: str) -> str:
@@ -86,13 +96,17 @@ def _formato(extension: str) -> str:
     return "otro"
 
 
+class _Bc3Ilegible(Exception):
+    pass
+
+
 def _importe_bc3(ruta) -> float | None:
     """Importe total de un BC3 (cantidad × precio de sus partidas), o None si no tiene
-    precios."""
+    precios. _Bc3Ilegible si no se puede leer (se dice, no se toma por «sin precios»)."""
     try:
         partidas, _ = bc3.partidas(bc3.leer_bc3(ruta))
-    except Exception:  # noqa: BLE001 — no se reconoce: se dice
-        return None
+    except Exception as exc:  # noqa: BLE001
+        raise _Bc3Ilegible(str(exc)) from exc
     con_precio = [
         p.cantidad * p.precio for p in partidas if p.cantidad is not None and p.precio is not None
     ]
@@ -136,25 +150,67 @@ def _que_hoja(ruta) -> tuple[str, str]:
     return "documentacion", "no se reconoce sin la IA: si es un presupuesto o una medición, elígelo"
 
 
+def usos(proyecto: Any) -> dict[str, str]:
+    """documento_id → para qué se ha leído ya (un documento leído no se lee otra vez)."""
+    salida: dict[str, str] = {}
+    for m in proyecto.mediciones():
+        salida[m["documento_id"]] = f"ya leído como {m['clase']}"
+    coste = proyecto.coste_objetivo()
+    if coste:
+        salida[coste["documento_id"]] = "ya leído como coste objetivo"
+    for c in proyecto.certificaciones():
+        salida[c["documento_id"]] = f"ya leído como certificación nº {c['numero']}"
+    for f in proyecto.facturas():
+        if f.get("documento_id"):
+            salida[f["documento_id"]] = "ya leído como listado de facturas"
+    return salida
+
+
 def clasificar(proyecto: Any, documentos: list[dict[str, Any]]) -> list[Propuesta]:
     """Propuesta para cada documento (no escribe nada)."""
     sin_venta = proyecto.venta_contratada() is None
+    leidos = usos(proyecto)
     salida: list[Propuesta] = []
     presupuestos_bc3: list[tuple[float, int]] = []  # (importe, posición en salida)
     for d in documentos:
         formato = _formato(d["extension"])
         ruta = proyecto.ruta_documento(d["id"])
         posibles = _POSIBLES[formato]
-        numero = None
+        numero = reconocido = None
+        if d["id"] in leidos:
+            salida.append(
+                Propuesta(
+                    d["id"],
+                    d["nombre_original"],
+                    d["extension"],
+                    "documentacion",
+                    leidos[d["id"]],
+                    ("documentacion",),
+                    uso=leidos[d["id"]],
+                )
+            )
+            continue
         if formato == "bc3":
-            importe = _importe_bc3(ruta)
-            if importe is None:
-                tipo, motivo = "medicion", "BC3 sin precios"
+            try:
+                importe = _importe_bc3(ruta)
+            except _Bc3Ilegible as exc:
+                tipo, motivo, posibles = (
+                    "documentacion",
+                    f"no se puede leer como BC3: {exc}",
+                    ("documentacion",),
+                )
             else:
-                tipo, motivo = "medicion", "BC3 con precios"
-                presupuestos_bc3.append((importe, len(salida)))
+                if importe is None:
+                    tipo, motivo = "medicion", "BC3 sin precios"
+                else:
+                    tipo, motivo = (
+                        "medicion",
+                        ("BC3 con precios: ¿otro presupuesto o una oferta de proveedor? elige"),
+                    )
+                    presupuestos_bc3.append((importe, len(salida)))
         elif formato == "hoja":
             tipo, motivo = _que_hoja(ruta)
+            reconocido = tipo if tipo != "documentacion" else None
             if tipo == "certificacion":
                 numero = _numero_certificacion(ruta, d["nombre_original"])
                 if numero:
@@ -169,7 +225,16 @@ def clasificar(proyecto: Any, documentos: list[dict[str, Any]]) -> list[Propuest
         else:
             tipo, motivo = "documentacion", "TRAZA no lee este formato: queda en Documentación"
         salida.append(
-            Propuesta(d["id"], d["nombre_original"], d["extension"], tipo, motivo, posibles, numero)
+            Propuesta(
+                d["id"],
+                d["nombre_original"],
+                d["extension"],
+                tipo,
+                motivo,
+                posibles,
+                numero,
+                reconocido,
+            )
         )
     # Un solo presupuesto: el BC3 con precios de mayor importe, si la obra no tiene venta.
     if presupuestos_bc3 and sin_venta:

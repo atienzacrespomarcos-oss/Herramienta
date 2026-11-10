@@ -42,34 +42,36 @@ def anadir_documentos(v, rutas: list[Path] | None = None) -> None:
         if not rutas:
             return
     p = v.proyecto
-    nuevos, ya, fallos = [], [], []
+    por_huella = {d["sha256"]: d["id"] for d in p.documentos()}
+    ids, fallos = [], []
     for ruta in rutas:
+        ruta = Path(ruta)
         try:
-            nuevos.append(p.incorporar_documento(Path(ruta)))
-        except OrdenRechazada as exc:
-            (ya if "ya está incorporado" in str(exc) else fallos).append(
-                f"{Path(ruta).name}: {exc}"
-            )
-        except OSError as exc:
-            fallos.append(f"{Path(ruta).name}: {exc}")
+            ya = por_huella.get(_huella(ruta))
+            # Un documento que ya está (se canceló, falló o quedó como documentación) no se
+            # incorpora otra vez, pero entra en la tabla para poder leerlo (revisión
+            # 10-11-2026: daba «ya está incorporado» y no había forma de leerlo).
+            ids.append(ya or p.incorporar_documento(ruta))
+        except (OrdenRechazada, OSError) as exc:
+            fallos.append(f"{ruta.name}: {exc}")
     v.refrescar()
-    docs = [d for d in p.documentos() if d["id"] in nuevos]
+    elegidos = set(ids)
+    docs = [d for d in p.documentos() if d["id"] in elegidos]
     if not docs:
         v.preguntas.aviso(
-            "Documentos de la obra",
-            "No se ha incorporado ningún documento nuevo.\n" + "\n".join([*ya, *fallos]),
+            "Documentos de la obra", "No se ha incorporado ningún documento.\n" + "\n".join(fallos)
         )
         return
     propuestas = clasificar.clasificar(p, docs)
-    plan = v.preguntas.plan_obra(propuestas)
+    plan = _pedir_plan(v, propuestas)
     if plan is None:
         v.preguntas.informacion(
             "Documentos de la obra",
-            f"{len(docs)} documento(s) incorporado(s) a «Documentación», sin leer.",
+            f"{len(docs)} documento(s) en «Documentación», sin leer.",
         )
         return
     hecho: list[str] = []
-    no: list[str] = [*(f"{x} (no se incorpora otra vez)" for x in ya), *fallos]
+    no: list[str] = list(fallos)
     for prop, tipo in clasificar.orden_de_montaje(plan):
         etiqueta = f"{prop.nombre}: {clasificar.TIPOS[tipo].lower()}"
         try:
@@ -100,6 +102,48 @@ def anadir_documentos(v, rutas: list[Path] | None = None) -> None:
         v.ir_a_paso("venta")
 
 
+def _huella(ruta: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with ruta.open("rb") as f:
+        for bloque in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloque)
+    return h.hexdigest()
+
+
+def _pedir_plan(v, propuestas):
+    """La tabla, hasta que el plan tenga sentido: un solo presupuesto por obra (usuario,
+    10-11-2026) y, si la obra ya tiene venta, sustituirla se confirma."""
+    while True:
+        plan = v.preguntas.plan_obra(propuestas)
+        if plan is None:
+            return None
+        presupuestos = [x for x, t in plan if t == "presupuesto"]
+        if len(presupuestos) > 1:
+            v.preguntas.aviso(
+                "Documentos de la obra",
+                "Has elegido "
+                + ", ".join(f"«{x.nombre}»" for x in presupuestos)
+                + " como presupuesto contratado: la obra tiene uno solo. Elige uno; los demás "
+                "pueden ser mediciones u ofertas.",
+            )
+            continue
+        venta = v.proyecto.venta_contratada()
+        if (
+            presupuestos
+            and venta is not None
+            and not v.preguntas.confirmar(
+                "Documentos de la obra",
+                f"La obra ya tiene presupuesto contratado («{venta['documento_nombre']}»). "
+                f"¿Sustituirlo por «{presupuestos[0].nombre}»? Las certificaciones se cruzan con "
+                "la venta: revísalas después.",
+            )
+        ):
+            continue
+        return plan
+
+
 def _montar(v, prop: clasificar.Propuesta, tipo: str) -> bool:
     p = v.proyecto
     doc = next(d for d in p.documentos() if d["id"] == prop.documento_id)
@@ -107,7 +151,12 @@ def _montar(v, prop: clasificar.Propuesta, tipo: str) -> bool:
         esperar = v._en_segundo_plano if prop.con_ia(tipo) else None
         medicion_id, _avisos = p.leer_medicion(prop.documento_id, tipo, None, esperar=esperar)
         if tipo == "presupuesto":
-            p.fijar_venta_contratada(medicion_id)
+            try:
+                p.fijar_venta_contratada(medicion_id)
+            except OrdenRechazada as exc:
+                raise OrdenRechazada(
+                    f"se ha leído, pero no ha quedado como venta contratada: {exc}"
+                ) from exc
         return True
     if tipo == "coste_objetivo":
         p.importar_coste_objetivo(prop.documento_id)

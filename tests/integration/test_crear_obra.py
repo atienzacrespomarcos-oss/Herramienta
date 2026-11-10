@@ -95,3 +95,30 @@ def test_con_venta_contratada_no_se_propone_otro_presupuesto(proyecto, tmp_path)
     doc = p.incorporar_documento(nuevo)
     (x,) = clasificar.clasificar(p, [d for d in p.documentos() if d["id"] == doc])
     assert x.tipo == "medicion" and "presupuesto" in x.posibles
+
+
+def test_lo_que_iria_a_la_ia_se_sabe_y_un_bc3_ilegible_se_dice(proyecto, tmp_path):
+    """Revisión 10-11-2026: una hoja no reconocida elegida como certificación o facturas
+    también va a la IA (para saber qué columna es qué): la tabla tiene que decirlo."""
+    from openpyxl import Workbook
+
+    p = proyecto
+    p.ejecutar(CambiarEncargo("obra"))
+    wb = Workbook()
+    wb.active.append(["Cosa", "Otra cosa"])
+    wb.active.append(["a", 1])
+    raro = tmp_path / "Raro.xlsx"
+    wb.save(raro)
+    cert = excel(tmp_path / "Cert.xlsx", SUYO)
+    roto = tmp_path / "Roto.bc3"
+    roto.write_bytes(b"\x00\x01 no es un bc3")
+    ids = [p.incorporar_documento(r) for r in (raro, cert, roto)]
+    docs = {d["id"]: d for d in p.documentos()}
+    raro_p, cert_p, roto_p = clasificar.clasificar(p, [docs[i] for i in ids])
+    assert raro_p.tipo == "documentacion" and raro_p.reconocido is None
+    assert raro_p.con_ia("certificacion") and raro_p.con_ia("facturas")
+    assert cert_p.reconocido == "certificacion" and not cert_p.con_ia("certificacion")
+    assert cert_p.con_ia("facturas")  # no reconocido como facturas: iría a la IA
+    assert not cert_p.con_ia("coste_objetivo") and not cert_p.con_ia("documentacion")
+    assert roto_p.tipo == "documentacion" and roto_p.posibles == ("documentacion",)
+    assert "no se puede leer como BC3" in roto_p.motivo
