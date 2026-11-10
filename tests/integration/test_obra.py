@@ -295,8 +295,21 @@ def test_comparativo_en_xls(obra, tmp_path):
 
     p, med_id = obra
     p.fijar_venta_contratada(med_id)
-    xls = a_xls(comparativo(tmp_path / "Costes.xlsx"), tmp_path / "Costes.xls")
-    p.importar_coste_objetivo(p.incorporar_documento(xls))
+    from openpyxl import load_workbook
+
+    xlsx = comparativo(tmp_path / "Costes.xlsx")
+    # Un .xls real trae el resultado de cada fórmula (cierres de partida y de capítulo):
+    # con números en esas filas, no deben contarse dos veces.
+    resultados = {}
+    for fila in load_workbook(xlsx).active.iter_rows():
+        d = fila[3].value
+        if isinstance(fila[5].value, str) and fila[5].value.startswith("="):
+            precio = {"UTA01": 18400, "CND01": 42, "CAP01": 22600}[d]
+            resultados[fila[5].coordinate] = precio
+            resultados[fila[6].coordinate] = precio * (fila[4].value or 1)
+    xls = a_xls(xlsx, tmp_path / "Costes.xls", resultados)
+    leido = p.importar_coste_objetivo(p.incorporar_documento(xls))
     r = p.resumen_obra()
     assert r.objetivo == pytest.approx(23200)
     assert r.paquetes == {"EQUIPOS": 18600, "CHAPA": 3000, "MANO DE OBRA": 1600}
+    assert any("no guarda fórmulas" in a for a in leido.avisos)

@@ -233,6 +233,13 @@ def _leer_hoja(wv, wf) -> CosteObjetivo:
             r.avisos.append(f"{codigo or resumen} (fila {fila}): importe negativo.")
     if not r.partidas:
         raise CosteNoReconocido("La hoja no tiene ninguna partida («Nat» = Partida).")
+    if wf is wv and any("Línea añadida a mano" in a for a in r.avisos):
+        # Un .xls o un CSV no guardan fórmulas: no se distingue un precio escrito de uno
+        # calculado (revisión 10-11-2026). Se dice; el contraste con el TOTAL lo confirma.
+        r.avisos.append(
+            "Este formato no guarda fórmulas: las líneas tomadas como añadidas a mano pueden "
+            "ser subtotales calculados. Compruébalas con el TOTAL."
+        )
     if sin_valor:
         r.avisos.append(
             f"Fórmula sin resultado guardado en la(s) fila(s) {_filas(sin_valor)}: abre el "

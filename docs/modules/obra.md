@@ -294,16 +294,32 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
 - **.xls** (Excel 97-2003, xlrd, licencia BSD): guarda el resultado de cada fórmula, no la
   fórmula; las fechas salen como fechas y se conserva el formato de número (para reconocer
   porcentajes).
-- **.csv**: UTF-8 o Windows-1252 (lo habitual en un ERP español); separador detectado (;
-  , tabulador o |). Números con «€», espacios, negativos entre paréntesis o con el signo
-  detrás, porcentajes («21 %» → 0,21) y fechas (dd/mm/aaaa, dd.mm.aaaa, aaaa-mm-dd).
-  - La **convención decimal se decide por fichero**, con lo que el fichero demuestra: un
-    número con punto y coma a la vez («1.234,56») dice cuál es el decimal; si no, «12,5»
-    solo puede ser coma decimal y «12.50», punto; si solo hay enteros o «1.234», decide el
-    separador de campos, como Excel en España (con «;», coma decimal).
-  - Un número que **contradice** la convención del fichero («1234.56» donde la coma es el
-    decimal) **se queda como texto**: leerlo como 123 456 sería inventar una cifra. Los
-    lectores lo tratan como «no consta» y lo dicen.
+- **Se mira el contenido, no la extensión**: muchos ERP guardan como «.xls» una tabla HTML,
+  un XML de Excel 2003, texto con separadores o un .xlsx; todos se leen. Un binario que no
+  es hoja (un PDF renombrado) se rechaza diciéndolo.
+- **.csv y tablas de texto**: UTF-8 o Windows-1252 (lo habitual en un ERP español); el
+  separador es el que da a casi todas las líneas el mismo número de campos (a igualdad,
+  «;»). Regla de oro (revisión 10-11-2026): **solo se convierte lo inequívoco**; lo demás
+  queda como texto y los lectores lo tratan como «no consta».
+  - **Códigos, no números**: con un cero delante («01», «08001», «0001234») o con varios
+    separadores que no son de miles («01.02.03»), se quedan como texto, y **toda su
+    columna** también («1.001» junto a «01.002» es un código, no mil uno). Así el cruce por
+    código con la venta no se rompe.
+  - **Fechas solo con el año de 4 cifras** (dd/mm/aaaa, dd.mm.aaaa, dd-mm-aaaa,
+    aaaa-mm-dd): «01.02.03» es un código, no una fecha.
+  - Importes con «€», negativos entre paréntesis o con el signo detrás, miles con espacio
+    («1 234,56»), porcentajes («21 %» → 0,21).
+  - La **convención decimal se decide por fichero**, con lo que demuestran las columnas
+    que no son de códigos: un número con punto y coma a la vez («1.234,56») dice cuál es
+    el decimal; si no, coma o punto con 1-2 o 4+ cifras detrás («12,5», «12.50»); con 3
+    cifras («1,234», «0,125») no demuestra nada. Si no hay prueba, o se contradicen,
+    decide el separador de campos, como Excel en España (con «;», coma decimal).
+  - Un número que **contradice** la convención («1234.56» donde la coma es el decimal) o
+    con un grupo de miles mal formado («0,125» con coma de miles) **se queda como texto**:
+    reinterpretarlo sería inventar una cifra.
+- En el comparativo de costes, un .xls o un CSV no guardan fórmulas: no se distingue un
+  precio escrito de uno calculado, y se avisa de que las líneas tomadas como añadidas a mano
+  pueden ser subtotales (el contraste con el TOTAL lo confirma).
 - Un texto ajeno que empieza por «=» se guarda como texto, nunca como fórmula.
 
 ## Pendiente

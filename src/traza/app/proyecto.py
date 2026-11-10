@@ -528,7 +528,10 @@ class Proyecto:
                     for n in sin_texto
                 }
         else:
-            fuente = lectura_ia.FuenteExcel(ruta)
+            try:
+                fuente = lectura_ia.FuenteExcel(ruta)
+            except hoja_calculo.HojaNoLegible as exc:
+                raise OrdenRechazada(str(exc)) from exc
             avisos += fuente.avisos
         texto = fuente.texto_para_ia()
         try:

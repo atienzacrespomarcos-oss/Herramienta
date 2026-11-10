@@ -102,19 +102,104 @@ def test_xls_antiguo(tmp_path):
 def test_no_es_hoja(tmp_path):
     assert es_hoja(".XLS") and es_hoja("obra.csv") and not es_hoja("plano.dxf")
     roto = tmp_path / "roto.xls"
-    roto.write_bytes(b"esto no es un xls")
+    roto.write_bytes(b"\xd0\xcf\x11\xe0" + b"\x00" * 600)  # firma de Excel 97, dañado
     with pytest.raises(HojaNoLegible, match="no se puede abrir"):
         abrir(roto)
+    pdf = tmp_path / "pdf.xls"
+    pdf.write_bytes(b"%PDF-1.7\n\x00\x01\x02 binario")
+    with pytest.raises(HojaNoLegible, match="ni un texto con columnas"):
+        abrir(pdf)
     with pytest.raises(HojaNoLegible, match="no es una hoja de cálculo"):
         abrir(tmp_path / "plano.dxf")
+
+
+def test_codigos_no_son_numeros_ni_fechas(tmp_path):
+    """Revisión 10-11-2026: «01.02.03» se convertía en una fecha y «01» en el número 1, y el
+    cruce por código con la venta dejaba de casar. Toda la columna de códigos se queda
+    como texto (también «1.001», que suelto parecería mil uno)."""
+    ruta = tmp_path / "cert.csv"
+    ruta.write_text(
+        "Código;Resumen;Importe;Cantidad\n"
+        "01;Climatización;12.100,00;\n"
+        "01.02.03;Conducto;2.100,50;0,125\n"
+        "1.001;Rejilla;5;3\n"
+        "02-05-10;Otro;1;1\n",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert [x[0] for x in f[1:]] == ["01", "01.02.03", "1.001", "02-05-10"]
+    assert f[1][2] == 12100 and f[2][2:] == [2100.5, 0.125]
+
+
+def test_identificadores_con_cero_delante_y_espacios(tmp_path):
+    ruta = tmp_path / "erp.csv"
+    ruta.write_text(
+        "Fecha;CP;Referencia;Importe\n"
+        "03.11.2026;08001;0001234;1 234,56\n"
+        "04/11/2026;28001;2026 0001;-1.234,56\n",
+        encoding="utf-8",
+    )
+    f = _filas(ruta)
+    assert f[1] == [datetime(2026, 11, 3), "08001", "0001234", 1234.56]
+    assert f[2] == [datetime(2026, 11, 4), "28001", "2026 0001", -1234.56]
+
+
+def test_tres_decimales_y_miles_a_la_inglesa(tmp_path):
+    """«0,125» no es 125 ni «1,234» en un fichero a la inglesa es 1,234."""
+    es = tmp_path / "es.csv"
+    es.write_text("A;B\n0,125;7,1%\n", encoding="utf-8")
+    assert _filas(es)[1] == [0.125, 0.071]
+    en = tmp_path / "en.csv"
+    en.write_text('A,B\n"1,234",12.50\n"0,125",1\n', encoding="utf-8")
+    assert _filas(en)[1:] == [[1234, 12.5], ["0,125", 1]]
+
+
+def test_separador_con_importes_de_coma_en_cada_linea(tmp_path):
+    """Con «1,00» en cada línea, csv.Sniffer elegía la coma y partía los importes."""
+    ruta = tmp_path / "sin_cabecera.csv"
+    ruta.write_text("F-1;Proveedor A;1,00\nF-2;Proveedor B;2,50\n", encoding="utf-8")
+    assert _filas(ruta) == [["F-1", "Proveedor A", 1], ["F-2", "Proveedor B", 2.5]]
+
+
+def test_xls_que_no_lo_es(tmp_path):
+    """Muchos ERP guardan con extensión .xls una tabla HTML, un XML de Excel 2003, texto
+    con separadores o un .xlsx: se mira el contenido, no el nombre."""
+    html = tmp_path / "html.xls"
+    html.write_text(
+        "<html><body><table><tr><th>Proveedor</th><th>Importe</th></tr>"
+        "<tr><td>Pérez &amp; Cía</td><td>1.234,56</td></tr></table></body></html>",
+        encoding="cp1252",
+    )
+    assert _filas(html) == [["Proveedor", "Importe"], ["Pérez & Cía", 1234.56]]
+    xml = tmp_path / "xml.xls"
+    xml.write_text(
+        '<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">'
+        "<Worksheet><Table><Row><Cell><Data>Código</Data></Cell><Cell><Data>Importe</Data>"
+        "</Cell></Row><Row><Cell><Data>01.01</Data></Cell><Cell><Data>12,5</Data></Cell>"
+        "</Row></Table></Worksheet></Workbook>",
+        encoding="utf-8",
+    )
+    assert _filas(xml) == [["Código", "Importe"], ["01.01", 12.5]]
+    texto = tmp_path / "texto.xls"
+    texto.write_text("Código\tImporte\nA\t3,5\n", encoding="utf-8")
+    assert _filas(texto) == [["Código", "Importe"], ["A", 3.5]]
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.append(["Código", 7])
+    renombrado = tmp_path / "renombrado.xls"
+    wb.save(renombrado)
+    assert _filas(renombrado) == [["Código", 7]]
 
 
 # --- Ayudas para otras pruebas: el mismo contenido en .xls y en .csv ------------------------
 
 
-def a_xls(xlsx, destino):
-    """Copia un .xlsx de prueba a Excel 97-2003. Una fórmula sin resultado guardado queda
-    vacía, como la ve el lector en el .xlsx (un .xls real trae el resultado)."""
+def a_xls(xlsx, destino, resultados=None):
+    """Copia un .xlsx de prueba a Excel 97-2003. Un .xls guarda el resultado de cada
+    fórmula, no la fórmula: `resultados` da el de cada una ({"F10": 42}); sin él, la celda
+    queda vacía (como la ve el lector en el .xlsx sin resultado guardado)."""
+    resultados = resultados or {}
     from openpyxl import load_workbook
 
     wb = load_workbook(xlsx)
@@ -123,9 +208,12 @@ def a_xls(xlsx, destino):
         hoja = salida.add_sheet(ws.title)
         for fila in ws.iter_rows():
             for c in fila:
-                if c.value is None or (isinstance(c.value, str) and c.value.startswith("=")):
+                valor = c.value
+                if isinstance(valor, str) and valor.startswith("="):
+                    valor = resultados.get(c.coordinate)
+                if valor is None:
                     continue
-                hoja.write(c.row - 1, c.column - 1, c.value)
+                hoja.write(c.row - 1, c.column - 1, valor)
     salida.save(str(destino))
     return destino
 
