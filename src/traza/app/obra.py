@@ -426,16 +426,26 @@ def venta_por_codigo(
 # --- Bloque 4b: facturas desde el listado del ERP -------------------------------------------
 
 
+def _solo_letras_y_cifras(texto: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode()
+    return "".join(ch for ch in t.casefold() if ch.isalnum())
+
+
 def clave_factura(proveedor: str, numero: str) -> tuple[str, str]:
-    """La misma que RegistrarFactura: «ACME» y «Acme», o con espacios de más, son la misma."""
-    return " ".join(proveedor.split()).casefold(), " ".join(numero.split()).casefold()
+    """Una factura es la misma aunque cambien mayúsculas, acentos, espacios o puntuación:
+    «CHAPAS NORTE, S.A.» y «Chapas Norte SA», o «F-001» y «F001» (revisión 10-11-2026: el
+    ERP y lo escrito a mano no siempre coinciden). La usan RegistrarFactura e
+    ImportarFacturas."""
+    return _solo_letras_y_cifras(proveedor), _solo_letras_y_cifras(numero)
 
 
 @dataclass(frozen=True)
 class FacturaPropuesta:
     leida: Any  # io/facturas_erp.FacturaLeida
-    #: «nueva», «apuntada» (ya está, igual) o «distinta» (ya está con otro importe o fecha:
-    #: no se sobrescribe; se avisa).
+    #: «nueva», «apuntada» (ya está, igual), «distinta» (ya está con otro importe o fecha:
+    #: no se sobrescribe; se avisa) o «repetida» (otra vez en el listado con otra fecha).
     estado: str
     paquete: str | None  # el que propone TRAZA (None: lo elige el usuario)
     motivo: str  # por qué ese paquete, o por qué ninguno
@@ -459,8 +469,24 @@ def proponer_facturas(
         historial.setdefault(clave_factura(f["proveedor"], "")[0], set()).add(f["paquete"])
     nombres = {p.casefold(): p for p in paquetes}
     salida = []
+    en_listado: dict[tuple[str, str], Any] = {}
     for x in leidas:
-        previa = por_clave.get(clave_factura(x.proveedor, x.numero))
+        clave = clave_factura(x.proveedor, x.numero)
+        if clave in en_listado:
+            # El mismo proveedor y nº con otra fecha: no se elige cuál (la orden rechazaría
+            # todo el listado); se enseña y no se importa.
+            salida.append(
+                FacturaPropuesta(
+                    x,
+                    "repetida",
+                    None,
+                    f"está otra vez en el listado (fila {en_listado[clave].fila}) con otra "
+                    "fecha: revísala en el ERP",
+                )
+            )
+            continue
+        en_listado[clave] = x
+        previa = por_clave.get(clave)
         if previa is not None:
             igual = (
                 round(previa["importe"], 2) == round(x.importe, 2) and previa["fecha"] == x.fecha
@@ -486,7 +512,8 @@ def proponer_facturas(
                 paquete, motivo = candidato, "el listado lo dice"
                 break
         if paquete is None:
-            usados = historial.get(clave_factura(x.proveedor, "")[0], set())
+            # Solo paquetes que siguen en el coste objetivo.
+            usados = historial.get(clave_factura(x.proveedor, "")[0], set()) & set(paquetes)
             if len(usados) == 1:
                 paquete, motivo = next(iter(usados)), "sus otras facturas van ahí"
             elif len(usados) > 1:

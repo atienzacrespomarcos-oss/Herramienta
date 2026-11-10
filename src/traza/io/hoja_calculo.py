@@ -602,3 +602,9 @@ def _convertir(texto: str, limpio, decimal: str, ambiguos: bool = True):
                 return round(n / 100, 12), FORMATO_PCT
             return n, None
     return texto, None
+
+
+def fecha_de_texto(texto: str) -> datetime | None:
+    """Una fecha escrita como texto (dd/mm/aaaa, dd.mm.aaaa, dd-mm-aaaa, aaaa-mm-dd; año de
+    4 cifras), para los lectores que encuentran fechas guardadas como texto en un .xlsx."""
+    return _fecha(texto.strip())

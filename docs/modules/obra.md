@@ -349,30 +349,42 @@ uno, enseñar lo entendido, montar la obra; y echar documentos nuevos durante la
 ## Bloque 4b: facturas desde el listado del ERP (decisiones de método, 10-11-2026)
 
 - «Obra → Importar facturas del ERP…» (paso Coste real) lee el listado tal como lo exporta
-  el ERP (cualquier hoja de cálculo, bloque 4a), sin plantilla: columnas por sus títulos
-  (proveedor, nº de factura, fecha, base imponible, total, cuota de IVA, retención, obra o
-  centro de coste, concepto); si no se reconocen, Claude Code dice qué columna es qué
-  (solo letras) y TRAZA lo comprueba con las mismas reglas (un «% IVA» no es la cuota; una
-  fecha de vencimiento, de pago o contable no es la de la factura; una columna de importe
-  tiene números y la de fecha, fechas).
-- El coste de una factura es su **base imponible** (sin IVA, como todo el coste de la
-  obra). Sin columna de base: **total − cuota de IVA + retención** (la retención se resta
-  de lo que se paga, no del coste), y se dice. Una fila sin proveedor, número, fecha o
-  importe, o con importe 0, no se importa: se lista con el motivo. Las filas de total del
-  listado no cuentan.
-- **Solo las nuevas**: el ERP suele exportar el acumulado; una factura ya apuntada
-  (mismo proveedor y número, sin mayúsculas ni espacios de más) no se repite. Si viene con
-  otro importe o fecha, **no se cambia**: se avisa para corregirla a mano (lo apuntado no
-  se modifica en silencio).
-- **Varias obras en el listado**: si hay columna de obra o centro de coste con varios
-  valores, el usuario elige cuál es esta obra.
-- **Paquete**: TRAZA lo **propone**, el usuario decide en una tabla antes de importar:
-  1. si el listado trae en «obra» o «concepto» exactamente el nombre de un paquete;
-  2. si no, el paquete donde están las demás facturas de ese proveedor en esta obra (si
-     están todas en uno; en varios, elige el usuario).
-  Un paquete cerrado no se propone ni admite facturas.
-- Se importan todas en una sola orden: deshacer las quita todas; con una mal (paquete que
-  no existe, repetida en el listado), no se importa ninguna.
+  el ERP (cualquier hoja de cálculo, bloque 4a), sin plantilla.
+- **Columnas** (proveedor, nº de factura, fecha, base imponible, total, cuota de IVA,
+  retención, obra o centro de coste, concepto) por sus títulos. Cada título vale para un
+  solo dato, con exclusiones («% IVA», «Tipo», «Cód. IVA» no son la cuota; «Total con IVA»
+  no es la base; una fecha de vencimiento, de pago o contable no es la de la factura;
+  «Tipo/Estado factura» no es el número). Entre varias columnas que valen para lo mismo,
+  **gana el título más específico** («Fecha factura» antes que «Fecha»; «Base imponible»
+  antes que «Base»); si dos columnas de importe empatan («Base 1», «Base 2»: varios tipos
+  de IVA), no se elige ninguna y se dice que se exporte con el total por factura.
+- Si no se reconocen, Claude Code dice qué columna es qué (solo letras). TRAZA lo comprueba
+  con las mismas reglas y, además, **rechaza una columna cuyo título es, por sí solo, de
+  otro dato** («Total con IVA» propuesta como base).
+- El coste es la **base imponible** (sin IVA). Sin columna de base: **total − cuota de IVA
+  ± retención**, con el signo del total (un abono resta). Y se comprueba que la cuota y la
+  retención cuadran con un **tipo legal**: IVA 21, 10, 4 % (Ley 37/1992, arts. 90 y 91), 5 %
+  (RDL 20/2022), 0 % y con recargo de equivalencia (art. 161); retención de IRPF 15, 7, 19,
+  2 o 1 % (Ley 35/2006 y RD 439/2007, arts. 95 y 101), con 0,6 puntos de margen por
+  redondeo. Si no cuadran, la columna es el porcentaje y no el importe: la factura no se
+  importa y se dice. Con base, cuota y total, si no cuadran entre sí, se avisa.
+- **Filas**: una de total («Total», «Suma»… como palabra entera y sin nº de factura) no
+  cuenta; «Totalenergies» o «Sumasa» son proveedores. Una fila sin proveedor, número, fecha
+  o importe, o con importe 0, no se importa y se lista con el motivo. Una factura en varias
+  líneas (una por tipo de IVA) se suma; una línea repetida igual, no.
+- **La misma factura** es la del mismo proveedor y número aunque cambien mayúsculas,
+  acentos, espacios o puntuación («CHAPAS NORTE, S.A.» y «Chapas Norte SA»; «F-001» y
+  «F001»), también al escribirlas a mano.
+- **Solo las nuevas**: una ya apuntada no se repite; con otro importe o fecha, **no se
+  cambia** (se avisa para corregirla a mano). El mismo proveedor y número con otra fecha
+  dentro del listado se enseña como repetida y no se importa.
+- **Obra**: si el listado tiene columna de obra, se confirma siempre: con una sola obra, se
+  pregunta si es esta; con varias (o facturas sin obra), se elige.
+- **Paquete**: TRAZA lo **propone**, el usuario decide en una tabla antes de importar: (1) si
+  el listado trae en «obra» o «concepto» exactamente el nombre de un paquete; (2) si no, el
+  paquete donde están las demás facturas de ese proveedor (si todas en uno y sigue en el
+  objetivo). Un paquete cerrado no se propone ni admite facturas.
+- Todas en una sola orden: deshacer las quita todas; con una mal, no entra ninguna.
 
 ## Pendiente
 

@@ -309,24 +309,40 @@ class PaginaCosteReal(QWidget):
                 f, "Preguntando a la IA qué columna es qué…", "Facturas del ERP"
             ),
         )
-        obras = leido.obras
-        if len(obras) > 1:
-            j = self.v.preguntas.elegir(
-                "Facturas del ERP",
-                "El listado tiene facturas de varias obras. ¿Cuáles son de esta?",
-                [*obras, "Todas las del listado"],
-            )
-            if j is None:
-                return
-            if j < len(obras):
-                propuestas = [p for p in propuestas if p.leida.obra == obras[j]]
+        # La obra del listado se confirma siempre (revisión 10-11-2026: un listado de otra
+        # obra con una sola entraba entero; las facturas sin obra se perdían sin decirlo).
+        obras, sin_obra, de_la_obra = leido.obras, leido.sin_obra, ""
+        if obras:
+            sin = "(facturas sin obra)"
+            opciones = [*obras, *([sin] if sin_obra else [])]
+            if len(opciones) == 1:
+                if not self.v.preguntas.confirmar(
+                    "Facturas del ERP",
+                    f"Las facturas del listado son de la obra «{obras[0]}». ¿Es esta obra?",
+                ):
+                    return
+            else:
+                opciones.append("Todas las del listado")
+                j = self.v.preguntas.elegir(
+                    "Facturas del ERP",
+                    "El listado tiene facturas de varias obras. ¿Cuáles son de esta?",
+                    opciones,
+                )
+                if j is None:
+                    return
+                elegido = opciones[j]
+                if elegido == sin:
+                    propuestas = [p for p in propuestas if not p.leida.obra]
+                elif elegido != "Todas las del listado":
+                    propuestas = [p for p in propuestas if p.leida.obra == elegido]
+                de_la_obra = f" De la obra: {elegido}."
         from traza.io.facturas_erp import descripcion
 
         nuevas = sum(1 for p in propuestas if p.estado == "nueva")
         texto = (
             ("He entendido (por sus títulos): " if mapa.origen == "títulos" else "La IA dice: ")
             + descripcion(mapa)
-            + f"\n{len(propuestas)} factura(s); {nuevas} nueva(s)."
+            + f"\n{len(propuestas)} factura(s); {nuevas} nueva(s).{de_la_obra}"
             + ("\n" + "\n".join(f"⚠ {a}" for a in leido.avisos) if leido.avisos else "")
         )
         cerrados = self.proyecto.paquetes_cerrados()

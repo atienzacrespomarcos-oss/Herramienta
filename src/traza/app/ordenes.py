@@ -556,16 +556,19 @@ class RegistrarFactura(Orden):
             raise OrdenRechazada("El importe no puede ser 0 (un abono va en negativo).")
         if self.documento_id and leer(con, "documento", {"id": self.documento_id}) is None:
             raise OrdenRechazada("El documento de la factura no está incorporado.")
-        # El mismo proveedor y número aunque cambien mayúsculas o espacios: «ACME» y «Acme»
-        # contarían dos veces la misma factura (revisión 09-11-2026).
-        clave = (" ".join(proveedor.split()).casefold(), " ".join(numero.split()).casefold())
+        # El mismo proveedor y número aunque cambien mayúsculas, espacios o puntuación:
+        # «ACME» y «Acme», «Chapas Norte, S.A.» y «Chapas Norte SA» contarían dos veces la
+        # misma factura (revisiones 09-11-2026 y 10-11-2026; app/obra.clave_factura).
+        from traza.app.obra import clave_factura
+
+        clave = clave_factura(proveedor, numero)
         otra = next(
             (
                 r[0]
                 for r in con.execute(
                     "SELECT id, proveedor, numero FROM factura WHERE id <> ?", (self.id,)
                 )
-                if (" ".join(r[1].split()).casefold(), " ".join(r[2].split()).casefold()) == clave
+                if clave_factura(r[1], r[2]) == clave
             ),
             None,
         )
@@ -604,13 +607,12 @@ class ImportarFacturas(Orden):
     def planificar(self, con: sqlite3.Connection) -> list[Delta]:
         if not self.facturas:
             raise OrdenRechazada("No hay ninguna factura que importar.")
+        from traza.app.obra import clave_factura
+
         vistas: set[tuple[str, str]] = set()
         deltas: list[Delta] = []
         for f in self.facturas:
-            clave = (
-                " ".join(str(f["proveedor"]).split()).casefold(),
-                " ".join(str(f["numero"]).split()).casefold(),
-            )
+            clave = clave_factura(str(f["proveedor"]), str(f["numero"]))
             if clave in vistas:
                 raise OrdenRechazada(
                     f"La factura {f['numero']} de {f['proveedor']} está dos veces en el listado."
