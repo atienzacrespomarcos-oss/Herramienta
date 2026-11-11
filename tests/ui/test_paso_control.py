@@ -6,6 +6,7 @@ sistema hidráulico de 2 tubos y se comprueba la propuesta, el Excel y el estado
 
 from __future__ import annotations
 
+import ezdxf
 import pytest
 from openpyxl import load_workbook
 from tests.ui.test_paso_redes import ventana  # noqa: F401 (fixture)
@@ -88,6 +89,41 @@ def test_recorrido_completo(ventana, tmp_path):  # noqa: F811
     assert len(filas) == len(r.puntos) and all(f[5] for f in filas)  # cada uno con su motivo
     resumen = {f[0]: f[1] for f in wb["Resumen"].iter_rows(min_row=2, values_only=True)}
     assert resumen["Total de puntos"] == sum(r.resumen.values())
+
+    # Esquema de control (DXF) de la propuesta, con la secuencia de cada sistema.
+    q.preparar("destino_dxf", tmp_path / "Esquema")
+    pc.a_esquema.trigger()
+    doc = ezdxf.readfile(tmp_path / "Esquema.dxf")
+    textos = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+    assert textos.count("Secuencia de funcionamiento") == len(r.secuencias)
+    assert any("1.2.4.3.1.7" in x for x in textos)
+
+
+def test_esquema_desde_un_listado_del_usuario(ventana, tmp_path):  # noqa: F811
+    """«Hay el qué pero no el cómo»: listado propio → esquema; lo que no entra, se dice."""
+    v, q = ventana
+    listado = tmp_path / "Puntos UTA.csv"
+    listado.write_text(
+        "Equipo;Señal;Tipo\nUTA-1;Orden de marcha;DO\nUTA-1;Temperatura retorno;AI\n"
+        "UTA-1;Compuerta;ZZ\n",
+        encoding="utf-8",
+    )
+    q.preparar("ficheros", [listado])
+    q.preparar("destino_dxf", tmp_path / "UTA")
+    v.pagina_control.a_listado.trigger()
+    assert q.avisos == []
+    assert any("Fila 4: tipo «ZZ» no reconocido" in t for t in q.informaciones)
+    textos = [e.dxf.text for e in ezdxf.readfile(tmp_path / "UTA.dxf").modelspace().query("TEXT")]
+    assert "Temperatura retorno" in textos and "Compuerta" not in textos
+    assert any("Puntos UTA.csv" in x for x in textos)  # de dónde salen, en la leyenda
+    # Un fichero que no es un listado de puntos: aviso, sin error.
+    otro = tmp_path / "otro.csv"
+    otro.write_text("Partida;Importe\nFancoil;1200\n", encoding="utf-8")
+    q.preparar("ficheros", [otro])
+    q.preparar("destino_dxf", tmp_path / "Otro")
+    v.pagina_control.a_listado.trigger()
+    assert any("fila de títulos" in x for x in q.avisos)
+    assert not any(t.startswith("Error en") for t in q.titulos)
 
 
 def test_unidad_sin_perdida_no_cumple(ventana):  # noqa: F811

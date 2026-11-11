@@ -36,8 +36,15 @@ class PaginaControl(QWidget):
         self.a_excel = self.v._accion(
             m, "Exportar propuesta de control (Excel)…", self.accion_excel
         )
+        self.a_esquema = self.v._accion(
+            m, "Exportar esquema de control (DXF)…", self.accion_esquema
+        )
+        m.addSeparator()
+        self.a_listado = self.v._accion(
+            m, "Esquema desde un listado de puntos…", self.accion_listado
+        )
         caja = QVBoxLayout(self)
-        caja.addWidget(_barra([self.a_excel]))
+        caja.addWidget(_barra([self.a_excel, self.a_esquema, self.a_listado]))
         caja.addWidget(self.resumen)
         caja.addWidget(self.pestanas, 1)
         self._pendiente = True
@@ -58,6 +65,42 @@ class PaginaControl(QWidget):
 
     def _a_la_vista(self) -> bool:
         return self.v.paginas.currentWidget() is self
+
+    def accion_esquema(self) -> None:
+        destino = self.v.preguntas.destino_dxf(
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - esquema de control.dxf"
+        )
+        if destino is not None:
+            ruta = self.proyecto.exportar_esquema_control(destino)
+            self.v.preguntas.informacion(
+                "Esquema de control",
+                f"Guardado en {ruta}\n\nSe abre en AutoCAD 2013 o posterior. Esquema de "
+                "principio sin escala, con la secuencia de funcionamiento de cada sistema.",
+            )
+
+    def accion_listado(self) -> None:
+        """«Hay el qué pero no el cómo»: el listado de puntos que ya tiene el usuario (Excel,
+        .xls o CSV) a esquema. No se guarda en el proyecto."""
+        rutas = self.v.preguntas.ficheros("Listado de puntos de control (Excel o CSV)")
+        if not rutas:
+            return
+        if len(rutas) > 1:
+            self.v.preguntas.aviso("Esquema desde un listado", "Elige un solo listado.")
+            return
+        origen = rutas[0]
+        destino = self.v.preguntas.destino_dxf(
+            self.proyecto.carpeta.raiz.parent / f"{_archivo(origen.stem)} - esquema de control.dxf"
+        )
+        if destino is None:
+            return
+        ruta, avisos = self.proyecto.esquema_control_desde_listado(origen, destino)
+        texto = f"Guardado en {ruta}\n\nSe abre en AutoCAD 2013 o posterior."
+        if avisos:
+            texto += "\n\nNo entran en el esquema:\n" + "\n".join(avisos[:20])
+            if len(avisos) > 20:
+                texto += f"\n… y {len(avisos) - 20} más."
+        self.v.preguntas.informacion("Esquema desde un listado", texto)
 
     def refrescar(self) -> None:
         self._pendiente = True
@@ -132,4 +175,5 @@ class PaginaControl(QWidget):
             clave == "control" and self.proyecto.encargo in encargos for clave, _, encargos in PASOS
         )
         self.v.menu_control.menuAction().setVisible(con_paso)
-        self.a_excel.setEnabled(con_paso)
+        for a in (self.a_excel, self.a_esquema, self.a_listado):
+            a.setEnabled(con_paso)

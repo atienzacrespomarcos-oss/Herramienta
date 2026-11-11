@@ -2,6 +2,14 @@
 
 ## [Sin publicar]
 
+### Control de la instalación, parte 2: esquemas (11-11-2026)
+- **Control → Exportar esquema de control (DXF)…**: un esquema de principio por sistema,
+  con los equipos, sus señales (símbolo y tipo), el controlador con su recuento y la
+  secuencia de funcionamiento (lo que exige el RITE, con su artículo). También en
+  Entregables.
+- **Control → Esquema desde un listado de puntos…**: el listado que ya tengas (Excel, .xls
+  o CSV, sin plantilla) a esquema; lo que no se entiende se lista y no se adivina.
+
 ### Control de la instalación, parte 1: propuesta (11-11-2026)
 - Paso **Control**: desde lo diseñado, TRAZA propone la categoría THM-C e IDA-C de cada
   espacio según su uso (RITE IT 1.2.4.3.2 y 1.2.4.3.3), el listado de puntos de control

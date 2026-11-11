@@ -160,7 +160,7 @@ class PaginaEntregables(QWidget):
         if self.proyecto.cargas_config() is not None and self.proyecto.espacios():
             partes.insert(0, "cargas (Excel y PDF)")
         if self.proyecto.redes() or self.proyecto.sistemas_hidraulicos():
-            partes.append("propuesta de control (Excel)")
+            partes.append("propuesta de control (Excel y esquema DXF)")
         partes.append("justificación de cálculos (Word)")
         self.resumen.setText("Se generan, en una carpeta nueva: " + "; ".join(partes) + ".")
 

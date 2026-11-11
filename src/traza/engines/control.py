@@ -90,6 +90,9 @@ class ResultadoControl:
     categorias: list[Categoria] = field(default_factory=list)
     puntos: list[Punto] = field(default_factory=list)
     comprobaciones: list[Comprobacion] = field(default_factory=list)
+    #: Secuencia de funcionamiento de cada sistema («el cómo»; parte 2 del control), con
+    #: el mismo nombre de sistema que sus puntos.
+    secuencias: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def resumen(self) -> dict[str, int]:
@@ -317,6 +320,7 @@ def proponer(
     _zonas(r, espacios, refrigeracion)
     grandes = _aire(r, redes)
     estabilizados = _agua(r, servicios)
+    _secuencias(r, redes, servicios)
     if r.puntos:
         r.puntos.append(
             Punto(
@@ -438,3 +442,120 @@ def relacion_valvula(c: CircuitoControl) -> float | None:
     if c.kv <= 0 or c.perdida_unidad_pa <= 0:
         return None
     return 1e5 * (c.caudal_unidad_m3h / c.kv) ** 2 / c.perdida_unidad_pa
+
+
+# --- Secuencias de funcionamiento (parte 2: «hay el qué pero no el cómo») -----------------
+
+P = " (propuesta)"
+
+
+def _secuencias(r: ResultadoControl, redes: list[RedControl], servicios: list[ServicioControl]):
+    """Lo que el RITE exige lleva su artículo; el resto termina en «(propuesta)»."""
+    con_thm = [c for c in r.categorias if c.thm is not None]
+    if con_thm:
+        z = [
+            "Cada espacio regula su temperatura con su sonda, que actúa sobre la válvula de su "
+            "unidad terminal (RITE IT 1.2.4.3.1.1).",
+            "Cada zona arranca y para según su horario de ocupación sin afectar al resto "
+            "(RITE IT 1.2.4.3.1.4).",
+        ]
+        co2 = [c.espacio for c in con_thm if c.ida == "IDA-C6"]
+        if co2:
+            z.append(
+                "IDA-C6 en " + ", ".join(co2) + ": el caudal de aire exterior se ajusta a la "
+                "concentración de CO₂ medida en el local (RITE tabla 2.4.3.2)."
+            )
+        hr = [c.espacio for c in con_thm if c.thm in rc.CON_HUMEDAD]
+        if hr:
+            z.append(
+                "Control de humedad en " + ", ".join(hr) + ": la sonda de humedad relativa "
+                "actúa sobre la humectación y la deshumectación del equipo (RITE IT 1.2.4.3.2.3)."
+            )
+        r.secuencias["Zonas"] = z
+    for red in redes:
+        s = [
+            "Marcha y paro por horario de ocupación (RITE IT 1.2.4.3.1.4); el estado confirma "
+            "la orden y el fallo para el ventilador y da alarma" + P + ".",
+            "El variador ajusta la velocidad del ventilador al caudal de proyecto" + P + ".",
+        ]
+        if red.tipo == "impulsion":
+            s.append("El presostato diferencial avisa de los filtros colmatados" + P + ".")
+            if red.climatizacion:
+                s.append(
+                    "La temperatura de impulsión se mide para vigilar la climatización" + P + "."
+                )
+        if red.caudal_m3h > rc.CAUDAL_MEDICION_M3H:
+            s.append(
+                "El caudal de aire se mide y se controla con el variador (RITE IT 1.2.4.3.1.10)."
+            )
+        r.secuencias[f"Red {red.nombre}"] = s
+    for sv in servicios:
+        s = []
+        if sv.frio:
+            s.append(
+                "El generador mantiene constante la temperatura de impulsión de frío, sea cual "
+                "sea la demanda (RITE IT 1.2.4.3.1.7)."
+            )
+        if sv.calor:
+            s.append(
+                "En calor, la consigna de impulsión sigue una curva según la temperatura "
+                "exterior" + P + "; con calderas lo exige el RITE IT 1.2.4.3.1.6."
+            )
+        if sv.frio and sv.calor:
+            s.append("El cambio de frío a calor se hace por temporada" + P + ".")
+        s.append(
+            "La bomba de primario marcha con el generador; el generador no arranca sin la "
+            "confirmación de su estado" + P + "."
+        )
+        s.append(
+            "Cada bomba de circuito modula con su variador para mantener la presión "
+            "diferencial de consigna: al cerrar las válvulas de 2 vías baja el caudal" + P + "."
+        )
+        if sv.potencia_instalacion_kw > rc.POTENCIA_PRESION_DIFERENCIAL_KW:
+            s.append(
+                "Válvulas independientes de la presión (PICV) en las unidades: presión "
+                "diferencial estabilizada sobre la válvula (RITE IT 1.2.4.3.1.5)."
+            )
+        s.append(
+            "Cada circuito puede quedar fuera de servicio según su horario sin afectar al "
+            "resto (RITE IT 1.2.4.3.1.4)."
+        )
+        r.secuencias[f"{sv.sistema} · {sv.servicio}"] = s
+
+
+#: Símbolo de cada señal en el esquema, por su texto. Se recorren en orden: lo específico
+#: antes que lo general («presión diferencial» antes que «presión»; «consigna de
+#: temperatura» es una salida, no una sonda). Leyenda en el propio dibujo.
+SIMBOLOS_ENTRADA = (
+    (("co2", "calidad del aire", "cov"), "CO₂"),
+    (("humedad",), "HR"),
+    (("presion diferencial", "presostato", "colmatacion", "filtro"), "ΔP"),
+    (("caudal",), "Q"),
+    (("presencia",), "P"),
+    (("temperatura", "sonda"), "T"),
+    (("estado", "funcionamiento", "confirmacion"), "E"),
+    (("fallo", "alarma", "disparo", "averia"), "F"),
+)
+SIMBOLOS_SALIDA = (
+    (("consigna",), "C"),
+    (("velocidad", "variador", "frecuencia"), "VF"),
+    (("valvula", "compuerta"), "V"),
+    (("marcha", "arranque", "paro"), "M"),
+)
+
+
+def _normal(texto: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return " ".join(t.lower().split())
+
+
+def simbolo(senal: str, tipo: str) -> str:
+    """Rótulo del símbolo: entradas (ED/EA) en círculo, salidas (SD/SA) en cuadrado. Si el
+    texto no dice qué es, el propio tipo."""
+    t = _normal(senal).replace("₂", "2")
+    for claves, s in SIMBOLOS_ENTRADA if tipo in ("ED", "EA") else SIMBOLOS_SALIDA:
+        if any(k in t for k in claves):
+            return s
+    return tipo
