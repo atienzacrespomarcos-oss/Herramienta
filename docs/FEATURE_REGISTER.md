@@ -4,7 +4,8 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 09-11-2026 (flujo de trabajo, bloques 1 y 2).
+Última actualización: 11-11-2026 (validación de los motores con ejemplos publicados: índice en
+`tests/reference_cases/README.md`).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -16,15 +17,17 @@ declarados).
 | — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |
 | RF-020, 021 | Gestión documental y vínculo dato ↔ documento | 1 | Implementada | PDF con comprobación de página citada; XLSX/DXF se incorporan pero su cita (hoja/celda) aún no se comprueba. |
 | RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 3 | Implementada | `docs/modules/geometria.md`. Implementada con planos de prueba: lector DXF y geometría exacta (3.A), niveles, espacios y obstáculos con procedencia, propuestas confirmadas, bloques por espacio, longitudes por capa y Excel (3.B), y paso «Planos y espacios» con visor 2D (3.C). Falta validarla con un DXF real del usuario. |
-| RF-101, 102 | Cargas térmicas y caudales de ventilación | 4 | Implementada | `docs/modules/cargas.md`. Clima de la guía del IDAE del usuario, 39 usos con fuentes, cerramientos típicos por tipo de construcción, fachadas automáticas del plano, invierno y verano por componentes en hora punta, aire exterior por uso, infiltración; paso «Cargas y ventilación» con informe Excel y PDF. Probado con casos calculados a mano y una estación inventada: falta validarlo con la guía real y un proyecto del usuario. |
+| RF-101, 102 | Cargas térmicas y caudales de ventilación | 4 | Implementada | `docs/modules/cargas.md`. Clima de la guía del IDAE del usuario, 39 usos con fuentes, cerramientos típicos por tipo de construcción, fachadas automáticas del plano, invierno y verano por componentes en hora punta, aire exterior por uso, infiltración; paso «Cargas y ventilación» con informe Excel y PDF. Probado con casos calculados a mano y una estación inventada: falta validarlo con la guía real y un proyecto del usuario. **Motor Limitado** (11-11-2026): presión de saturación (tabla de ASHRAE) y n50 (guía del DB HE) contrastados con valores publicados; geometría solar, cielo despejado, sol-aire e infiltración UNE-EN 12831 sin ejemplo publicado accesible (`tests/reference_cases/README.md`). Las puertas y portones no entran todavía en la infiltración. |
 | RF-100 | Redes de aire | 5 | Implementada | `docs/modules/redes_aire.md`. Ejes dibujados en AutoCAD (capa) y terminales como bloques; caudales de las cargas o del atributo CAUDAL; pérdida de carga constante con límites de velocidad; accesorios del manual Climaver; camino crítico, equilibrado y SFP (RITE); listado Excel con medición. Probado con un DXF de prueba y el ejemplo resuelto del manual Climaver; salida a AutoCAD (DXF R2013 con etiquetas y LISP) implementada. Ventilación sencilla (Etapa 6): caudal por renovaciones/h (tablas 3.5 y 3.6 del manual de S&P) y punto de trabajo del ventilador con la potencia máxima por SFP. Falta un DXF real del usuario y probar la salida en su AutoCAD. |
-| — | Ventilación y extracción industrial | 3.3 | Pendiente | |
-| — | Rooftop | 3.4 | Pendiente | |
+| — | Ventilación y extracción industrial | 3.3 | Fuera de alcance (lo que falta) | Hecha la ventilación por renovaciones/h y el punto de trabajo del ventilador (etapa 6). La selección del ventilador, fuera («cada fabricante tiene su software», 08-11-2026); el resto no entró al fijar el alcance (11-11-2026). |
+| — | Rooftop | 3.4 | Fuera de alcance | Decisión del usuario (11-11-2026): no lo incluyó al fijar el alcance (como VRF y ventiladores, la selección de equipo es del software del fabricante). |
 | RF-104 | VRF / expansión directa | 3.5 | Pendiente | |
 | RF-105 | Hidrónico | 7 | Implementada (cálculo y elementos) | `docs/modules/hidronica.md`. Primario-secundario, 2 y 4 tubos, circuitos de las cargas; diámetros, bombas, colectores, inercia, vaso, presiones, válvulas y aislamiento con RITE e IDAE nº 18; lista completa de elementos y Excel. Probado con los ejemplos resueltos de la guía IDAE nº 18. Esquema de principio en DXF R2013 con leyenda (7.B). Falta validar con un proyecto real y abrir el esquema en el AutoCAD del usuario. |
 | RF-200…205 | DXF, LISP, listados, memoria | flujo 2 | Implementada | `docs/modules/flujo.md`. Paso «Entregables»: todos los DXF/LISP y Excel del diseño de una vez y la justificación de cálculos en Word sobre la plantilla del usuario (de apoyo, no la memoria oficial: decisión del usuario). Probado con proyectos de prueba; falta abrirla con la plantilla real de Aliter. |
 | RF-110 | Subcuadros eléctricos de clima | 8 | Implementada | `docs/modules/electricidad.md`. Solo subcuadros de clima (decisión del usuario): salidas desde los equipos dimensionados, secciones por intensidad admisible y caída de tensión, magnetotérmico, diferencial, conductor de protección y unifilar DXF. Probado con las tablas y ejemplos de las guías del REBT y un subcuadro calculado a mano. Falta un subcuadro real del usuario. |
-| RF-120, 140, 150 | Fontanería, PCI, control | 5 | Pendiente | |
+| RF-120 | Fontanería **de clima** | 5 | Pendiente | Decisión del usuario (11-11-2026): «Fontanería pero no AF y ACS, sino de clima». |
+| RF-140 | PCI | — | Fuera de alcance | Decisión del usuario (11-11-2026): «el PCI nada». |
+| RF-150 | Control | 5 | Pendiente | Decisión del usuario (11-11-2026): «el control sí es importante». |
 | RF-130 | Saneamiento | — | Fuera de alcance | Decisión del usuario (09-11-2026): «saneamiento me da igual, no quiero incorporarlo». |
 | RF-042…045 | Coordinación y trazados | 6 | Pendiente | |
 | RF-160 | Estructura (solo geometría) | 7 | Pendiente | Sin cálculo estructural (decisión del usuario). |

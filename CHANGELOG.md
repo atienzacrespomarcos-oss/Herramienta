@@ -2,6 +2,12 @@
 
 ## [Sin publicar]
 
+### Validación de los motores con ejemplos publicados (11-11-2026)
+- Índice de casos de referencia en `tests/reference_cases/README.md`: qué motor se contrasta
+  con qué ejemplo publicado y con qué tolerancia, y cuáles quedan Limitados y por qué.
+- Caso nuevo: n50 de la Guía de aplicación del DB HE 2019 (Ejemplos I, pág. 100), 6,6206 h⁻¹,
+  coincide a la precisión publicada. El motor admite ya las puertas con su propia permeabilidad (60 m³/h·m²).
+
 ### Obra · bloque 4c: crear la obra desde sus documentos (10-11-2026)
 - **Archivo → Nueva obra desde documentos…** y **Obra → Añadir documentos a la obra…**:
   se echan todos los documentos recibidos; TRAZA propone qué es cada uno por su contenido
