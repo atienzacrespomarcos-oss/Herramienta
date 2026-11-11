@@ -103,3 +103,79 @@ def test_esquema_dxf_r2013_con_simbolos_controlador_y_secuencia(tmp_path):
 def test_sin_puntos_no_hay_esquema(tmp_path):
     with pytest.raises(ValueError, match="No hay puntos"):
         esquema_control_dxf.escribir(tmp_path / "x", "Nave", [], None, "id", "prueba")
+
+
+# --- Revisión del 11-11-2026 ------------------------------------------------------------
+
+
+def test_numero_de_fila_no_es_la_cantidad_y_prioridad_de_columnas(tmp_path):
+    """«Nº» numera las filas: no es la cantidad. «Tipo de equipo» no es el tipo de la señal.
+    Con «Descripción» y «Señal», gana «Señal» aunque esté a la derecha. Los saltos de línea
+    de una celda (Alt+Intro) se quedan en una línea."""
+    ruta = _xlsx(
+        tmp_path / "puntos.xlsx",
+        [
+            ["Nº", "Tipo de equipo", "Descripción", "Señal", "E/S"],
+            [1, "UTA", "Climatizadora planta 1", "Orden de\nmarcha", "SD"],
+            [2, "UTA", "Climatizadora planta 1", "Temperatura impulsión", "EA"],
+            [3, "UTA", "Climatizadora planta 1", "Válvula batería", "SA"],
+        ],
+    )
+    puntos, avisos = puntos_control.leer(ruta)
+    assert avisos == []
+    assert [(p.senal, p.tipo, p.cantidad) for p in puntos] == [
+        ("Orden de marcha", "SD", 1),
+        ("Temperatura impulsión", "EA", 1),
+        ("Válvula batería", "SA", 1),
+    ]
+
+
+def test_listado_en_la_segunda_hoja_y_csv_con_cantidad(tmp_path):
+    wb = Workbook()
+    wb.active.title = "Portada"
+    wb.active.append(["Proyecto de climatización"])
+    ws = wb.create_sheet("Puntos")
+    ws.append(["Equipo", "Señal", "Tipo", "Cantidad"])
+    ws.append(["Fancoils", "Temperatura ambiente", "EA", 12])
+    wb.save(tmp_path / "libro.xlsx")
+    puntos, _ = puntos_control.leer(tmp_path / "libro.xlsx")
+    assert [(p.equipo, p.cantidad) for p in puntos] == [("Fancoils", 12)]
+    csv = tmp_path / "p.csv"
+    csv.write_text("Señal;Tipo;Uds\nVálvula fancoil;AO;8\n", encoding="utf-8")
+    (p,) = puntos_control.leer(csv)[0]
+    assert (p.tipo, p.cantidad) == ("SA", 8)
+
+
+def test_simbolos_alarma_y_marcha_antes_que_la_magnitud_o_el_equipo():
+    assert mc.simbolo("Alarma temperatura alta", "ED") == "F"
+    assert mc.simbolo("Fallo sonda temperatura", "ED") == "F"
+    assert mc.simbolo("Orden de marcha del variador", "SD") == "M"
+    assert mc.simbolo("Heat recovery status", "EA") == "EA"  # «cov» no casa en «recovery»
+
+
+def test_controlador_con_pocas_senales_y_textos_largos(tmp_path):
+    """Con una sola señal el recuento cabe en la caja del controlador; una señal larga va en
+    dos líneas que no llegan a la línea de trazos; el nombre largo del equipo entero."""
+    largo = "Temperatura de retorno del agua del circuito secundario de climatización " * 2
+    equipo = "Climatizadora de tratamiento de aire primario de la nave de producción norte"
+    puntos = [mc.Punto("S", equipo, largo.strip(), "EA", 1, "")]
+    ruta = esquema_control_dxf.escribir(tmp_path / "e", "N", puntos, None, "id", "prueba")
+    doc = ezdxf.readfile(ruta)
+    assert "DASHED" in doc.linetypes
+    msp = doc.modelspace()
+    caja = next(e for e in msp.query("LWPOLYLINE") if e.dxf.layer == "TRAZA-C-CONTROLADOR")
+    ys = [p[1] for p in caja.get_points()]
+    recuento = [e for e in msp.query("TEXT") if e.dxf.text.startswith(("ED:", "SD:", "EA:", "SA:"))]
+    assert len(recuento) == 4
+    for e in recuento:
+        assert min(ys) < e.dxf.align_point[1] < max(ys), e.dxf.text
+    # Señal en dos líneas, ninguna más larga que LARGO_SENAL, sin llegar a los trazos.
+    senal = [
+        e.dxf.text
+        for e in msp.query("TEXT")
+        if e.dxf.layer == "TRAZA-C-TEXTOS" and e.dxf.text != "N · S"
+    ]
+    assert len(senal) == 2 and all(len(s) <= esquema_control_dxf.LARGO_SENAL for s in senal)
+    # El nombre del equipo, entero (en varias líneas).
+    nombre = " ".join(e.dxf.text for e in msp.query("TEXT") if e.dxf.layer == "TRAZA-C-EQUIPOS")
+    assert nombre == equipo

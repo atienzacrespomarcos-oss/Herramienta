@@ -43,6 +43,11 @@ X_SIMBOLO = 64.0
 X_CONTROLADOR = 200.0
 ANCHO_CONTROLADOR = 50.0
 COLUMNAS_SECUENCIA = 120  # caracteres por línea
+X_TRAZOS = 174.0  # donde empieza la línea de trazos de cada señal
+#: Caracteres por línea de una señal: a 1,4 mm de alto (Arial, ~0,9 mm por carácter de
+#: media) caben de X_SIMBOLO + 4 a X_TRAZOS.
+LARGO_SENAL = 95
+ALTO_CONTROLADOR = 28.0  # título y cuatro líneas de recuento
 
 
 class _D:
@@ -91,21 +96,36 @@ def _simbolo(d: _D, p: Punto, x: float, y: float) -> None:
 
 
 def _banda(d: _D, titulo: str, equipos: dict[str, list[Punto]], secuencia, y: float) -> float:
-    """Dibuja la banda desde `y` hacia abajo y devuelve dónde acaba."""
+    """Dibuja la banda desde `y` hacia abajo y devuelve dónde acaba.
+
+    Revisión 11-11-2026: el controlador era más bajo que su recuento con pocas señales, una
+    señal larga cruzaba su línea de trazos y el nombre largo de un equipo se cortaba. Ahora
+    el controlador tiene altura mínima, la señal va en dos líneas de LARGO_SENAL caracteres
+    (más, con «…»: el texto completo está en el listado) y el recuadro del equipo crece
+    hasta que cabe su nombre entero.
+    """
     d.texto(titulo, 0, y, alto=3.0)
     y -= 8
     arriba = y
     for equipo, puntos in equipos.items():
-        alto = max(len(puntos) * PASO, 8.0)
+        nombre = textwrap.wrap(equipo, 28) or [""]
+        alto = max(len(puntos) * PASO, 8.0, 3.0 * len(nombre) + 3)
         d.caja(0, y, 55, y - alto, "equipos")
-        for linea_k, trozo in enumerate(textwrap.wrap(equipo, 28)[:3]):
+        for linea_k, trozo in enumerate(nombre):
             d.texto(trozo, 2, y - 3 - linea_k * 3, "equipos", 1.8)
         for k, p in enumerate(puntos):
             yy = y - PASO / 2 - k * PASO
             d.linea([(55, yy), (X_SIMBOLO - 2.5, yy)], "senales")
             _simbolo(d, p, X_SIMBOLO, yy)
-            d.texto(p.senal, X_SIMBOLO + 4, yy, alto=1.6)
-            d.linea([(X_SIMBOLO + 110, yy), (X_CONTROLADOR, yy)], "senales", trazos=True)
+            lineas = textwrap.wrap(p.senal, LARGO_SENAL) or [""]
+            if len(lineas) > 2:
+                lineas = [lineas[0], lineas[1][: LARGO_SENAL - 1] + "…"]
+            if len(lineas) == 1:
+                d.texto(lineas[0], X_SIMBOLO + 4, yy, alto=1.6)
+            else:
+                d.texto(lineas[0], X_SIMBOLO + 4, yy + 1.1, alto=1.4)
+                d.texto(lineas[1], X_SIMBOLO + 4, yy - 1.1, alto=1.4)
+            d.linea([(X_TRAZOS, yy), (X_CONTROLADOR, yy)], "senales", trazos=True)
             d.texto(
                 p.tipo + (f" ×{p.cantidad}" if p.cantidad > 1 else ""),
                 X_CONTROLADOR - 2,
@@ -115,8 +135,8 @@ def _banda(d: _D, titulo: str, equipos: dict[str, list[Punto]], secuencia, y: fl
                 "MIDDLE_RIGHT",
             )
         y -= alto + 4
-    # Controlador del sistema, con el recuento por tipo.
-    abajo = y + 4
+    # Controlador del sistema, con el recuento por tipo (cabe siempre: altura mínima).
+    abajo = min(y + 4, arriba - ALTO_CONTROLADOR)
     d.caja(X_CONTROLADOR, arriba, X_CONTROLADOR + ANCHO_CONTROLADOR, abajo, "controlador")
     xc = X_CONTROLADOR + 3
     d.texto("Controlador", xc, arriba - 4, "controlador", 2.2)
@@ -126,7 +146,7 @@ def _banda(d: _D, titulo: str, equipos: dict[str, list[Punto]], secuencia, y: fl
             cuenta[p.tipo] += p.cantidad
     for k, t in enumerate(rc.TIPOS_PUNTO):
         d.texto(f"{t}: {cuenta[t]}", xc, arriba - 10 - k * 4, "controlador", 1.8)
-    y = abajo - 6
+    y = min(y, abajo) - 6
     if secuencia:
         d.texto("Secuencia de funcionamiento", 0, y, "secuencia", 2.2)
         y -= 5

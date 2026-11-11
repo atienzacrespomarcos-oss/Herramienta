@@ -119,24 +119,39 @@ unifilar. Una banda por sistema (zonas, cada red de aire, cada servicio hidrául
 - **Señales**: cada una con su símbolo, su texto y una línea de trazos hasta el
   controlador del sistema, rotulada con su tipo (y «×n» si son varias).
   - Las entradas van en círculo y las salidas en cuadrado.
-  - El rótulo (T, HR, CO₂, ΔP, Q, P, E, F; C, VF, V, M) sale del texto de la señal
-    (`engines/control.simbolo`), con lo específico antes que lo general.
+  - El rótulo (T, HR, CO₂, ΔP, Q, P, E, F; C, VF, V, M) sale del texto de la señal y de
+    su tipo (`engines/control.simbolo`), con lo específico antes que lo general.
+  - En las entradas digitales, el fallo va antes que la magnitud («Alarma temperatura
+    alta» es F). En las salidas digitales, la marcha va antes que el equipo («Orden de
+    marcha del variador» es M).
+  - La señal larga va en dos líneas y el recuadro del equipo crece hasta que cabe su
+    nombre. El controlador tiene altura mínima para su recuento.
   - Se explica en la leyenda del propio dibujo: no se usan letras ISA, para no atribuir
     a la norma un código que no se ha comprobado.
 - **Controlador**: un recuadro por sistema con el recuento ED/SD/EA/SA.
 - **Secuencia de funcionamiento** («el cómo»), debajo de cada banda: lo que exige el RITE
   lleva su artículo y lo demás termina en «(propuesta)».
-  - Zonas: temperatura por espacio (IT .1), horario por zona (IT .4), CO₂ (IDA-C6) y
-    humedad (IT 1.2.4.3.2.3).
+  - Zonas: temperatura por espacio (IT .1; la válvula de la unidad, propuesta); cada zona
+    fuera de servicio por horario (IT .4); IDA-C6 con CO₂ o COV (tabla 2.4.3.2); humedad,
+    con el equipamiento mínimo de la categoría (IT 1.2.4.3.2.3). Cómo actúa la sonda sobre
+    la humectación es propuesta.
   - Redes: horario (IT .4), variador, filtros y caudal por encima de 5 m³/s (IT .10).
   - Hidráulica: impulsión de frío constante (IT .7), curva de calor (propuesta; IT .6
     con calderas), cambio de temporada con 2 tubos, primario con el generador, bombas de
-    circuito a presión diferencial, PICV por encima de 70 kW (IT .5) y circuitos fuera de
+    circuito a presión diferencial, presión diferencial estabilizada por encima de 70 kW
+    (IT .5; con PICV, propuesta: el RITE no fija la tecnología) y circuitos fuera de
     servicio por horario (IT .4).
+  - Revisión del 11-11-2026: al RITE solo se le atribuye lo que dice su texto; el medio
+    (válvula, variador, PICV) es propuesta.
 
 **Desde un listado del usuario** («hay el qué pero no el cómo»; `io/puntos_control.py`):
 - Formato: Excel, .xls o CSV, sin plantilla.
 - Columnas por su título: señal y tipo, obligatorias; equipo, sistema y cantidad.
+  - Entre dos columnas para el mismo dato gana el sinónimo más específico («Señal» antes
+    que «Descripción»).
+  - «Tipo de equipo» no es el tipo de la señal.
+  - «Nº» no es la cantidad: numerar las filas falseaba los recuentos.
+  - Los saltos de línea de una celda se quedan en una sola línea.
 - Tipos aceptados: ED/SD/EA/SA y DI/DO/AI/AO, BI/BO (BACnet).
 - Lo que no se entiende (un tipo desconocido, una cantidad que no es un entero) **no se
   adivina**: la fila no entra y se dice cuál es.

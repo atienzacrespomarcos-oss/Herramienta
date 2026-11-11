@@ -25,7 +25,9 @@ from traza.io.certificacion_excel import _tiene, normalizar
 #: específico antes que lo general («tipo de señal» es el tipo, no la señal).
 TITULOS = (
     ("tipo", ("tipo de senal", "tipo de punto", "tipo e/s", "tipo", "e/s", "i/o", "io")),
-    ("cantidad", ("cantidad", "cant", "uds", "unidades", "n puntos", "numero")),
+    # Sin «número»: una columna «Nº» que numera las filas se tomaba por la cantidad y
+    # falseaba los recuentos (revisión 11-11-2026).
+    ("cantidad", ("cantidad", "cant", "uds", "unidades")),
     ("sistema", ("sistema", "instalacion", "subsistema", "circuito")),
     ("equipo", ("equipo", "elemento", "aparato", "maquina")),
     ("senal", ("senal", "descripcion", "punto", "variable", "denominacion", "concepto")),
@@ -43,6 +45,8 @@ TIPOS = {
     "AO": "SA",
 }
 FILAS_TITULO = 15  # dónde se busca la fila de títulos
+#: «Tipo de equipo» no es el tipo de la señal.
+NO_TIPO = ("equipo", "aparato", "maquina", "elemento", "unidad")
 
 
 class ListadoNoLegible(ValueError):
@@ -54,25 +58,32 @@ def tipo_de(texto) -> str | None:
     return TIPOS.get(t)
 
 
-def _rol(titulo: str) -> str | None:
+def _rol(titulo) -> tuple[str, int] | None:
+    """(dato, prioridad del sinónimo: 0 la más específica) del título de una columna."""
     t = normalizar(titulo)
     if not t:
         return None
     for rol, terminos in TITULOS:
-        if _tiene(t, terminos):
-            return rol
+        if rol == "tipo" and _tiene(t, NO_TIPO):
+            continue
+        for k, termino in enumerate(terminos):
+            if _tiene(t, (termino,)):
+                return rol, k
     return None
 
 
 def _mapa(ws) -> tuple[int, dict[str, int]] | None:
+    """Fila de títulos y columna de cada dato. Entre dos columnas que valen para el mismo
+    dato gana la de sinónimo más específico («Señal» antes que «Descripción»), no la que
+    está más a la izquierda."""
     for fila in range(1, min(ws.max_row, FILAS_TITULO) + 1):
-        roles: dict[str, int] = {}
+        mejores: dict[str, tuple[int, int]] = {}
         for col in range(1, ws.max_column + 1):
-            rol = _rol(ws.cell(fila, col).value)
-            if rol is not None and rol not in roles:
-                roles[rol] = col
-        if "senal" in roles and "tipo" in roles:
-            return fila, roles
+            r = _rol(ws.cell(fila, col).value)
+            if r is not None and (r[0] not in mejores or r[1] < mejores[r[0]][0]):
+                mejores[r[0]] = (r[1], col)
+        if "senal" in mejores and "tipo" in mejores:
+            return fila, {rol: col for rol, (_, col) in mejores.items()}
     return None
 
 
@@ -104,7 +115,8 @@ def _filas(ws, fila_titulos: int, roles: dict[str, int]) -> tuple[list[Punto], l
     def celda(fila, rol):
         col = roles.get(rol)
         v = ws.cell(fila, col).value if col else None
-        return "" if v is None else str(v).strip()
+        # Una sola línea: el Alt+Intro de una celda de Excel no cabe en un texto del DXF.
+        return "" if v is None else " ".join(str(v).split())
 
     for fila in range(fila_titulos + 1, ws.max_row + 1):
         senal = celda(fila, "senal")
