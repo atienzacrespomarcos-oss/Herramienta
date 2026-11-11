@@ -137,6 +137,7 @@ PASOS = [
     ("redes", "Redes de aire", TODOS),
     ("hidronica", "Sistema hidráulico", TODOS),
     ("subcuadros", "Subcuadros de clima", TODOS),
+    ("control", "Control", TODOS),
     ("mediciones", "Mediciones y ofertas", OFERTA | OBRA),
     ("venta", "Venta", OBRA),
     ("coste_objetivo", "Coste objetivo", OBRA),
@@ -413,6 +414,10 @@ class VentanaPrincipal(QMainWindow):
         from traza.ui.paso_subcuadros import PaginaSubcuadros
 
         self.pagina_subcuadros = PaginaSubcuadros(self)
+        # Paso Control: módulo propio (ui/paso_control.py).
+        from traza.ui.paso_control import PaginaControl
+
+        self.pagina_control = PaginaControl(self)
         # Paso Entregables: módulo propio (ui/paso_entregables.py).
         from traza.ui.paso_entregables import PaginaEntregables
 
@@ -440,6 +445,7 @@ class VentanaPrincipal(QMainWindow):
             "redes": self.pagina_redes,
             "hidronica": self.pagina_hidronica,
             "subcuadros": self.pagina_subcuadros,
+            "control": self.pagina_control,
             "mediciones": med,
             "modificados": mo,
             "equipos": eq,
@@ -636,6 +642,8 @@ class VentanaPrincipal(QMainWindow):
         self.menu_hidronica = mb.addMenu("&Agua")
         # Menú del paso Subcuadros de clima: lo llena ui/paso_subcuadros.PaginaSubcuadros.
         self.menu_subcuadros = mb.addMenu("E&lectricidad")
+        # Menú del paso Control: lo llena ui/paso_control.PaginaControl.
+        self.menu_control = mb.addMenu("Con&trol")
         # Menú del paso Entregables: lo llena ui/paso_entregables.PaginaEntregables.
         self.menu_entregables = mb.addMenu("E&ntregables")
         # Menú de Obra: lo llena ui/paso_obra (tras «Añadir documentos», el primero).
@@ -677,6 +685,8 @@ class VentanaPrincipal(QMainWindow):
             self.pagina_hidronica.actualizar_estado(hay)
         if hasattr(self, "pagina_subcuadros"):
             self.pagina_subcuadros.actualizar_estado(hay)
+        if hasattr(self, "pagina_control"):
+            self.pagina_control.actualizar_estado(hay)
         if hasattr(self, "pagina_entregables"):
             self.pagina_entregables.actualizar_estado(hay)
         if hasattr(self, "a_anadir_documentos"):
@@ -746,6 +756,7 @@ class VentanaPrincipal(QMainWindow):
         self.pagina_redes.refrescar()
         self.pagina_hidronica.refrescar()
         self.pagina_subcuadros.refrescar()
+        self.pagina_control.refrescar()
         self.pagina_entregables.refrescar()
         self.pagina_venta.refrescar()
         self.pagina_coste_objetivo.refrescar()

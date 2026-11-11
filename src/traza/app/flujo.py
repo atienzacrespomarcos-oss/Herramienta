@@ -150,6 +150,12 @@ def _contenido(p: Any, paso: str) -> EstadoPaso | None:
             except Exception as exc:  # noqa: BLE001 — se muestra, no rompe la lista
                 return EstadoPaso(PENDIENTE, f"«{f['nombre']}» no se calcula: {exc}")
         return None
+    if paso == "control":
+        # Se recalcula con lo diseñado, nunca se queda atrás: sin «desactualizado». No
+        # calcula aquí (necesita las cargas y la guía del IDAE, como arriba).
+        if not (p.redes() or p.sistemas_hidraulicos()):
+            return EstadoPaso(PENDIENTE, "Falta: diseñar una red de aire o un sistema hidráulico")
+        return None
     if paso == "mediciones":
         return None if p.mediciones() else EstadoPaso(PENDIENTE, "Falta: leer una medición")
     if paso == "modificados":

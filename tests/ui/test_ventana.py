@@ -536,7 +536,7 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
     textos = [v.lista_pasos.item(i).text() for i in range(v.lista_pasos.count())]
     # Proyecto nuevo: todo pendiente (○) salvo Modificados y Equipos, sin estado.
     assert all(x.startswith("○ ") for x in textos[:-2])
-    assert textos[-2].startswith("8. ") and textos[-1].startswith("9. ")
+    assert textos[-2].startswith("9. ") and textos[-1].startswith("10. ")
     textos = [x.removeprefix("○ ") for x in textos]
     assert textos == [
         "1. Documentación",
@@ -545,9 +545,10 @@ def test_pasos_visibles_y_navegacion(ventana, tmp_path):
         "4. Redes de aire",
         "5. Sistema hidráulico",
         "6. Subcuadros de clima",
-        "7. Mediciones y ofertas",
-        "8. Modificados",
-        "9. Equipos",
+        "7. Control",
+        "8. Mediciones y ofertas",
+        "9. Modificados",
+        "10. Equipos",
     ]
     assert v.lista_pasos.item(1).toolTip() == "Falta: leer el plano DXF"
     assert v.paso_actual() == "documentacion"
