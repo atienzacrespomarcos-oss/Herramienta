@@ -190,6 +190,25 @@ Estado: **en desarrollo**.
   triángulo en el sentido del flujo, filtro = rombo, instrumentos = círculo con letra. El
   propio DXF lleva la **leyenda**, para que se lea sin otra referencia.
 
+## Equilibrado de las unidades (decisión del usuario 11-11-2026: «valvulería y equilibrado»)
+
+- Cada secundario tiene su bomba: **entre circuitos no hay que equilibrar**. Dentro de cada
+  circuito, la unidad más cercana al colector recibe más presión de la que necesita y su
+  válvula de equilibrado la disipa (RITE IT 1.2.4.2.7: equilibrado en diseño; IT 1.3.4.2.12:
+  válvula de equilibrado en cada unidad).
+- Método (`engines/hidraulica.equilibrado`), con las hipótesis del circuito: unidades
+  iguales repartidas por igual a lo largo de la ida, retorno directo, un solo diámetro.
+  - Presión disponible en la unidad i = altura de la bomba del circuito − pérdida de ida y
+    vuelta hasta ella, **tramo a tramo con el caudal que lleva cada tramo** y el 30 % de
+    accesorios (IDAE nº 18).
+  - A disipar = disponible − pérdida de la unidad − la de su válvula de control.
+  - Kv de la válvula de equilibrado = Q de la unidad (m³/h) / √(ΔP a disipar / 1 bar).
+  - La bomba está calculada con todo el caudal en todo el recorrido (del lado de la
+    seguridad): también la última unidad tiene algo que disipar. Con una sola unidad, la
+    válvula va abierta.
+- Salida: en el listado de elementos, el rango por circuito (de la más lejana a la más
+  cercana, y su Kv); en el Excel, hoja **«Equilibrado»** unidad a unidad.
+
 ## Pendiente
 - Validar con un proyecto real del usuario.
 - Volúmenes de agua de generador y unidades: hoy no se conocen y no entran en el vaso.

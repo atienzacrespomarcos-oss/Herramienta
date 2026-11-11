@@ -239,3 +239,31 @@ def test_dos_tubos_sin_potencia_en_un_circuito():
     r = ah.calcular(sistema, N(espacios=[esp("e1", 20_000, 15_000), esp("e2", 0, 0)]))
     assert [c.datos.nombre for c in r.servicios[0].circuitos] == ["A"]
     assert any("«Vacío» no tiene potencia" in a for a in r.avisos)
+
+
+def test_equilibrado_de_las_unidades_calculado_a_mano():
+    """Dos unidades iguales a L/2 y L, retorno directo, 30 % de accesorios (IDAE nº 18).
+    La bomba lleva Q en todo el recorrido: H = 2·F·r(Q)·L + unidad + válvula. Entonces
+        unidad 1: disipar = 2·F·r(Q)·L − 2·F·r(Q)·L/2                 = F·L·r(Q)
+        unidad 2: disipar = 2·F·r(Q)·L − 2·F·(r(Q) + r(Q/2))·L/2     = F·L·(r(Q) − r(Q/2))
+    y Kv = (Q/2 en m³/h)/√(disipar/1 bar)."""
+    import math
+
+    c = h.Circuito("C1", potencia_frio_w=20_000, potencia_calor_w=0, unidades=2, longitud_m=40)
+    s = h.calcular_servicio("frio", [c])
+    cc = s.circuitos[0]
+    a = s.agua_calculo
+    f, largo = rh.FACTOR_ACCESORIOS, 40
+    r_q = h.flujo(cc.caudal_m3s, cc.tubo.tubo, a)[1]
+    r_mitad = h.flujo(cc.caudal_m3s / 2, cc.tubo.tubo, a)[1]
+    u1, u2 = h.equilibrado(s, cc)
+    assert u1.disipar_pa == pytest.approx(f * largo * r_q, rel=1e-9)
+    assert u2.disipar_pa == pytest.approx(f * largo * (r_q - r_mitad), rel=1e-9)
+    assert u1.disipar_pa > u2.disipar_pa > 0  # la más cercana disipa más
+    q_unidad = cc.caudal_m3s / 2 * 3600
+    assert u1.kv == pytest.approx(q_unidad / math.sqrt(u1.disipar_pa / 1e5), rel=1e-9)
+    # Una sola unidad: la bomba es justo la que necesita; su válvula va abierta.
+    (sola,) = h.equilibrado(
+        s2 := h.calcular_servicio("frio", [h.Circuito("C", 10_000, 0, 1, 30)]), s2.circuitos[0]
+    )
+    assert sola.disipar_pa == pytest.approx(0, abs=1e-6) and sola.kv is None

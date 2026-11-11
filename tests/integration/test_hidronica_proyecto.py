@@ -49,10 +49,17 @@ def test_dos_tubos_con_las_cargas_de_los_espacios(red, tmp_path):  # noqa: F811
     s = r.servicios[0]
     assert {c.datos.nombre for c in s.circuitos} == {"Oficinas", "Nave"}
     assert s.circuitos[0].datos.perdida_terminal_pa == pytest.approx(15_000)
-    # Excel: las cuatro hojas y todos los elementos con su norma.
+    # Excel: las hojas y todos los elementos con su norma.
     x = p.exportar_sistema_hidraulico_excel(sid, tmp_path / "Hidráulica")
     wb = load_workbook(x)
-    assert wb.sheetnames == ["Resumen", "Circuitos", "Elementos", "Hipótesis"]
+    assert wb.sheetnames == ["Resumen", "Circuitos", "Equilibrado", "Elementos", "Hipótesis"]
+    # Equilibrado: una fila por unidad de cada circuito; la más cercana disipa lo que más.
+    eq = list(wb["Equilibrado"].iter_rows(min_row=2, values_only=True))
+    assert len(eq) == sum(c.datos.unidades for c in s.circuitos)
+    for nombre in ("Oficinas", "Nave"):
+        disipar = [f[4] for f in eq if f[1] == nombre]
+        assert disipar == sorted(disipar, reverse=True)
+    assert any("Disipar de" in e.especificacion for e in r.elementos)
     filas = list(wb["Elementos"].iter_rows(min_row=2, values_only=True))
     assert len(filas) == len(r.elementos) > 40
     assert all(f[5] for f in filas)  # cada elemento con su norma o fuente

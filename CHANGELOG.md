@@ -2,6 +2,11 @@
 
 ## [Sin publicar]
 
+### Equilibrado hidráulico (11-11-2026)
+- Sistema hidráulico: presión a disipar y Kv de la válvula de equilibrado de cada unidad,
+  tramo a tramo con el caudal real de cada tramo; rango por circuito en el listado de
+  elementos y hoja «Equilibrado» unidad a unidad en el Excel.
+
 ### Validación de los motores con ejemplos publicados (11-11-2026)
 - Índice de casos de referencia en `tests/reference_cases/README.md`: qué motor se contrasta
   con qué ejemplo publicado y con qué tolerancia, y cuáles quedan Limitados y por qué.

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from traza.engines.hidraulica import Servicio
+from traza.engines.hidraulica import Servicio, equilibrado
 from traza.rules import hidraulica as rh
 
 
@@ -359,13 +359,23 @@ def elementos(s: Servicio, potencia_instalacion_kw: float | None = None) -> list
         u = c.datos.unidades
         du = c.conexion.tubo
         add(zu, "Válvula de corte", "Entrada de cada unidad", du, u, "RITE IT 1.3.4.2.12")
+        eq = equilibrado(s, c)
+        con_kv = [x.kv for x in eq if x.kv is not None]
+        reparto = (
+            f"Salida de cada unidad. Disipar de {_mca(eq[-1].disipar_pa)} (la más lejana) a "
+            f"{_mca(eq[0].disipar_pa)} (la más cercana)"
+            + (f"; Kv de {_n(min(con_kv), 2)} a {_n(max(con_kv), 2)}" if con_kv else "")
+            + " (unidad a unidad, en el Excel)"
+            if u > 1
+            else "Salida de la unidad: abierta (no hay otra unidad que equilibrar)"
+        )
         add(
             zu,
             "Válvula de equilibrado (también de corte)",
-            "Salida de cada unidad",
+            reparto,
             du,
             u,
-            "RITE IT 1.3.4.2.12",
+            "RITE IT 1.3.4.2.12 e IT 1.2.4.2.7",
         )
         add(
             zu,
