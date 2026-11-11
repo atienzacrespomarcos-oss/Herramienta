@@ -570,6 +570,10 @@ class VentanaPrincipal(QMainWindow):
         self.a_copia = self._accion(m, "Hacer copia de seguridad", self.accion_copia)
         self.a_restaurar = self._accion(m, "Restaurar copia de seguridad…", self.accion_restaurar)
         m.addSeparator()
+        # Revisiones del diseño (RF-009, docs/modules/revisiones.md).
+        self.a_emitir_revision = self._accion(m, "Emitir revisión…", self.accion_emitir_revision)
+        self.a_comparar = self._accion(m, "Comparar con una revisión…", self.accion_comparar)
+        m.addSeparator()
         self.a_salir = self._accion(m, "Salir", self.close, QKeySequence.Quit)
 
         m = mb.addMenu("&Edición")
@@ -709,8 +713,10 @@ class VentanaPrincipal(QMainWindow):
             self.a_historial,
             self.a_encargo,
             self.a_revisado,
+            self.a_emitir_revision,
         ):
             a.setEnabled(hay)
+        self.a_comparar.setEnabled(hay and bool(self.proyecto.revisiones()))
         self.a_leer_medicion.setEnabled(hay and bool(self._documentos_legibles()))
         hay_mediciones = hay and self.tabla_mediciones.rowCount() > 0
         self.a_exportar_excel.setEnabled(hay_mediciones)
@@ -1429,6 +1435,59 @@ class VentanaPrincipal(QMainWindow):
     def accion_copia(self) -> None:
         ruta = self.proyecto.copia_de_seguridad()
         self.statusBar().showMessage(f"Copia guardada: {ruta.name}", 8000)
+
+    def accion_emitir_revision(self) -> None:
+        """Congela el diseño con un nombre («Para oferta»): luego se compara con él."""
+        nombre = self.preguntas.texto(
+            "Emitir revisión", "Nombre de la revisión (p. ej. «Para oferta», «Planos rev. B»):"
+        )
+        if not nombre:
+            return
+        nota = self.preguntas.texto("Emitir revisión", "Nota (opcional): qué cambia o para qué es")
+        r = self.proyecto.emitir_revision(nombre, nota or "")
+        self.refrescar()
+        self.preguntas.informacion(
+            "Revisión emitida",
+            f"Rev. {r.numero} · {r.nombre}. Queda congelada en la carpeta «revisiones» del "
+            "proyecto; se compara con «Archivo → Comparar con una revisión…».",
+        )
+
+    def accion_comparar(self) -> None:
+        from traza.ui.paso_redes import _archivo
+
+        revisiones = self.proyecto.revisiones()
+        if not revisiones:
+            return
+        etiquetas = [f"Rev. {r.numero} · {r.nombre} ({r.fecha[:10]})" for r in revisiones]
+        i = self.preguntas.elegir("Comparar", "Desde la revisión:", etiquetas)
+        if i is None:
+            return
+        destinos = ["Estado actual del proyecto"] + [e for k, e in enumerate(etiquetas) if k != i]
+        numeros = [None] + [r.numero for k, r in enumerate(revisiones) if k != i]
+        j = self.preguntas.elegir("Comparar", "Hasta:", destinos)
+        if j is None:
+            return
+        antes, ahora = revisiones[i].numero, numeros[j]
+        nombre = f"Rev {antes} a {'actual' if ahora is None else f'Rev {ahora}'}"
+        destino = self.preguntas.destino_excel(
+            self.proyecto.carpeta.raiz.parent
+            / f"{_archivo(self.proyecto.nombre)} - comparación {nombre}.xlsx"
+        )
+        if destino is None:
+            return
+        # Una sola comparación (recalcula cargas, redes y sistemas de las dos versiones).
+        cambios = self.proyecto.comparar_revisiones(antes, ahora)
+        ruta = self.proyecto.exportar_comparacion(antes, ahora, destino, cambios)
+        if not cambios:
+            texto = "No hay cambios en los datos ni en los resultados que deciden."
+        else:
+            from collections import Counter
+
+            por = Counter(c.apartado for c in cambios)
+            texto = f"{len(cambios)} cambios: " + "; ".join(f"{a} {n}" for a, n in por.items())
+        self.preguntas.informacion(
+            "Comparación", f"{etiquetas[i]} → {destinos[j]}\n\n{texto}\n\nDetalle en {ruta}"
+        )
 
     def accion_restaurar(self) -> None:
         copias = list(reversed(self.proyecto.copias()))  # la más reciente primero

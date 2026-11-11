@@ -192,3 +192,145 @@ def restaurar(c: Carpeta, copia: Path) -> None:
     except BaseException:
         temporal.unlink(missing_ok=True)
         raise
+
+
+# --- Revisiones del proyecto (RF-009, docs/modules/revisiones.md) -----------------------
+
+REVISIONES = "revisiones"
+
+
+@dataclass(frozen=True)
+class Revision:
+    numero: int
+    nombre: str
+    nota: str
+    fecha: str  # ISO, UTC
+    fichero: Path
+    huella: str  # SHA-256 del .db congelado
+    version_esquema: int
+
+
+def _carpeta_revisiones(c: Carpeta) -> Path:
+    return c.raiz / REVISIONES
+
+
+def revisiones(c: Carpeta) -> list[Revision]:
+    """Las emitidas (las que tienen ficha legible), por número. No se comprueba aquí si su
+    .db sigue siendo el emitido: se comprueba al abrirla (`revision_danada`), que es cuando
+    importa, y así listar es barato."""
+    import json
+
+    salida = []
+    carpeta = _carpeta_revisiones(c)
+    if not carpeta.is_dir():
+        return salida
+    for ficha in sorted(carpeta.glob("Rev *.json")):
+        try:
+            d = json.loads(ficha.read_text(encoding="utf-8"))
+            r = Revision(
+                int(d["numero"]),
+                str(d["nombre"]),
+                str(d.get("nota", "")),
+                str(d["fecha"]),
+                carpeta / str(d["fichero"]),
+                str(d["huella"]),
+                int(d["version_esquema"]),
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        salida.append(r)
+    return sorted(salida, key=lambda r: r.numero)
+
+
+def revision_danada(r: Revision) -> str | None:
+    """Por qué no vale una revisión (el .db falta o no es el emitido), o None."""
+    if not r.fichero.is_file():
+        return f"Falta el fichero de la revisión {r.numero} («{r.fichero.name}»)."
+    if sha256_de(r.fichero) != r.huella:
+        return f"La revisión {r.numero} ha cambiado desde que se emitió: no se usa."
+    return None
+
+
+def emitir_revision(c: Carpeta, con: sqlite3.Connection, nombre: str, nota: str) -> Revision:
+    """Congela el proyecto tal como está: copia coherente de la base de datos (API de backup
+    de SQLite), de solo lectura, con su ficha. Nunca se sobrescribe ni se modifica."""
+    import json
+
+    carpeta = _carpeta_revisiones(c)
+    carpeta.mkdir(exist_ok=True)
+    existentes = revisiones(c)
+    # El número sigue al mayor que haya, también de fichas dañadas o sueltas: nunca se
+    # reutiliza un número.
+    usados = [r.numero for r in existentes]
+    for f in carpeta.glob("Rev *"):
+        trozo = f.stem.removeprefix("Rev ").split(" ")[0]
+        if trozo.isdigit():
+            usados.append(int(trozo))
+    numero = max(usados, default=-1) + 1
+    base = f"Rev {numero}"
+    db = carpeta / f"{base}.db"
+    temporal = db.with_suffix(".parcial")
+    try:
+        dst = sqlite3.connect(temporal)
+        try:
+            con.backup(dst)
+        finally:
+            dst.close()
+        os.replace(temporal, db)
+    except BaseException:
+        temporal.unlink(missing_ok=True)
+        raise
+    db.chmod(stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+    r = Revision(
+        numero,
+        nombre,
+        nota,
+        datetime.now(UTC).isoformat(timespec="seconds"),
+        db,
+        sha256_de(db),
+        version(con),
+    )
+    ficha = carpeta / f"{base}.json"
+    ficha.write_text(
+        json.dumps(
+            {
+                "numero": r.numero,
+                "nombre": r.nombre,
+                "nota": r.nota,
+                "fecha": r.fecha,
+                "fichero": db.name,
+                "huella": r.huella,
+                "version_esquema": r.version_esquema,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    ficha.chmod(stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+    return r
+
+
+def abrir_revision(r: Revision) -> sqlite3.Connection:
+    """La revisión en memoria, migrada al esquema actual si es de uno anterior: se puede
+    calcular sobre ella sin tocar el fichero congelado."""
+    problema = revision_danada(r)
+    if problema:
+        raise CarpetaNoValida(problema)
+    from urllib.request import pathname2url
+
+    # URI de solo lectura, con la ruta codificada (una carpeta con «#» o «?» la rompería).
+    origen = sqlite3.connect(f"file:{pathname2url(str(r.fichero))}?mode=ro", uri=True)
+    memoria = sqlite3.connect(":memory:", isolation_level=None)
+    try:
+        origen.backup(memoria)
+    finally:
+        origen.close()
+    try:
+        memoria.row_factory = sqlite3.Row
+        memoria.execute("PRAGMA foreign_keys = ON")
+        migrar(memoria)  # una revisión de un TRAZA más nuevo: ProyectoDeVersionFutura
+    except BaseException:
+        memoria.close()
+        raise
+    return memoria
