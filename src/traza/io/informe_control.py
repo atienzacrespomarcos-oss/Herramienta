@@ -60,8 +60,9 @@ def exportar_excel(destino: Path, proyecto: str, propuesta) -> Path:
     hipotesis = [
         "Categorías THM-C e IDA-C: RITE (RD 1027/2007, texto consolidado), IT 1.2.4.3.2 "
         "(tabla 2.4.3.1) e IT 1.2.4.3.3 (tabla 2.4.3.2).",
-        "Comprobaciones: CUMPLE / NO CUMPLE se calcula con los datos del proyecto; «Incluida "
-        "en la propuesta» es una exigencia del RITE que la propuesta ya recoge.",
+        "Comprobaciones: «Incluida en la propuesta» es una exigencia del RITE que la "
+        "propuesta ya recoge (no es una verificación); NO CUMPLE, un dato del proyecto que "
+        "la impide.",
         "Señales de cada equipo que el RITE no fija: «Propuesta (práctica habitual)»; "
         "confírmalas con el integrador de control.",
         "Válvulas de las unidades: de 2 vías (secundarios de caudal variable) e independientes "

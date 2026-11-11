@@ -90,27 +90,27 @@ Por tanto:
 - Temperatura exterior EA (propuesta: curvas de calor y secuencias).
 
 ### Comprobaciones
-Hay dos clases de fila (revisión del 11-11-2026: al principio todas salían CUMPLE, y la
-mayoría no podía fallar porque comprobaban la propia propuesta).
+Dos revisiones del 11-11-2026 encontraron que todas las filas salían CUMPLE sin poder
+fallar: comprobaban la propia propuesta. Incluso la de válvulas era circular, porque el Kv
+del sistema hidráulico se dimensiona con la pérdida de la unidad. Ahora cada fila dice lo
+que es:
 
-**Se calcula: CUMPLE / NO CUMPLE**
-- Válvulas de control (IT .5). La pérdida de la válvula abierta al caudal de proyecto se
-  calcula con su Kv, Δp = 10⁵·(q/Kv)², que es la definición del Kv. Se divide entre la
-  pérdida de la unidad y la relación debe estar entre 0,6 y 1,3.
-- Con el Kv del sistema hidráulico la relación sale 1. Una unidad sin pérdida (Kv 0) sale
-  NO CUMPLE.
+- **«Incluida en la propuesta»**: exigencia del RITE que la propuesta ya recoge con su
+  sonda, su categoría, su punto o su Kv. Sirve para justificar y no es una verificación.
+  - Sonda de temperatura en cada espacio (IT .1).
+  - IDA-C6 en los locales de ocupación variable (IT 1.2.4.3.3.4).
+  - Nunca C2, C3 o C4 con ocupación permanente (IT 1.2.4.3.3.3).
+  - Válvulas de control con relación 1 entre 0,6 y 1,3 (IT .5). La relación se recalcula
+    con el Kv, Δp = 10⁵·(q/Kv)².
+  - PICV por encima de 70 kW (IT .5).
+  - Medición de caudal en ventiladores de más de 5 m³/s (IT .10).
+- **NO CUMPLE**: un dato del proyecto impide la exigencia. Por ejemplo, una unidad con
+  0 kPa de pérdida, que el sistema hidráulico admite: su válvula no se puede dimensionar.
+- **CUMPLE**: queda para cuando haya un dato independiente que verificar, como un Kv
+  comercial elegido. Hoy no lo hay.
+- **«No aplica»**: el proyecto no tiene ese caso.
 
-**«Incluida en la propuesta»**: exigencias del RITE que la propuesta ya recoge con su
-sonda, su categoría o su punto. Sirven para justificar; no se cuentan como CUMPLE.
-- Sonda de temperatura en cada espacio (IT .1).
-- IDA-C6 en los locales de ocupación variable (IT 1.2.4.3.3.4).
-- Nunca C2, C3 o C4 con ocupación permanente (IT 1.2.4.3.3.3).
-- PICV por encima de 70 kW (IT .5).
-- Medición de caudal en ventiladores de más de 5 m³/s (IT .10).
-
-**«No aplica»**: el proyecto no tiene ese caso.
-
-La pantalla resume solo lo calculado y cuenta aparte las exigencias incluidas.
+En pantalla se ve lo que NO CUMPLE y cuántas exigencias del RITE recoge la propuesta.
 
 ## En el proyecto
 - `app/control.py` y `Proyecto.propuesta_control()`: toman las cargas, las redes y los
@@ -127,8 +127,9 @@ La pantalla resume solo lo calculado y cuenta aparte las exigencias incluidas.
 
 ## Validación
 - Las categorías se comprueban contra el texto del RITE.
-- La relación de las válvulas se comprueba con Kv calculados a mano (CUMPLE, límite de 1,3,
-  0,5 fuera de rango y unidad sin pérdida).
+- La relación de las válvulas se comprueba con Kv calculados a mano: dentro del rango,
+  límite de 1,3, 0,5 fuera de rango y unidad sin pérdida. En el proyecto real, la unidad
+  sin pérdida sale NO CUMPLE (`tests/ui/test_paso_control.py`).
 - Los recuentos de puntos se cuentan a mano en `tests/unit/test_control.py`.
 - Los umbrales de 5 m³/s y de 70 kW se prueban en el límite.
 - Un test ata los usos del control al catálogo de usos.

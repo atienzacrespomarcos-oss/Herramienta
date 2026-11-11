@@ -6,7 +6,8 @@
 - Paso **Control**: desde lo diseñado, TRAZA propone la categoría THM-C e IDA-C de cada
   espacio según su uso (RITE IT 1.2.4.3.2 y 1.2.4.3.3), el listado de puntos de control
   (ED/SD/EA/SA) de zonas, redes de aire y sistemas hidráulicos, con el artículo del RITE en
-  lo que es exigencia, y las comprobaciones CUMPLE / NO CUMPLE de la IT 1.2.4.3.
+  lo que es exigencia, y qué exigencias de la IT 1.2.4.3 recoge (o qué dato del proyecto
+  las impide: NO CUMPLE).
 - Excel de la propuesta (Resumen, Categorías, Puntos, Comprobaciones e Hipótesis), también
   en Entregables.
 

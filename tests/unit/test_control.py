@@ -129,7 +129,9 @@ def test_umbral_de_70_kw_con_la_potencia_de_la_instalacion():
 def test_valvulas_de_control_se_calculan_con_su_kv():
     """IT 1.2.4.3.1.5: Δp de la válvula abierta = 10⁵·(q/Kv)², entre la de la unidad.
     q = 1 m³/h, unidad 15 kPa: Kv = 1/√0,15 = 2,582 → relación 1,00 (CUMPLE). Con Kv para
-    0,5 (Kv = 1/√0,075 = 3,651) → NO CUMPLE. Sin pérdida de la unidad (Kv 0) → NO CUMPLE."""
+    0,5 (Kv = 1/√0,075 = 3,651) → NO CUMPLE. Sin pérdida de la unidad (Kv 0) → NO CUMPLE.
+    En el proyecto el Kv sale de la pérdida de la unidad (relación 1): lo que puede fallar de
+    verdad es la unidad sin pérdida (tests/ui/test_paso_control.py)."""
 
     def resultado(*circuitos):
         s = mc.ServicioControl("S", "Frío", True, False, 50.0, circuitos)
@@ -138,8 +140,9 @@ def test_valvulas_de_control_se_calculan_con_su_kv():
 
     c = mc.CircuitoControl("A", 1, 1.0, 1 / math.sqrt(0.15), 15_000.0)
     assert mc.relacion_valvula(c) == pytest.approx(1.0)
-    assert resultado(c).resultado == mc.CUMPLE
-    assert resultado(_circuito("A", 1, 1.3)).resultado == mc.CUMPLE  # límite incluido
+    # Dentro del rango: el Kv recoge la exigencia («Incluida»), no se verifica nada más.
+    assert resultado(c).resultado == mc.INCLUIDA
+    assert resultado(_circuito("A", 1, 1.3)).resultado == mc.INCLUIDA  # límite incluido
     malo = resultado(_circuito("A", 1), _circuito("B", 1, 0.5))
     assert malo.resultado == mc.NO_CUMPLE and "B (0,5)" in malo.detalle
     sin = resultado(mc.CircuitoControl("C", 1, 1.0, 0.0, 0.0))
@@ -156,10 +159,8 @@ def test_lo_que_recoge_la_propuesta_no_se_cuenta_como_cumple():
         True,
     )
     por = {c.requisito: c.resultado for c in r.comprobaciones}
-    assert [k for k, v in por.items() if v == mc.CUMPLE] == [
-        "Válvulas de control entre 0,6 y 1,3 veces la pérdida del elemento controlado"
-    ]
-    assert sum(v == mc.INCLUIDA for v in por.values()) == 5
+    assert [k for k, v in por.items() if v == mc.CUMPLE] == []
+    assert sum(v == mc.INCLUIDA for v in por.values()) == 6
 
 
 def test_consigna_de_calor_es_propuesta():

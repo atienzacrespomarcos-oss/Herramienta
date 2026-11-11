@@ -333,11 +333,13 @@ def proponer(
 
 
 def _comprobar(r: ResultadoControl, servicios, grandes, estabilizados) -> None:
-    """Dos clases de fila (revisión 11-11-2026: todas salían CUMPLE y la mayoría no podía
-    fallar, porque comprobaban la propia propuesta):
-    - CUMPLE / NO CUMPLE: lo que se calcula con datos del proyecto (válvulas de control);
+    """Revisiones del 11-11-2026: todas salían CUMPLE y no podían fallar, porque comprobaban
+    la propia propuesta. Ahora:
     - «Incluida en la propuesta»: exigencias del RITE que la propuesta ya recoge (la sonda,
-      la categoría o el punto que piden). Sirven para justificar, no se cuentan como CUMPLE.
+      la categoría, el punto o el Kv que piden). Sirven para justificar; no son CUMPLE.
+    - NO CUMPLE: un dato del proyecto impide la exigencia (unidad sin pérdida: la válvula
+      no se puede dimensionar). Se calcula con el Kv: Δp = 10⁵·(q/Kv)².
+    CUMPLE queda para cuando haya un dato independiente que verificar (un Kv comercial).
     """
 
     def fila(requisito, norma, resultado, detalle):
@@ -393,12 +395,16 @@ def _comprobar(r: ResultadoControl, servicios, grandes, estabilizados) -> None:
         if malos:
             fila(req, norma, NO_CUMPLE, "Fuera de 0,6–1,3: " + "; ".join(malos))
         else:
+            # El Kv sale de la pérdida de la unidad (sistema hidráulico): la relación es 1
+            # por construcción, no una verificación (segunda revisión 11-11-2026).
+            menor, mayor = _dos(min(relaciones)), _dos(max(relaciones))
             fila(
                 req,
                 norma,
-                CUMPLE,
-                f"Δp de la válvula con su Kv / Δp de la unidad: de {_dos(min(relaciones))} a "
-                f"{_dos(max(relaciones))} en {len(relaciones)} circuitos",
+                INCLUIDA,
+                "Kv dimensionado para perder lo mismo que la unidad (relación "
+                + (menor if menor == mayor else f"{menor} a {mayor}")
+                + f" en {len(relaciones)} circuitos)",
             )
     else:
         fila(req, norma, NO_APLICA, "Sin sistema hidráulico")

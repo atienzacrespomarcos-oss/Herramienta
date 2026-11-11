@@ -94,19 +94,19 @@ class PaginaControl(QWidget):
             )
         else:
             n = r.resumen
-            # Solo lo calculado cuenta como CUMPLE; lo incluido en la propuesta se cuenta
-            # aparte (revisión 11-11-2026: la propuesta no se puede dar por comprobada).
+            # La propuesta no se da por comprobada (revisiones 11-11-2026): se cuentan las
+            # exigencias que recoge y, aparte, lo que un dato del proyecto impide cumplir.
             fallan = [c for c in r.comprobaciones if c.resultado == mc.NO_CUMPLE]
             cumplen = [c for c in r.comprobaciones if c.resultado == mc.CUMPLE]
             incluidas = sum(c.resultado == mc.INCLUIDA for c in r.comprobaciones)
+            partes = []
             if fallan:
-                rite = "NO CUMPLE: " + "; ".join(c.requisito for c in fallan)
-            elif cumplen:
-                rite = "Válvulas de control: CUMPLE"
-            else:
-                rite = ""
+                partes.append("NO CUMPLE: " + "; ".join(c.requisito for c in fallan))
+            if cumplen:
+                partes.append("CUMPLE: " + "; ".join(c.requisito for c in cumplen))
             if incluidas:
-                rite += (". " if rite else "") + f"{incluidas} exigencias del RITE incluidas"
+                partes.append(f"{incluidas} exigencias del RITE incluidas en la propuesta")
+            rite = ". ".join(partes)
             puntos = " · ".join(f"{t} {n[t]}" for t in rc.TIPOS_PUNTO)
             texto = f"{puntos} · total {sum(n.values())} puntos. {rite}"
         if p.avisos:
