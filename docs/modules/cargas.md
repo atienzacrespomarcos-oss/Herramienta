@@ -256,8 +256,8 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
 ## Validación (11-11-2026)
 
 Índice completo en `tests/reference_cases/README.md`. Contrastado con ejemplos publicados:
-psicrometría (ASHRAE Fundamentals 2017, cap. 1) y n50 (Guía de aplicación del DB HE 2019,
-Ejemplos I, pág. 100: 6,6206 h⁻¹ exacto). Sin ejemplo publicado accesible: geometría solar,
+presión de saturación (ASHRAE Fundamentals 2017, cap. 1, tabla 3) y n50 (Guía de aplicación del DB HE 2019,
+Ejemplos I, pág. 100: 6,6206 h⁻¹, a la precisión publicada). Sin ejemplo publicado accesible: geometría solar,
 cielo despejado, sol-aire e infiltración UNE-EN 12831 (motor Limitado).
 
 La guía del DB HE trata las **puertas aparte** (Ch 60 m³/h·m², frente a 9 de una ventana
