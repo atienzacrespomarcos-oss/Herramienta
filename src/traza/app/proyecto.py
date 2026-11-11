@@ -14,6 +14,7 @@ from typing import Any
 
 from traza.ai import claude_code
 from traza.app import cargas as calculo_cargas
+from traza.app import control as calculo_control
 from traza.app import flujo, lectura_ia
 from traza.app import hidronica as calculo_hidronica
 from traza.app import modificados as calculo_mod
@@ -77,6 +78,7 @@ from traza.io import (
     facturas_erp,
     hoja_calculo,
     informe_cargas,
+    informe_control,
     informe_hidronica,
     informe_redes,
     memoria,
@@ -1779,6 +1781,40 @@ class Proyecto:
                 continue
         return calculo_subcuadros.propuestas(sistemas, redes)
 
+    # --- Control (docs/modules/control.md) ---------------------------------------------
+    def propuesta_control(self) -> calculo_control.PropuestaControl:
+        """Categorías RITE, puntos y comprobaciones de lo diseñado. Lo que no se calcula
+        se dice en un aviso (nunca se omite en silencio)."""
+        avisos: list[str] = []
+        cargas = None
+        if self.espacios():
+            try:
+                cargas = self.calcular_cargas()
+            except OrdenRechazada as exc:
+                avisos.append(f"Espacios sin categorías: {exc}")
+        redes, sistemas = [], []
+        for r in self.redes():
+            try:
+                redes.append(self.calcular_red(r["id"]))
+            except OrdenRechazada as exc:
+                avisos.append(f"Red «{r['nombre']}» sin puntos: {exc}")
+        for s in self.sistemas_hidraulicos():
+            try:
+                sistemas.append(self.calcular_sistema_hidraulico(s["id"]))
+            except OrdenRechazada as exc:
+                avisos.append(f"Sistema «{s['nombre']}» sin puntos: {exc}")
+        return calculo_control.proponer(cargas, redes, sistemas, avisos)
+
+    def exportar_control_excel(self, destino: Path) -> Path:
+        propuesta = self.propuesta_control()
+        try:
+            return informe_control.exportar_excel(Path(destino), self.nombre, propuesta)
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en Excel? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
+
     def exportar_unifilar(self, subcuadro_id: str, destino: Path) -> Path:
         r = self.calcular_subcuadro(subcuadro_id)
         try:
@@ -1877,8 +1913,9 @@ class Proyecto:
     ) -> tuple[Path, list[tuple[str, list[Path], str | None]]]:
         """Todo lo del diseño a una carpeta nueva dentro de `carpeta` (nunca sobrescribe):
         planos (Excel), cargas (Excel y PDF), redes (DXF, LISP y Excel), hidráulica (Excel y
-        esquema DXF), subcuadros (unifilar DXF) y la justificación en Word. Devuelve la
-        carpeta y, por entregable, sus ficheros o el motivo por el que no se ha generado.
+        esquema DXF), subcuadros (unifilar DXF), control (Excel) y la justificación en Word.
+        Devuelve la carpeta y, por entregable, sus ficheros o el motivo por el que no se ha
+        generado.
         Un error en uno (de cualquier tipo) se apunta y se sigue con el resto."""
         base = Path(carpeta) / nombre_valido(
             f"{self.nombre} - Entregables {datetime.now():%Y-%m-%d %H%M}", "TRAZA"
@@ -1959,6 +1996,12 @@ class Proyecto:
             hacer(
                 f"Subcuadro «{c['nombre']}» (unifilar DXF)",
                 lambda c=c, ruta=ruta: self.exportar_unifilar(c["id"], ruta),
+            )
+        if self.redes() or self.sistemas_hidraulicos():
+            ruta_control = unico("Propuesta de control")
+            hacer(
+                "Propuesta de control (Excel)",
+                lambda: self.exportar_control_excel(ruta_control),
             )
         ruta = unico("Justificación de cálculos")
         hacer(

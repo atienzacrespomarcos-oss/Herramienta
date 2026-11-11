@@ -2,6 +2,15 @@
 
 ## [Sin publicar]
 
+### Control de la instalación, parte 1: propuesta (11-11-2026)
+- Paso **Control**: desde lo diseñado, TRAZA propone la categoría THM-C e IDA-C de cada
+  espacio según su uso (RITE IT 1.2.4.3.2 y 1.2.4.3.3), el listado de puntos de control
+  (ED/SD/EA/SA) de zonas, redes de aire y sistemas hidráulicos, con el artículo del RITE en
+  lo que es exigencia, y qué exigencias de la IT 1.2.4.3 recoge (o qué dato del proyecto
+  las impide: NO CUMPLE).
+- Excel de la propuesta (Resumen, Categorías, Puntos, Comprobaciones e Hipótesis), también
+  en Entregables.
+
 ### Equilibrado hidráulico (11-11-2026)
 - Sistema hidráulico: presión a disipar y Kv de la válvula de equilibrado de cada unidad,
   tramo a tramo con el caudal real de cada tramo; rango por circuito en el listado de
