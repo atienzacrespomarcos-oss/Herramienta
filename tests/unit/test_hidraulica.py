@@ -263,7 +263,6 @@ def test_equilibrado_de_las_unidades_calculado_a_mano():
     q_unidad = cc.caudal_m3s / 2 * 3600
     assert u1.kv == pytest.approx(q_unidad / math.sqrt(u1.disipar_pa / 1e5), rel=1e-9)
     # Una sola unidad: la bomba es justo la que necesita; su válvula va abierta.
-    (sola,) = h.equilibrado(
-        s2 := h.calcular_servicio("frio", [h.Circuito("C", 10_000, 0, 1, 30)]), s2.circuitos[0]
-    )
+    s1 = h.calcular_servicio("frio", [h.Circuito("C", 10_000, 0, 1, 30)])
+    (sola,) = h.equilibrado(s1, s1.circuitos[0])
     assert sola.disipar_pa == pytest.approx(0, abs=1e-6) and sola.kv is None

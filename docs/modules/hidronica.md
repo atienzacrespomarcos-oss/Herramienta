@@ -205,7 +205,7 @@ Estado: **en desarrollo**.
   - Kv de la válvula de equilibrado = Q de la unidad (m³/h) / √(ΔP a disipar / 1 bar).
   - La bomba está calculada con todo el caudal en todo el recorrido (del lado de la
     seguridad): también la última unidad tiene algo que disipar. Con una sola unidad, la
-    válvula va abierta.
+    válvula va abierta; con menos de 100 Pa (≈ 1 cm c.a.) también se deja abierta.
 - Salida: en el listado de elementos, el rango por circuito (de la más lejana a la más
   cercana, y su Kv); en el Excel, hoja **«Equilibrado»** unidad a unidad.
 

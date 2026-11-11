@@ -58,7 +58,7 @@ def test_dos_tubos_con_las_cargas_de_los_espacios(red, tmp_path):  # noqa: F811
     assert len(eq) == sum(c.datos.unidades for c in s.circuitos)
     for nombre in ("Oficinas", "Nave"):
         disipar = [f[4] for f in eq if f[1] == nombre]
-        assert disipar == sorted(disipar, reverse=True)
+        assert disipar == sorted(disipar, reverse=True) and disipar[0] > disipar[-1]
     assert any("Disipar de" in e.especificacion for e in r.elementos)
     filas = list(wb["Elementos"].iter_rows(min_row=2, values_only=True))
     assert len(filas) == len(r.elementos) > 40

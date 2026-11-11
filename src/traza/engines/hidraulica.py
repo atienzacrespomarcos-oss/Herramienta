@@ -306,6 +306,9 @@ def calcular_servicio(
 # iguales y repartidas por igual a lo largo de la ida, retorno directo, un solo diámetro.
 
 
+DISIPAR_MINIMO_PA = 100.0
+
+
 @dataclass(frozen=True)
 class EquilibradoUnidad:
     unidad: int  # 1 = la más cercana al colector
@@ -333,6 +336,7 @@ def equilibrado(s: Servicio, c: CircuitoCalculado) -> tuple[EquilibradoUnidad, .
         perdida += 2 * rh.FACTOR_ACCESORIOS * r * largo / n
         disipar = c.altura_bomba_pa - perdida - c.datos.perdida_terminal_pa - c.perdida_valvula_pa
         disipar = max(disipar, 0.0)
-        kv = q_unidad_m3h / math.sqrt(disipar / 1e5) if disipar > 1.0 else None
+        # Menos de 100 Pa (≈ 1 cm c.a.) no se ajusta en obra: la válvula va abierta.
+        kv = q_unidad_m3h / math.sqrt(disipar / 1e5) if disipar > DISIPAR_MINIMO_PA else None
         salida.append(EquilibradoUnidad(i, disipar, kv))
     return tuple(salida)
