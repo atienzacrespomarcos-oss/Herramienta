@@ -264,11 +264,31 @@ CO_OPACO = {"nuevo": 16.0, "existente": 29.0}
 CH_CLASE = {1: 50.0, 2: 27.0, 3: 9.0, 4: 3.0}
 
 
-def n50(volumen_m3: float, area_opaca_m2: float, area_huecos_m2: float, co: float, ch: float):
-    """Renovaciones a 50 Pa: n50 = 0,629·(Co·Ao + Ch·Ah)/V (CTE DB HE, Anejo H)."""
+#: Permeabilidad de las puertas a 100 Pa (m³/h·m²) que usa la Guía de aplicación del DB HE
+#: 2019, Ejemplos prácticos I, pág. 100 (Ministerio de Transportes, Movilidad y Agenda
+#: Urbana; www.codigotecnico.org): las puertas van aparte de las ventanas.
+CH_PUERTAS = 60.0
+
+
+def n50(
+    volumen_m3: float,
+    area_opaca_m2: float,
+    area_huecos_m2: float,
+    co: float,
+    ch: float,
+    area_puertas_m2: float = 0.0,
+    ch_puertas: float = CH_PUERTAS,
+):
+    """Renovaciones a 50 Pa: n50 = 0,629·(Co·Ao + Ch·Ah)/V (CTE DB HE, Anejo H), con las
+    puertas como huecos de su propia permeabilidad (como hace la Guía de aplicación del DB HE
+    2019; caso de referencia en tests/reference_cases/test_cte_n50.py)."""
     if volumen_m3 <= 0:
         raise ValueError("El volumen tiene que ser positivo.")
-    return 0.629 * (co * area_opaca_m2 + ch * area_huecos_m2) / volumen_m3
+    return (
+        0.629
+        * (co * area_opaca_m2 + ch * area_huecos_m2 + ch_puertas * area_puertas_m2)
+        / volumen_m3
+    )
 
 
 def infiltracion_m3h(volumen_m3: float, n50_h: float, fachadas_expuestas: int, altura_m: float):

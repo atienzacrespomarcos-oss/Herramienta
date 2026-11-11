@@ -253,6 +253,17 @@ Entran como **hipótesis** con su fuente; el usuario los cambia.
   - la sala de manipulación a 12 °C va con las cámaras, fuera de la simultánea de
     climatización: se enfría con la instalación de frío.
 
+## Validación (11-11-2026)
+
+Índice completo en `tests/reference_cases/README.md`. Contrastado con ejemplos publicados:
+psicrometría (ASHRAE Fundamentals 2017, cap. 1) y n50 (Guía de aplicación del DB HE 2019,
+Ejemplos I, pág. 100: 6,6206 h⁻¹ exacto). Sin ejemplo publicado accesible: geometría solar,
+cielo despejado, sol-aire e infiltración UNE-EN 12831 (motor Limitado).
+
+La guía del DB HE trata las **puertas aparte** (Ch 60 m³/h·m², frente a 9 de una ventana
+de clase 3). El motor ya lo admite (`n50(..., area_puertas_m2=...)`), pero la aplicación aún
+no modela puertas ni portones: pendiente de decisión del usuario.
+
 ## Pendiente
 - Validar con la guía del IDAE real y un proyecto del usuario.
 - Cargas de producto en cámaras y de evaporación en piscinas: hoy se meten como proceso.

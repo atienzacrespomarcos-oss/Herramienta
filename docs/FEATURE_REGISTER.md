@@ -4,7 +4,8 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 09-11-2026 (flujo de trabajo, bloques 1 y 2).
+Última actualización: 11-11-2026 (validación de los motores con ejemplos publicados: índice en
+`tests/reference_cases/README.md`).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
 |---|---|---|---|---|
@@ -16,9 +17,9 @@ declarados).
 | — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |
 | RF-020, 021 | Gestión documental y vínculo dato ↔ documento | 1 | Implementada | PDF con comprobación de página citada; XLSX/DXF se incorporan pero su cita (hoja/celda) aún no se comprueba. |
 | RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 3 | Implementada | `docs/modules/geometria.md`. Implementada con planos de prueba: lector DXF y geometría exacta (3.A), niveles, espacios y obstáculos con procedencia, propuestas confirmadas, bloques por espacio, longitudes por capa y Excel (3.B), y paso «Planos y espacios» con visor 2D (3.C). Falta validarla con un DXF real del usuario. |
-| RF-101, 102 | Cargas térmicas y caudales de ventilación | 4 | Implementada | `docs/modules/cargas.md`. Clima de la guía del IDAE del usuario, 39 usos con fuentes, cerramientos típicos por tipo de construcción, fachadas automáticas del plano, invierno y verano por componentes en hora punta, aire exterior por uso, infiltración; paso «Cargas y ventilación» con informe Excel y PDF. Probado con casos calculados a mano y una estación inventada: falta validarlo con la guía real y un proyecto del usuario. |
+| RF-101, 102 | Cargas térmicas y caudales de ventilación | 4 | Implementada | `docs/modules/cargas.md`. Clima de la guía del IDAE del usuario, 39 usos con fuentes, cerramientos típicos por tipo de construcción, fachadas automáticas del plano, invierno y verano por componentes en hora punta, aire exterior por uso, infiltración; paso «Cargas y ventilación» con informe Excel y PDF. Probado con casos calculados a mano y una estación inventada: falta validarlo con la guía real y un proyecto del usuario. **Motor Limitado** (11-11-2026): psicrometría y n50 contrastados con ejemplos publicados (ASHRAE, guía del DB HE); geometría solar, cielo despejado, sol-aire e infiltración UNE-EN 12831 sin ejemplo publicado accesible (`tests/reference_cases/README.md`). Las puertas y portones no entran todavía en la infiltración. |
 | RF-100 | Redes de aire | 5 | Implementada | `docs/modules/redes_aire.md`. Ejes dibujados en AutoCAD (capa) y terminales como bloques; caudales de las cargas o del atributo CAUDAL; pérdida de carga constante con límites de velocidad; accesorios del manual Climaver; camino crítico, equilibrado y SFP (RITE); listado Excel con medición. Probado con un DXF de prueba y el ejemplo resuelto del manual Climaver; salida a AutoCAD (DXF R2013 con etiquetas y LISP) implementada. Ventilación sencilla (Etapa 6): caudal por renovaciones/h (tablas 3.5 y 3.6 del manual de S&P) y punto de trabajo del ventilador con la potencia máxima por SFP. Falta un DXF real del usuario y probar la salida en su AutoCAD. |
-| — | Ventilación y extracción industrial | 3.3 | Pendiente | |
+| — | Ventilación y extracción industrial | 3.3 | Pendiente de decisión | En parte hecha: ventilación por renovaciones/h y punto de trabajo del ventilador (etapa 6); la selección del ventilador queda fuera («cada fabricante tiene su software», 08-11-2026). El resto, a decidir por el usuario. |
 | — | Rooftop | 3.4 | Pendiente | |
 | RF-104 | VRF / expansión directa | 3.5 | Pendiente | |
 | RF-105 | Hidrónico | 7 | Implementada (cálculo y elementos) | `docs/modules/hidronica.md`. Primario-secundario, 2 y 4 tubos, circuitos de las cargas; diámetros, bombas, colectores, inercia, vaso, presiones, válvulas y aislamiento con RITE e IDAE nº 18; lista completa de elementos y Excel. Probado con los ejemplos resueltos de la guía IDAE nº 18. Esquema de principio en DXF R2013 con leyenda (7.B). Falta validar con un proyecto real y abrir el esquema en el AutoCAD del usuario. |
