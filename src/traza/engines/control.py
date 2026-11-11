@@ -393,7 +393,7 @@ def _comprobar(r: ResultadoControl, servicios, grandes, estabilizados) -> None:
             else:
                 relaciones.append(x)
         if malos:
-            fila(req, norma, NO_CUMPLE, "Fuera de 0,6–1,3: " + "; ".join(malos))
+            fila(req, norma, NO_CUMPLE, "Sin dato o fuera de 0,6–1,3: " + "; ".join(malos))
         else:
             # El Kv sale de la pérdida de la unidad (sistema hidráulico): la relación es 1
             # por construcción, no una verificación (segunda revisión 11-11-2026).

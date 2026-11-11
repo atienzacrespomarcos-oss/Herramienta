@@ -128,8 +128,8 @@ def test_umbral_de_70_kw_con_la_potencia_de_la_instalacion():
 
 def test_valvulas_de_control_se_calculan_con_su_kv():
     """IT 1.2.4.3.1.5: Δp de la válvula abierta = 10⁵·(q/Kv)², entre la de la unidad.
-    q = 1 m³/h, unidad 15 kPa: Kv = 1/√0,15 = 2,582 → relación 1,00 (CUMPLE). Con Kv para
-    0,5 (Kv = 1/√0,075 = 3,651) → NO CUMPLE. Sin pérdida de la unidad (Kv 0) → NO CUMPLE.
+    q = 1 m³/h, unidad 15 kPa: Kv = 1/√0,15 = 2,582 → relación 1,00 (dentro del rango:
+    «Incluida»). Con Kv para 0,5 (Kv = 1/√0,075 = 3,651) → NO CUMPLE. Sin pérdida de la unidad (Kv 0) → NO CUMPLE.
     En el proyecto el Kv sale de la pérdida de la unidad (relación 1): lo que puede fallar de
     verdad es la unidad sin pérdida (tests/ui/test_paso_control.py)."""
 
