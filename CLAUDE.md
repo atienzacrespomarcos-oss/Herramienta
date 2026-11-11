@@ -107,7 +107,10 @@ se documentan en la ficha del módulo.
 - Sin DWG (ODA File Converter: no comercial salvo miembros).
 - Estructura: **solo geometría**, sin cálculo estructural.
 - Fuera de alcance (decisión del usuario): **saneamiento** (09-11-2026); diseño de **VRF** y
-  selección de **ventiladores** («cada fabricante tiene su software», 08-11-2026).
+  selección de **ventiladores** («cada fabricante tiene su software», 08-11-2026; VRF
+  confirmado el 11-11-2026); **PCI**, **AF y ACS** (11-11-2026). Dentro, pendientes
+  (11-11-2026): coordinación de trazados, estructura solo geometría, IA sobre documentos y
+  planos en PDF (vectorial y escaneado). Ver `docs/FEATURE_REGISTER.md`.
 - Validación: el usuario **no tiene programas de cálculo**. Los motores se prueban con
   ejemplos resueltos publicados cuando existen y, si no, con casos de resultado conocido
   calculados a mano en la prueba (reglas en `docs/TESTING_STRATEGY.md` §0.2). El estado

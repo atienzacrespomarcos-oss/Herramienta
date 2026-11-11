@@ -21,6 +21,7 @@ from traza.app import modificados as calculo_mod
 from traza.app import obra as calculo_obra
 from traza.app import planos as calculo_planos
 from traza.app import redes as calculo_redes
+from traza.app import revisiones as calculo_revisiones
 from traza.app import subcuadros as calculo_subcuadros
 from traza.app.ordenes import (
     ENCARGOS,
@@ -82,6 +83,7 @@ from traza.io import (
     informe_control,
     informe_hidronica,
     informe_redes,
+    informe_revisiones,
     memoria,
     puntos_control,
     salida_autocad,
@@ -125,6 +127,8 @@ class Proyecto:
         #: Lector de la guía del IDAE (las pruebas lo sustituyen: la guía no se reproduce).
         self.lector_guia = clima_idae.leer_guia
         self._guias: dict[str, list[clima_idae.EstacionIdae]] = {}
+        #: Una revisión abierta para comparar (en memoria): no admite órdenes.
+        self.revision: fs.Revision | None = None
 
     # --- Ciclo de vida -----------------------------------------------------------------
 
@@ -186,6 +190,77 @@ class Proyecto:
     def copias(self) -> list[Path]:
         return fs.copias(self.carpeta)
 
+    # --- Revisiones del diseño (RF-009, docs/modules/revisiones.md) -----------------------
+    def revisiones(self) -> list[fs.Revision]:
+        return fs.revisiones(self.carpeta)
+
+    def emitir_revision(self, nombre: str, nota: str = "") -> fs.Revision:
+        """Congela el proyecto tal como está («Rev. 1 · Para oferta»). No es una orden: no
+        cambia el modelo, y no se deshace (una revisión emitida no se borra)."""
+        if self.revision is not None:
+            raise OrdenRechazada("Una revisión no emite revisiones.")
+        if not nombre.strip():
+            raise OrdenRechazada(
+                "La revisión necesita un nombre («Para oferta», «Planos rev. B»…)."
+            )
+        return fs.emitir_revision(self.carpeta, self._con, nombre.strip(), nota.strip())
+
+    def abrir_revision(self, numero: int) -> Proyecto:
+        """La revisión en memoria, para calcular y comparar; el fichero no se toca. Usa la
+        misma guía del IDAE y los mismos planos leídos que el proyecto (mismos documentos)."""
+        r = next((x for x in self.revisiones() if x.numero == numero), None)
+        if r is None:
+            raise OrdenRechazada(f"No hay revisión {numero}.")
+        try:
+            con = fs.abrir_revision(r)
+        except fs.CarpetaNoValida as exc:
+            raise OrdenRechazada(str(exc)) from exc
+        otra = Proyecto(self.carpeta, con)
+        otra.revision = r
+        otra.lector_guia = self.lector_guia
+        otra._guias = self._guias
+        otra._planos_dxf = self._planos_dxf
+        return otra
+
+    def comparar_revisiones(
+        self, antes: int, ahora: int | None = None
+    ) -> list[calculo_revisiones.Cambio]:
+        """Cambios de la revisión `antes` a la `ahora` (None: el proyecto actual)."""
+        a = self.abrir_revision(antes)
+        try:
+            datos_a = calculo_revisiones.resumen(a)
+        finally:
+            a.cerrar()
+        if ahora is None:
+            datos_b = calculo_revisiones.resumen(self)
+        else:
+            b = self.abrir_revision(ahora)
+            try:
+                datos_b = calculo_revisiones.resumen(b)
+            finally:
+                b.cerrar()
+        return calculo_revisiones.comparar(datos_a, datos_b)
+
+    def exportar_comparacion(
+        self, antes: int, ahora: int | None, destino: Path, cambios=None
+    ) -> Path:
+        if cambios is None:
+            cambios = self.comparar_revisiones(antes, ahora)
+        etiqueta = lambda n: "actual" if n is None else self._etiqueta_revision(n)  # noqa: E731
+        try:
+            return informe_revisiones.exportar_excel(
+                Path(destino), self.nombre, etiqueta(antes), etiqueta(ahora), cambios
+            )
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en Excel? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
+
+    def _etiqueta_revision(self, numero: int) -> str:
+        r = next(x for x in self.revisiones() if x.numero == numero)
+        return f"Rev. {r.numero} · {r.nombre}"
+
     @staticmethod
     def restaurar_copia(raiz: Path, copia: Path) -> None:
         """Restaura una copia. El proyecto debe estar cerrado (lo exige la interfaz)."""
@@ -195,6 +270,10 @@ class Proyecto:
 
     def ejecutar(self, orden: Orden, autor: str = "usuario") -> str:
         """Aplica una orden entera o nada. Devuelve el id de la orden."""
+        if self.revision is not None:
+            raise OrdenRechazada(
+                f"La revisión {self.revision.numero} está emitida: no se modifica (RF-009)."
+            )
         if autor not in AUTORES:
             raise ValueError(f"Autor no válido: {autor}")
         self._comprobar_autor(orden, autor)

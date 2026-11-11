@@ -2,6 +2,15 @@
 
 ## [Sin publicar]
 
+### Revisiones del diseño (11-11-2026)
+- **Archivo → Emitir revisión…**: congela el proyecto con un nombre y una nota («Rev. 1 ·
+  Para oferta»), de solo lectura y con su huella.
+- **Archivo → Comparar con una revisión…**: qué ha cambiado (datos y resultados: cargas,
+  caudales, potencias, tuberías, bombas, cables) frente a lo actual o entre dos revisiones,
+  en pantalla y en Excel.
+- Alcance (decisión del usuario): VRF fuera; coordinación de trazados, estructura (solo
+  geometría), IA sobre documentos y planos en PDF (vectorial y escaneado), dentro.
+
 ### Control de la instalación, parte 2: esquemas (11-11-2026)
 - **Control → Exportar esquema de control (DXF)…**: un esquema de principio por sistema,
   con los equipos, sus señales (símbolo y tipo), el controlador con su recuento y la
