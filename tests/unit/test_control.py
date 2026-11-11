@@ -6,6 +6,10 @@ consolidado) y los recuentos de puntos se cuentan a mano señal por señal.
 
 from __future__ import annotations
 
+import math
+
+import pytest
+
 from traza.engines import control as mc
 from traza.rules import control as rc
 from traza.rules import usos
@@ -58,6 +62,12 @@ def test_los_usos_del_control_existen_en_el_catalogo():
         assert clave in usos.POR_CLAVE, clave
 
 
+def _circuito(nombre: str, unidades: int, relacion: float = 1.0, perdida_pa: float = 15_000.0):
+    """Circuito con una válvula cuyo Kv da `relacion` × la pérdida de la unidad a 1 m³/h."""
+    kv = 1.0 / math.sqrt(relacion * perdida_pa / 1e5) if relacion > 0 else 0.0
+    return mc.CircuitoControl(nombre, unidades, 1.0, kv, perdida_pa)
+
+
 def test_recuento_de_puntos_contado_a_mano():
     """Un despacho, una red de impulsión climatizada de 10 000 m³/h y frío de 50 kW con un
     circuito de 3 unidades.
@@ -71,11 +81,7 @@ def test_recuento_de_puntos_contado_a_mano():
     r = mc.proponer(
         [_e("despacho", "Despacho 1")],
         [mc.RedControl("IMP-1", "impulsion", 10_000.0, True)],
-        [
-            mc.ServicioControl(
-                "Clima", "Frío", True, False, 50.0, (mc.CircuitoControl("Oficinas", 3),)
-            )
-        ],
+        [mc.ServicioControl("Clima", "Frío", True, False, 50.0, (_circuito("Oficinas", 3),))],
         refrigeracion=True,
     )
     assert r.resumen == {"ED": 9, "SD": 4, "EA": 8, "SA": 6}
@@ -103,7 +109,7 @@ def test_umbral_de_70_kw_con_la_potencia_de_la_instalacion():
     diferencial estabilizada → PICV. Con 4 tubos cuenta frío + calor (40 + 40 = 80 kW)."""
 
     def servicios(total):
-        circuito = (mc.CircuitoControl("Nave", 2),)
+        circuito = (_circuito("Nave", 2),)
         return [
             mc.ServicioControl("4T", "Frío", True, False, total, circuito),
             mc.ServicioControl("4T", "Calor", False, True, total, circuito),
@@ -113,31 +119,58 @@ def test_umbral_de_70_kw_con_la_potencia_de_la_instalacion():
     valvulas = [p for p in r.puntos if p.equipo == "Unidades de Nave"]
     assert len(valvulas) == 2 and all("PICV" in p.senal for p in valvulas)
     c = next(c for c in r.comprobaciones if c.requisito.startswith("Presión diferencial"))
-    assert c.cumple is True
+    assert c.resultado == mc.INCLUIDA
     r = mc.proponer([], [], servicios(70.0), True)
     assert all("de 2 vías" in p.senal for p in r.puntos if p.equipo == "Unidades de Nave")
     c = next(c for c in r.comprobaciones if c.requisito.startswith("Presión diferencial"))
-    assert c.cumple is None  # no aplica: 70 kW no es «más de 70»
+    assert c.resultado == mc.NO_APLICA  # 70 kW no es «más de 70»
 
 
-def test_comprobaciones_detectan_una_categoria_que_no_vale():
-    """Las comprobaciones miran las categorías, no se dan por buenas: una oficina con
-    IDA-C3 (horario) y un salón de actos sin IDA-C6 salen NO CUMPLE."""
-    r = mc.ResultadoControl(
-        categorias=[
-            mc.Categoria("Oficina", "Oficina", "THM-C3", "", "IDA-C3", "", "permanente"),
-            mc.Categoria("Salón", "Reuniones", "THM-C3", "", "IDA-C1", "", "variable"),
-        ]
+def test_valvulas_de_control_se_calculan_con_su_kv():
+    """IT 1.2.4.3.1.5: Δp de la válvula abierta = 10⁵·(q/Kv)², entre la de la unidad.
+    q = 1 m³/h, unidad 15 kPa: Kv = 1/√0,15 = 2,582 → relación 1,00 (CUMPLE). Con Kv para
+    0,5 (Kv = 1/√0,075 = 3,651) → NO CUMPLE. Sin pérdida de la unidad (Kv 0) → NO CUMPLE."""
+
+    def resultado(*circuitos):
+        s = mc.ServicioControl("S", "Frío", True, False, 50.0, circuitos)
+        r = mc.proponer([], [], [s], True)
+        return next(c for c in r.comprobaciones if c.requisito.startswith("Válvulas"))
+
+    c = mc.CircuitoControl("A", 1, 1.0, 1 / math.sqrt(0.15), 15_000.0)
+    assert mc.relacion_valvula(c) == pytest.approx(1.0)
+    assert resultado(c).resultado == mc.CUMPLE
+    assert resultado(_circuito("A", 1, 1.3)).resultado == mc.CUMPLE  # límite incluido
+    malo = resultado(_circuito("A", 1), _circuito("B", 1, 0.5))
+    assert malo.resultado == mc.NO_CUMPLE and "B (0,5)" in malo.detalle
+    sin = resultado(mc.CircuitoControl("C", 1, 1.0, 0.0, 0.0))
+    assert sin.resultado == mc.NO_CUMPLE and "sin pérdida" in sin.detalle
+
+
+def test_lo_que_recoge_la_propuesta_no_se_cuenta_como_cumple():
+    """Revisión 11-11-2026: sondas, categorías, PICV y medición de caudal no se pueden
+    «comprobar» contra la propia propuesta; salen «Incluida en la propuesta»."""
+    r = mc.proponer(
+        [_e("reuniones", "Sala"), _e("oficina_abierta", "Oficina")],
+        [mc.RedControl("R", "impulsion", 20_000.0, True)],
+        [mc.ServicioControl("S", "Frío", True, False, 100.0, (_circuito("A", 2),))],
+        True,
     )
-    mc._comprobar(r, [], [], [])
-    por = {c.norma: c for c in r.comprobaciones}
-    assert por["RITE IT 1.2.4.3.3.3"].cumple is False
-    assert "Oficina" in por["RITE IT 1.2.4.3.3.3"].detalle
-    assert por["RITE IT 1.2.4.3.3.4"].cumple is False
-    # Sin sondas de temperatura de zona: tampoco cumple la regulación por espacio.
-    assert por["RITE IT 1.2.4.3.1.1"].cumple is False
+    por = {c.requisito: c.resultado for c in r.comprobaciones}
+    assert [k for k, v in por.items() if v == mc.CUMPLE] == [
+        "Válvulas de control entre 0,6 y 1,3 veces la pérdida del elemento controlado"
+    ]
+    assert sum(v == mc.INCLUIDA for v in por.values()) == 5
+
+
+def test_consigna_de_calor_es_propuesta():
+    """El .6 obliga con calderas (estándar, baja temperatura, condensación); TRAZA no sabe
+    el tipo de generador: en calor la consigna es propuesta, en frío exigencia (.7)."""
+    s = mc.ServicioControl("S", "Calor", False, True, 50.0, (_circuito("A", 1),))
+    r = mc.proponer([], [], [s], False)
+    consigna = next(p for p in r.puntos if p.senal.startswith("Consigna"))
+    assert consigna.motivo.startswith(rc.PROPUESTA) and "1.2.4.3.1.7" not in consigna.motivo
 
 
 def test_sin_nada_disenado_no_hay_puntos():
     r = mc.proponer([], [], [], True)
-    assert r.puntos == [] and all(c.cumple is None for c in r.comprobaciones)
+    assert r.puntos == [] and all(c.resultado == mc.NO_APLICA for c in r.comprobaciones)

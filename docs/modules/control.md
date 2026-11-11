@@ -70,8 +70,12 @@ Por tanto:
 - Con más de 18 000 m³/h, medición del caudal EA (IT .10; el umbral es estricto).
 
 **Hidráulica, por servicio**
-- Generador: marcha SD, estado ED, alarma ED, consigna de impulsión SA (IT .7 en frío y
-  .6 en calor; las dos con 2 tubos), y temperaturas de impulsión y retorno EA.
+- Generador: marcha SD, estado ED, alarma ED, consigna de impulsión SA, y temperaturas de
+  impulsión y retorno EA.
+  - En frío, la consigna constante es exigencia (IT .7).
+  - En calor, la curva según el exterior es propuesta: el .6 obliga con generadores
+    estándar, de baja temperatura y de condensación, y TRAZA no sabe el tipo (suele ser una
+    bomba de calor).
 - Bomba de primario: marcha SD, estado ED y fallo ED.
 
 **Hidráulica, por circuito**
@@ -83,20 +87,30 @@ Por tanto:
   Con 4 tubos cuenta frío + calor, el mismo umbral que el esquema hidráulico.
 
 **General**
-- Temperatura exterior EA.
+- Temperatura exterior EA (propuesta: curvas de calor y secuencias).
 
 ### Comprobaciones
-Cada una sale CUMPLE / NO CUMPLE, o «No aplica» si el proyecto no tiene ese caso.
-- Una sonda de temperatura en cada espacio climatizado (IT .1).
+Hay dos clases de fila (revisión del 11-11-2026: al principio todas salían CUMPLE, y la
+mayoría no podía fallar porque comprobaban la propia propuesta).
+
+**Se calcula: CUMPLE / NO CUMPLE**
+- Válvulas de control (IT .5). La pérdida de la válvula abierta al caudal de proyecto se
+  calcula con su Kv, Δp = 10⁵·(q/Kv)², que es la definición del Kv. Se divide entre la
+  pérdida de la unidad y la relación debe estar entre 0,6 y 1,3.
+- Con el Kv del sistema hidráulico la relación sale 1. Una unidad sin pérdida (Kv 0) sale
+  NO CUMPLE.
+
+**«Incluida en la propuesta»**: exigencias del RITE que la propuesta ya recoge con su
+sonda, su categoría o su punto. Sirven para justificar; no se cuentan como CUMPLE.
+- Sonda de temperatura en cada espacio (IT .1).
 - IDA-C6 en los locales de ocupación variable (IT 1.2.4.3.3.4).
-- Ninguna categoría C2, C3 o C4 con ocupación permanente (IT 1.2.4.3.3.3).
-- Válvulas con pérdida de 0,6 a 1,3 veces la de la unidad (IT .5). El Kv del sistema
-  hidráulico se calcula con relación 1,0.
-- Presión diferencial estabilizada por encima de 70 kW (IT .5), con PICV.
+- Nunca C2, C3 o C4 con ocupación permanente (IT 1.2.4.3.3.3).
+- PICV por encima de 70 kW (IT .5).
 - Medición de caudal en ventiladores de más de 5 m³/s (IT .10).
 
-Las comprobaciones miran las categorías y los puntos. No se dan por buenas: una categoría
-que no vale sale NO CUMPLE, y hay una prueba que lo vigila.
+**«No aplica»**: el proyecto no tiene ese caso.
+
+La pantalla resume solo lo calculado y cuenta aparte las exigencias incluidas.
 
 ## En el proyecto
 - `app/control.py` y `Proyecto.propuesta_control()`: toman las cargas, las redes y los
@@ -113,6 +127,8 @@ que no vale sale NO CUMPLE, y hay una prueba que lo vigila.
 
 ## Validación
 - Las categorías se comprueban contra el texto del RITE.
+- La relación de las válvulas se comprueba con Kv calculados a mano (CUMPLE, límite de 1,3,
+  0,5 fuera de rango y unidad sin pérdida).
 - Los recuentos de puntos se cuentan a mano en `tests/unit/test_control.py`.
 - Los umbrales de 5 m³/s y de 70 kW se prueban en el límite.
 - Un test ata los usos del control al catálogo de usos.

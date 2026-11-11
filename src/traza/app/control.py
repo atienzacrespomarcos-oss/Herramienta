@@ -53,7 +53,14 @@ def entradas(cargas, redes: list, sistemas: list) -> tuple[list, list, list, boo
                     s.clave in ("calor", "frio_calor"),
                     total_kw,
                     tuple(
-                        mc.CircuitoControl(c.datos.nombre, c.datos.unidades) for c in s.circuitos
+                        mc.CircuitoControl(
+                            c.datos.nombre,
+                            c.datos.unidades,
+                            c.caudal_m3s / c.datos.unidades * 3600,
+                            c.kv_valvula,
+                            c.datos.perdida_terminal_pa,
+                        )
+                        for c in s.circuitos
                     ),
                 )
             )

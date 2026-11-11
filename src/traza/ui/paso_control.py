@@ -12,12 +12,9 @@ from __future__ import annotations
 from PySide6.QtWidgets import QLabel, QTabWidget, QVBoxLayout, QWidget
 
 from traza.app.ordenes import OrdenRechazada
+from traza.engines import control as mc
 from traza.rules import control as rc
 from traza.ui.paso_redes import _archivo
-
-
-def _resultado(v: bool | None) -> str:
-    return "No aplica" if v is None else ("CUMPLE" if v else "NO CUMPLE")
 
 
 class PaginaControl(QWidget):
@@ -97,14 +94,19 @@ class PaginaControl(QWidget):
             )
         else:
             n = r.resumen
-            evaluadas = [c for c in r.comprobaciones if c.cumple is not None]
-            fallan = [c for c in evaluadas if not c.cumple]
+            # Solo lo calculado cuenta como CUMPLE; lo incluido en la propuesta se cuenta
+            # aparte (revisión 11-11-2026: la propuesta no se puede dar por comprobada).
+            fallan = [c for c in r.comprobaciones if c.resultado == mc.NO_CUMPLE]
+            cumplen = [c for c in r.comprobaciones if c.resultado == mc.CUMPLE]
+            incluidas = sum(c.resultado == mc.INCLUIDA for c in r.comprobaciones)
             if fallan:
-                rite = f"RITE IT 1.2.4.3: NO CUMPLE en {len(fallan)} de {len(evaluadas)}"
-            elif evaluadas:
-                rite = f"RITE IT 1.2.4.3: CUMPLE ({len(evaluadas)} comprobaciones)"
+                rite = "NO CUMPLE: " + "; ".join(c.requisito for c in fallan)
+            elif cumplen:
+                rite = "Válvulas de control: CUMPLE"
             else:
-                rite = "RITE IT 1.2.4.3: ninguna exigencia aplica todavía"
+                rite = ""
+            if incluidas:
+                rite += (". " if rite else "") + f"{incluidas} exigencias del RITE incluidas"
             puntos = " · ".join(f"{t} {n[t]}" for t in rc.TIPOS_PUNTO)
             texto = f"{puntos} · total {sum(n.values())} puntos. {rite}"
         if p.avisos:
@@ -112,7 +114,7 @@ class PaginaControl(QWidget):
         self.resumen.setText(texto)
         _llenar(
             self.tabla_comprobaciones,
-            [[c.requisito, c.norma, _resultado(c.cumple), c.detalle] for c in r.comprobaciones],
+            [[c.requisito, c.norma, c.resultado, c.detalle] for c in r.comprobaciones],
         )
         _llenar(
             self.tabla_categorias,

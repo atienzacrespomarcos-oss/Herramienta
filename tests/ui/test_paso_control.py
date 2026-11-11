@@ -64,9 +64,13 @@ def test_recorrido_completo(ventana, tmp_path):  # noqa: F811
     # 2 tubos: frío y calor en el mismo generador → se citan las dos exigencias.
     consigna = next(x for x in r.puntos if x.senal.startswith("Consigna"))
     assert "1.2.4.3.1.7" in consigna.motivo and "1.2.4.3.1.6" in consigna.motivo
+    # Válvulas: el Kv del sistema hidráulico da exactamente la pérdida de la unidad.
+    valv = next(c for c in r.comprobaciones if c.requisito.startswith("Válvulas"))
+    assert valv.resultado == "CUMPLE" and "de 1 a 1 en 2 circuitos" in valv.detalle
     # En pantalla: puntos por tipo, resultado del RITE y las tres pestañas llenas.
     texto = pc.resumen.text()
-    assert "total" in texto and "RITE IT 1.2.4.3" in texto
+    assert "total" in texto and "Válvulas de control: CUMPLE" in texto
+    assert "exigencias del RITE incluidas" in texto
     assert pc.tabla_categorias.rowCount() == len(r.categorias)
     assert pc.tabla_puntos.rowCount() == len(r.puntos)
     assert pc.tabla_comprobaciones.rowCount() == len(r.comprobaciones)
@@ -96,3 +100,6 @@ def test_solo_se_calcula_con_la_pagina_a_la_vista(ventana, monkeypatch):  # noqa
     assert llamadas == []
     v.ir_a_paso("control")
     assert llamadas == [1]
+    # A la vista, cada cambio la recalcula.
+    v.refrescar()
+    assert llamadas == [1, 1]

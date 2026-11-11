@@ -60,6 +60,8 @@ HUMEDAD_POR_NORMA = {"quirofano": "UNE 100713 (humedad relativa de 45 a 55 %)"}
 
 #: Por encima de 5 m³/s (18 000 m³/h), medición y control del caudal (IT 1.2.4.3.1.10).
 CAUDAL_MEDICION_M3H = 18_000.0
+#: Pérdida de la válvula de control abierta / pérdida del elemento controlado (IT 1.2.4.3.1.5).
+RELACION_VALVULA = (0.6, 1.3)
 #: Caudal variable y más de 70 kW: presión diferencial estabilizada (IT 1.2.4.3.1.5).
 POTENCIA_PRESION_DIFERENCIAL_KW = 70.0
 

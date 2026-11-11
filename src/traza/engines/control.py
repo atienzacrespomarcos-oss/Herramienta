@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from traza.core.numeros import escribir_numero
 from traza.rules import control as rc
 
 
@@ -34,6 +35,9 @@ class RedControl:
 class CircuitoControl:
     nombre: str
     unidades: int
+    caudal_unidad_m3h: float
+    kv: float  # el de la válvula de control de cada unidad (sistema hidráulico)
+    perdida_unidad_pa: float
 
 
 @dataclass(frozen=True)
@@ -69,11 +73,15 @@ class Punto:
     motivo: str
 
 
+CUMPLE, NO_CUMPLE = "CUMPLE", "NO CUMPLE"
+INCLUIDA, NO_APLICA = "Incluida en la propuesta", "No aplica"
+
+
 @dataclass(frozen=True)
 class Comprobacion:
     requisito: str
     norma: str
-    cumple: bool | None  # None: no aplica en este proyecto
+    resultado: str  # CUMPLE | NO CUMPLE | Incluida en la propuesta | No aplica
     detalle: str
 
 
@@ -227,11 +235,16 @@ def _aire(r: ResultadoControl, redes: list[RedControl]) -> list[str]:
 
 
 def _consigna(s: ServicioControl) -> str:
+    # El .6 solo obliga en generadores de calor estándar, de baja temperatura y de
+    # condensación; TRAZA no sabe el tipo (suele ser bomba de calor): en calor es propuesta.
     citas = []
     if s.frio:
         citas.append("RITE IT 1.2.4.3.1.7 (impulsión de frío constante)")
     if s.calor:
-        citas.append("RITE IT 1.2.4.3.1.6 (temperatura del agua de calor según el exterior)")
+        citas.append(
+            rc.PROPUESTA + ": agua de calor según el exterior (con calderas lo exige el RITE "
+            "IT 1.2.4.3.1.6)"
+        )
     return "; ".join(citas)
 
 
@@ -312,7 +325,7 @@ def proponer(
                 "Temperatura exterior",
                 "EA",
                 1,
-                "RITE IT 1.2.4.3.1.6" if any(s.calor for s in servicios) else rc.PROPUESTA,
+                rc.PROPUESTA + ": curvas de calor y secuencias",
             )
         )
     _comprobar(r, servicios, grandes, estabilizados)
@@ -320,98 +333,102 @@ def proponer(
 
 
 def _comprobar(r: ResultadoControl, servicios, grandes, estabilizados) -> None:
-    def no_aplica(requisito, norma, detalle):
-        r.comprobaciones.append(Comprobacion(requisito, norma, None, detalle))
+    """Dos clases de fila (revisión 11-11-2026: todas salían CUMPLE y la mayoría no podía
+    fallar, porque comprobaban la propia propuesta):
+    - CUMPLE / NO CUMPLE: lo que se calcula con datos del proyecto (válvulas de control);
+    - «Incluida en la propuesta»: exigencias del RITE que la propuesta ya recoge (la sonda,
+      la categoría o el punto que piden). Sirven para justificar, no se cuentan como CUMPLE.
+    """
+
+    def fila(requisito, norma, resultado, detalle):
+        r.comprobaciones.append(Comprobacion(requisito, norma, resultado, detalle))
 
     con_thm = [c for c in r.categorias if c.thm is not None]
-    sondas = {p.equipo for p in r.puntos if p.senal == "Temperatura ambiente"}
-    req = "Regulación de la temperatura en cada espacio"
+    req, norma = "Regulación de la temperatura en cada espacio", "RITE IT 1.2.4.3.1.1"
     if con_thm:
-        faltan = [c.espacio for c in con_thm if f"Zona {c.espacio}" not in sondas]
-        r.comprobaciones.append(
-            Comprobacion(
-                req,
-                "RITE IT 1.2.4.3.1.1",
-                not faltan,
-                f"Sonda de temperatura en los {len(con_thm)} espacios climatizados"
-                if not faltan
-                else "Sin sonda: " + ", ".join(faltan),
-            )
+        fila(
+            req,
+            norma,
+            INCLUIDA,
+            f"Sonda de temperatura en los {len(con_thm)} espacios climatizados",
         )
     else:
-        no_aplica(req, "RITE IT 1.2.4.3.1.1", "Sin espacios climatizados")
+        fila(req, norma, NO_APLICA, "Sin espacios climatizados")
 
-    req = "Control directo (IDA-C6) en locales de ocupación variable"
-    variables = [c for c in r.categorias if c.ocupacion == "variable"]
+    variables = [c.espacio for c in r.categorias if c.ocupacion == "variable"]
+    req, norma = "Control directo (IDA-C6) en locales de ocupación variable", "RITE IT 1.2.4.3.3.4"
     if variables:
-        mal = [c.espacio for c in variables if c.ida != "IDA-C6"]
-        r.comprobaciones.append(
-            Comprobacion(
-                req,
-                "RITE IT 1.2.4.3.3.4",
-                not mal,
-                "IDA-C6 con sonda de CO₂ en: " + ", ".join(c.espacio for c in variables)
-                if not mal
-                else "Sin IDA-C6: " + ", ".join(mal),
-            )
-        )
+        fila(req, norma, INCLUIDA, "IDA-C6 con sonda de CO₂ en: " + ", ".join(variables))
     else:
-        no_aplica(req, "RITE IT 1.2.4.3.3.4", "Ningún local de ocupación variable")
+        fila(req, norma, NO_APLICA, "Ningún local de ocupación variable")
 
-    req = "IDA-C2, C3 y C4 solo en locales sin ocupación permanente"
-    con_ida = [c for c in r.categorias if c.ida is not None]
-    if con_ida:
-        mal = [
-            c.espacio
-            for c in con_ida
-            if c.ida in rc.SIN_OCUPACION_PERMANENTE and c.ocupacion == "permanente"
-        ]
-        r.comprobaciones.append(
-            Comprobacion(
-                req,
-                "RITE IT 1.2.4.3.3.3",
-                not mal,
-                "Todas las categorías IDA son válidas para su ocupación"
-                if not mal
-                else "Ocupación permanente con IDA-C2/C3/C4: " + ", ".join(mal),
-            )
+    permanentes = [c for c in r.categorias if c.ocupacion == "permanente"]
+    req, norma = "IDA-C2, C3 y C4 solo en locales sin ocupación permanente", "RITE IT 1.2.4.3.3.3"
+    if permanentes:
+        fila(
+            req,
+            norma,
+            INCLUIDA,
+            f"{len(permanentes)} espacios de ocupación permanente con IDA-C1 o C6",
         )
     else:
-        no_aplica(req, "RITE IT 1.2.4.3.3.3", "Sin espacios ventilados")
+        fila(req, norma, NO_APLICA, "Ningún espacio de ocupación permanente")
 
     req = "Válvulas de control entre 0,6 y 1,3 veces la pérdida del elemento controlado"
-    if servicios:
-        r.comprobaciones.append(
-            Comprobacion(
+    norma = "RITE IT 1.2.4.3.1.5"
+    circuitos = [(s, c) for s in servicios for c in s.circuitos]
+    if circuitos:
+        malos, relaciones = [], []
+        for s, c in circuitos:
+            x = relacion_valvula(c)
+            nombre = f"{s.sistema} · {s.servicio} · {c.nombre}"
+            if x is None or not rc.RELACION_VALVULA[0] <= x <= rc.RELACION_VALVULA[1]:
+                malos.append(
+                    f"{nombre} ("
+                    + ("sin pérdida de la unidad: ponla en el sistema" if x is None else _dos(x))
+                    + ")"
+                )
+            else:
+                relaciones.append(x)
+        if malos:
+            fila(req, norma, NO_CUMPLE, "Fuera de 0,6–1,3: " + "; ".join(malos))
+        else:
+            fila(
                 req,
-                "RITE IT 1.2.4.3.1.5",
-                True,
-                "Kv de cada válvula calculado para que pierda lo mismo que su unidad "
-                "(relación 1,0; paso «Sistema hidráulico»)",
+                norma,
+                CUMPLE,
+                f"Δp de la válvula con su Kv / Δp de la unidad: de {_dos(min(relaciones))} a "
+                f"{_dos(max(relaciones))} en {len(relaciones)} circuitos",
             )
-        )
     else:
-        no_aplica(req, "RITE IT 1.2.4.3.1.5", "Sin sistema hidráulico")
+        fila(req, norma, NO_APLICA, "Sin sistema hidráulico")
 
     req = "Presión diferencial estabilizada sobre la válvula (caudal variable y más de 70 kW)"
     if estabilizados:
-        r.comprobaciones.append(
-            Comprobacion(
-                req,
-                "RITE IT 1.2.4.3.1.5",
-                True,
-                "Válvulas independientes de la presión (PICV) en: " + ", ".join(estabilizados),
-            )
+        fila(
+            req,
+            norma,
+            INCLUIDA,
+            "Válvulas independientes de la presión (PICV) en: " + ", ".join(estabilizados),
         )
     else:
-        no_aplica(req, "RITE IT 1.2.4.3.1.5", "Ningún sistema pasa de 70 kW")
+        fila(req, norma, NO_APLICA, "Ningún sistema pasa de 70 kW")
 
     req = "Medición y control del caudal en ventiladores de más de 5 m³/s"
     if grandes:
-        r.comprobaciones.append(
-            Comprobacion(
-                req, "RITE IT 1.2.4.3.1.10", True, "Medición de caudal en: " + ", ".join(grandes)
-            )
-        )
+        fila(req, "RITE IT 1.2.4.3.1.10", INCLUIDA, "Medición de caudal en: " + ", ".join(grandes))
     else:
-        no_aplica(req, "RITE IT 1.2.4.3.1.10", "Ningún ventilador pasa de 5 m³/s")
+        fila(req, "RITE IT 1.2.4.3.1.10", NO_APLICA, "Ningún ventilador pasa de 5 m³/s")
+
+
+def _dos(x: float) -> str:
+    return escribir_numero(round(x, 2))
+
+
+def relacion_valvula(c: CircuitoControl) -> float | None:
+    """Pérdida de la válvula abierta al caudal de proyecto, Δp = 10⁵·(q/Kv)² (Pa, q en m³/h:
+    definición del Kv), entre la pérdida de la unidad. None si no se puede calcular (sin
+    pérdida de la unidad, el sistema hidráulico deja el Kv en 0)."""
+    if c.kv <= 0 or c.perdida_unidad_pa <= 0:
+        return None
+    return 1e5 * (c.caudal_unidad_m3h / c.kv) ** 2 / c.perdida_unidad_pa

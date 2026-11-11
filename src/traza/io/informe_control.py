@@ -12,10 +12,6 @@ from traza.io.informe_redes import _con_extension
 from traza.rules import control as rc
 
 
-def _cumple(v: bool | None) -> str:
-    return "No aplica" if v is None else ("CUMPLE" if v else "NO CUMPLE")
-
-
 def exportar_excel(destino: Path, proyecto: str, propuesta) -> Path:
     destino = _con_extension(destino)
     r = propuesta.resultado
@@ -58,12 +54,14 @@ def exportar_excel(destino: Path, proyecto: str, propuesta) -> Path:
     _hoja(
         wb,
         "Comprobaciones",
-        [("Requisito", 70), ("Norma", 22), ("Resultado", 12), ("Detalle", 80)],
-        [[c.requisito, c.norma, _cumple(c.cumple), c.detalle] for c in r.comprobaciones],
+        [("Requisito", 70), ("Norma", 22), ("Resultado", 24), ("Detalle", 80)],
+        [[c.requisito, c.norma, c.resultado, c.detalle] for c in r.comprobaciones],
     )
     hipotesis = [
         "Categorías THM-C e IDA-C: RITE (RD 1027/2007, texto consolidado), IT 1.2.4.3.2 "
         "(tabla 2.4.3.1) e IT 1.2.4.3.3 (tabla 2.4.3.2).",
+        "Comprobaciones: CUMPLE / NO CUMPLE se calcula con los datos del proyecto; «Incluida "
+        "en la propuesta» es una exigencia del RITE que la propuesta ya recoge.",
         "Señales de cada equipo que el RITE no fija: «Propuesta (práctica habitual)»; "
         "confírmalas con el integrador de control.",
         "Válvulas de las unidades: de 2 vías (secundarios de caudal variable) e independientes "
