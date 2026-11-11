@@ -18,6 +18,18 @@ comparar qué ha cambiado entre ellas.
     desde TRAZA (línea roja 5: nada aprobado se modifica en silencio).
 - **Revisión alterada**: si el `.db` falta o su huella no es la emitida, no se usa y se
   dice por qué.
+  - La huella va en la ficha, junto al `.db`, así que detecta un cambio accidental (una
+    copia a medias, un fichero dañado o tocado por otro programa). No protege frente a
+    quien edite a propósito los dos ficheros; para eso no hace falta en una herramienta
+    personal.
+  - Una revisión de un TRAZA más nuevo, o ilegible, se avisa sin error.
+- **Elementos renombrados**: se comparan por su nombre. Un espacio, red o sistema
+  renombrado sale como «ya no está» (el nombre anterior) y «nuevo» (el nombre nuevo).
+- **Claves**: un elemento se reconoce por su nombre. No hay dos iguales: el código del
+  espacio es único, y las órdenes exigen nombre propio a cada red, sistema, circuito,
+  subcuadro y salida.
+- **Lo que no calcula**: si una parte no calcula (un error del motor, como una red con
+  ciclo), entra con su motivo y el resto se compara.
 - **Comparar** (Archivo → Comparar con una revisión…), entre una revisión y el estado
   actual, o entre dos revisiones:
   - La revisión se abre **en memoria**, migrada al esquema actual si es anterior; el

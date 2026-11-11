@@ -185,6 +185,9 @@ class Proyecto:
         return fila[0] if fila else "diseno"
 
     def copia_de_seguridad(self) -> Path:
+        if self.revision is not None:
+            # La revisión abierta está en memoria: su «copia» iría a copias/ del proyecto real.
+            raise OrdenRechazada("Una revisión abierta no hace copias de seguridad.")
         return fs.copia_de_seguridad(self.carpeta, self._con, etiqueta="manual")
 
     def copias(self) -> list[Path]:
@@ -213,8 +216,10 @@ class Proyecto:
             raise OrdenRechazada(f"No hay revisión {numero}.")
         try:
             con = fs.abrir_revision(r)
-        except fs.CarpetaNoValida as exc:
-            raise OrdenRechazada(str(exc)) from exc
+        except (fs.CarpetaNoValida, sqlite3.Error, RuntimeError) as exc:
+            # Dañada, ilegible o de un TRAZA más nuevo (ProyectoDeVersionFutura): se dice,
+            # no llega como «Error en…» (revisión 11-11-2026).
+            raise OrdenRechazada(f"No se puede abrir la revisión {numero}: {exc}") from exc
         otra = Proyecto(self.carpeta, con)
         otra.revision = r
         otra.lector_guia = self.lector_guia

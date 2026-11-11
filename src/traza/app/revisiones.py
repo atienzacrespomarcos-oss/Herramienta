@@ -53,6 +53,11 @@ def resumen(p) -> list[Dato]:
     from traza.io.unifilar_dxf import cable
 
     datos: list[Dato] = []
+    # Un error del motor (ValueError: una red con ciclo, un volumen nulo…) no tumba la
+    # comparación entera: esa parte entra con su motivo (revisión 11-11-2026).
+    fallos = (OrdenRechazada, ValueError)
+    # Claves únicas por construcción: el código de espacio es UNIQUE, y las órdenes exigen
+    # nombre propio a cada red, sistema, circuito, subcuadro y salida.
 
     def add(apartado, elemento, dato, valor, unidad=""):
         if isinstance(valor, int | float) and not isinstance(valor, bool):
@@ -75,7 +80,7 @@ def resumen(p) -> list[Dato]:
     if p.espacios() and p.cargas_config() is not None:
         try:
             cargas = p.calcular_cargas()
-        except OrdenRechazada as exc:
+        except fallos as exc:
             add("Cargas", "Proyecto", "Cálculo", f"No se calcula: {exc}")
         else:
             for c in cargas.espacios:
@@ -96,7 +101,7 @@ def resumen(p) -> list[Dato]:
         n = red["nombre"]
         try:
             r = p.calcular_red(red["id"])
-        except OrdenRechazada as exc:
+        except fallos as exc:
             add("Redes de aire", n, "Cálculo", f"No se calcula: {exc}")
             continue
         add("Redes de aire", n, "Caudal", r.caudal_total_m3h, "m³/h")
@@ -106,7 +111,7 @@ def resumen(p) -> list[Dato]:
     for s in p.sistemas_hidraulicos():
         try:
             r = p.calcular_sistema_hidraulico(s["id"])
-        except OrdenRechazada as exc:
+        except fallos as exc:
             add("Sistema hidráulico", s["nombre"], "Cálculo", f"No se calcula: {exc}")
             continue
         for sv in r.servicios:
@@ -125,7 +130,7 @@ def resumen(p) -> list[Dato]:
         n = sub["nombre"]
         try:
             r = p.calcular_subcuadro(sub["id"])
-        except OrdenRechazada as exc:
+        except fallos as exc:
             add("Subcuadros", n, "Cálculo", f"No se calcula: {exc}")
             continue
         a = r.alimentacion

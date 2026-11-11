@@ -215,8 +215,9 @@ def _carpeta_revisiones(c: Carpeta) -> Path:
 
 
 def revisiones(c: Carpeta) -> list[Revision]:
-    """Las emitidas, por número. Una ficha sin su .db, o con otra huella, no se lista: una
-    revisión que no es la que se emitió no se compara (se dice en `revision_danada`)."""
+    """Las emitidas (las que tienen ficha legible), por número. No se comprueba aquí si su
+    .db sigue siendo el emitido: se comprueba al abrirla (`revision_danada`), que es cuando
+    importa, y así listar es barato."""
     import json
 
     salida = []
@@ -325,7 +326,11 @@ def abrir_revision(r: Revision) -> sqlite3.Connection:
         origen.backup(memoria)
     finally:
         origen.close()
-    memoria.row_factory = sqlite3.Row
-    memoria.execute("PRAGMA foreign_keys = ON")
-    migrar(memoria)
+    try:
+        memoria.row_factory = sqlite3.Row
+        memoria.execute("PRAGMA foreign_keys = ON")
+        migrar(memoria)  # una revisión de un TRAZA más nuevo: ProyectoDeVersionFutura
+    except BaseException:
+        memoria.close()
+        raise
     return memoria

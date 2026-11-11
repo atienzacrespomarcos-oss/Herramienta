@@ -92,3 +92,61 @@ def test_comparar_con_lo_actual_datos_y_resultados(red, tmp_path):  # noqa: F811
     p.emitir_revision("Con hidráulica")
     entre = p.comparar_revisiones(0, 1)
     assert {(c.apartado, c.dato) for c in entre} == {(c.apartado, c.dato) for c in cambios}
+
+
+# --- Revisión del 11-11-2026 ------------------------------------------------------------
+
+
+def test_un_error_del_motor_no_tumba_la_comparacion(red, monkeypatch):  # noqa: F811
+    """Una red que no calcula (ValueError del motor, p. ej. un ciclo) entra con su motivo; el
+    resto se compara igual."""
+    p, *_ = red
+    p.emitir_revision("Base")
+
+    def falla(_red_id):
+        raise ValueError("la red tiene un ciclo")
+
+    monkeypatch.setattr(p, "calcular_red", falla)
+    cambios = p.comparar_revisiones(0)
+    red_cambios = [c for c in cambios if c.apartado == "Redes de aire"]
+    assert any(c.dato == "Cálculo" and "ciclo" in str(c.ahora) for c in red_cambios)
+    assert not any(c.apartado == "Cargas" for c in cambios)  # lo demás, igual
+
+
+def test_revision_de_un_traza_mas_nuevo_se_avisa(red):  # noqa: F811
+    p, *_ = red
+    r = p.emitir_revision("Base")
+    # Simula una revisión emitida con un esquema futuro (y su huella coherente).
+    import json
+    import sqlite3
+
+    from traza.persistence.carpeta import sha256_de
+
+    r.fichero.chmod(stat.S_IREAD | stat.S_IWRITE)
+    con = sqlite3.connect(r.fichero)
+    con.execute("PRAGMA user_version = 9999")
+    con.close()
+    ficha = r.fichero.with_suffix(".json")
+    ficha.chmod(stat.S_IREAD | stat.S_IWRITE)
+    d = json.loads(ficha.read_text(encoding="utf-8"))
+    d["huella"] = sha256_de(r.fichero)
+    ficha.write_text(json.dumps(d), encoding="utf-8")
+    with pytest.raises(OrdenRechazada, match="No se puede abrir la revisión 0"):
+        p.abrir_revision(0)
+
+
+def test_la_revision_abierta_no_cambia_ni_hace_copias(red):  # noqa: F811
+    p, *_ = red
+    r = p.emitir_revision("Base")
+    rev = p.abrir_revision(0)
+    try:
+        from traza.app.revisiones import resumen
+
+        assert resumen(rev)  # calcula sobre ella
+        with pytest.raises(OrdenRechazada, match="no hace copias"):
+            rev.copia_de_seguridad()
+    finally:
+        rev.cerrar()
+    from traza.persistence.carpeta import sha256_de
+
+    assert sha256_de(r.fichero) == r.huella
