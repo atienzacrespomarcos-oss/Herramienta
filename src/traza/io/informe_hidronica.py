@@ -114,6 +114,37 @@ def exportar_excel(destino: Path, proyecto: str, r: Any) -> Path:
         filas,
         numericas=(2, 3, 4, 6, 7, 10, 11),
     )
+    # Equilibrado unidad a unidad (la 1, la más cercana al colector): lo que disipa su
+    # válvula de equilibrado a caudal de diseño y su Kv (engines/hidraulica.equilibrado).
+    from traza.engines.hidraulica import equilibrado
+
+    filas_eq = [
+        [
+            SERVICIOS[s.clave],
+            c.datos.nombre,
+            x.unidad,
+            c.caudal_m3s / c.datos.unidades * 3600,
+            x.disipar_pa / 1000,
+            x.kv if x.kv is not None else "abierta",
+        ]
+        for s in r.servicios
+        for c in s.circuitos
+        for x in equilibrado(s, c)
+    ]
+    _hoja(
+        wb,
+        "Equilibrado",
+        [
+            ("Servicio", 18),
+            ("Circuito", 16),
+            ("Unidad (1 = la más cercana)", 24),
+            ("Caudal (m³/h)", 12),
+            ("A disipar (kPa)", 14),
+            ("Kv válvula de equilibrado", 22),
+        ],
+        filas_eq,
+        numericas=(4, 5, 6),
+    )
     _hoja(
         wb,
         "Elementos",

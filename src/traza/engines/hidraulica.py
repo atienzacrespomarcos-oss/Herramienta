@@ -158,6 +158,7 @@ class Servicio:
     t_max_c: float
     t_min_c: float
     avisos: tuple[str, ...] = field(default=())
+    agua_calculo: Agua | None = None  # la de las pérdidas (la más fría de los modos)
 
     @property
     def potencia_kw(self) -> float:
@@ -292,4 +293,50 @@ def calcular_servicio(
         t_max,
         t_min,
         tuple(avisos),
+        a,
     )
+
+
+# --- Equilibrado de las unidades de cada circuito (docs/modules/hidronica.md) -------------
+#
+# Usuario (11-11-2026): «valvulería y equilibrado». Cada secundario tiene su bomba: entre
+# circuitos no hay que equilibrar. Dentro de un circuito, la unidad más cercana al colector
+# recibe más presión de la que necesita, y su válvula de equilibrado la disipa (RITE
+# IT 1.2.4.2.7: equilibrado en diseño). Hipótesis (las mismas del circuito): unidades
+# iguales y repartidas por igual a lo largo de la ida, retorno directo, un solo diámetro.
+
+
+DISIPAR_MINIMO_PA = 100.0
+
+
+@dataclass(frozen=True)
+class EquilibradoUnidad:
+    unidad: int  # 1 = la más cercana al colector
+    disipar_pa: float  # lo que debe quitar su válvula de equilibrado a caudal de diseño
+    kv: float | None  # m³/h a 1 bar; None: la válvula va abierta (nada que disipar)
+
+
+def equilibrado(s: Servicio, c: CircuitoCalculado) -> tuple[EquilibradoUnidad, ...]:
+    """Presión a disipar y Kv de la válvula de equilibrado de cada unidad del circuito.
+
+    Presión disponible en la unidad i = altura de la bomba del circuito − pérdida de ida y
+    vuelta hasta ella (tramo a tramo, con el caudal que lleva cada tramo y el 30 % de
+    accesorios, IDAE nº 18). Lo que sobra sobre la unidad y su válvula de control es lo que
+    disipa la de equilibrado: Kv = Q/√(ΔP/1 bar). La bomba está calculada con todo el caudal
+    en todo el recorrido (del lado de la seguridad), así que también la última unidad tiene
+    algo que disipar."""
+    a = s.agua_calculo or agua(10.0)
+    n, largo = c.datos.unidades, c.datos.longitud_m
+    q_unidad_m3h = c.caudal_m3s / n * 3600
+    perdida = 0.0
+    salida = []
+    for i in range(1, n + 1):
+        q_tramo = c.caudal_m3s * (n - i + 1) / n
+        _v, r = flujo(q_tramo, c.tubo.tubo, a)
+        perdida += 2 * rh.FACTOR_ACCESORIOS * r * largo / n
+        disipar = c.altura_bomba_pa - perdida - c.datos.perdida_terminal_pa - c.perdida_valvula_pa
+        disipar = max(disipar, 0.0)
+        # Menos de 100 Pa (≈ 1 cm c.a.) no se ajusta en obra: la válvula va abierta.
+        kv = q_unidad_m3h / math.sqrt(disipar / 1e5) if disipar > DISIPAR_MINIMO_PA else None
+        salida.append(EquilibradoUnidad(i, disipar, kv))
+    return tuple(salida)
