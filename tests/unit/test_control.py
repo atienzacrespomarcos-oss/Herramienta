@@ -176,3 +176,61 @@ def test_consigna_de_calor_es_propuesta():
 def test_sin_nada_disenado_no_hay_puntos():
     r = mc.proponer([], [], [], True)
     assert r.puntos == [] and all(c.resultado == mc.NO_APLICA for c in r.comprobaciones)
+
+
+# --- Parte 2: secuencias y símbolos del esquema ---------------------------------------
+
+
+def _completo():
+    return mc.proponer(
+        [_e("reuniones", "Sala"), _e("quirofano", "Quirófano 1"), _e("almacen", "Nave")],
+        [
+            mc.RedControl("IMP", "impulsion", 20_000.0, True),
+            mc.RedControl("EXT", "extraccion", 5_000.0, False),
+        ],
+        [
+            mc.ServicioControl(
+                "Clima", "Frío / calor (2 tubos)", True, True, 90.0, (_circuito("A", 2),)
+            )
+        ],
+        refrigeracion=True,
+    )
+
+
+def test_cada_senal_propuesta_tiene_su_simbolo():
+    """Ninguna señal de la propuesta se queda con el rótulo genérico (su tipo)."""
+    r = _completo()
+    sin = [p.senal for p in r.puntos if mc.simbolo(p.senal, p.tipo) == p.tipo]
+    assert sin == []
+    casos = {
+        ("Consigna de temperatura de impulsión", "SA"): "C",  # salida: no es una sonda
+        ("Temperatura de impulsión", "EA"): "T",
+        ("Presión diferencial (mando de la bomba)", "EA"): "ΔP",
+        ("Colmatación (presostato diferencial)", "ED"): "ΔP",
+        ("Concentración de CO₂", "EA"): "CO₂",
+        ("Humedad relativa ambiente", "EA"): "HR",
+        ("Estado (en marcha)", "ED"): "E",  # «estado» antes que cualquier otra palabra
+        ("Velocidad (variador)", "SA"): "VF",
+        ("Orden de marcha", "SD"): "M",
+        ("Algo sin nombre conocido", "EA"): "EA",
+    }
+    for (senal, tipo), esperado in casos.items():
+        assert mc.simbolo(senal, tipo) == esperado, senal
+
+
+def test_secuencias_de_cada_sistema_con_su_fuente():
+    """Una secuencia por sistema con puntos (salvo «General»); cada frase lleva su artículo
+    del RITE o dice que es propuesta."""
+    r = _completo()
+    assert set(r.secuencias) == {p.sistema for p in r.puntos} - {"General"}
+    for sistema, frases in r.secuencias.items():
+        for f in frases:
+            assert "RITE" in f or "(propuesta)" in f, (sistema, f)
+    agua = r.secuencias["Clima · Frío / calor (2 tubos)"]
+    assert any("1.2.4.3.1.7" in f for f in agua)  # frío constante: exigencia
+    assert any("1.2.4.3.1.5" in f and "PICV" in f for f in agua)  # 90 kW > 70
+    assert any("temporada" in f for f in agua)  # 2 tubos: cambio frío/calor
+    assert any("1.2.4.3.1.10" in f for f in r.secuencias["Red IMP"])  # 20 000 m³/h
+    assert not any("1.2.4.3.1.10" in f for f in r.secuencias["Red EXT"])
+    zonas = " ".join(r.secuencias["Zonas"])
+    assert "IDA-C6 en Sala" in zonas and "Quirófano 1" in zonas  # CO₂ y humedad

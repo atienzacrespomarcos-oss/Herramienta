@@ -51,6 +51,7 @@ def test_entregables_de_todo_el_diseno(completo, tmp_path):
         "Esquema hidráulico Clima.dxf",
         "Unifilar SC Clima.dxf",
         "Propuesta de control.xlsx",
+        "Esquema de control.dxf",
         "Justificación de cálculos.docx",
         "Plano Nave.xlsx",
     ):

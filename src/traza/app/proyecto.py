@@ -73,6 +73,7 @@ from traza.io import (
     clima_idae,
     coste_presto,
     dxf,
+    esquema_control_dxf,
     esquema_hidraulico_dxf,
     excel_obra,
     facturas_erp,
@@ -82,6 +83,7 @@ from traza.io import (
     informe_hidronica,
     informe_redes,
     memoria,
+    puntos_control,
     salida_autocad,
     unifilar_dxf,
 )
@@ -1805,6 +1807,40 @@ class Proyecto:
                 avisos.append(f"Sistema «{s['nombre']}» sin puntos: {exc}")
         return calculo_control.proponer(cargas, redes, sistemas, avisos)
 
+    def exportar_esquema_control(self, destino: Path) -> Path:
+        """Esquema de principio de control (DXF) de la propuesta, con sus secuencias."""
+        r = self.propuesta_control().resultado
+        if not r.puntos:
+            raise OrdenRechazada(
+                "Nada que controlar todavía: diseña los espacios, las redes de aire o el "
+                "sistema hidráulico."
+            )
+        return self._escribir_esquema_control(destino, r.puntos, r.secuencias, "propuesta")
+
+    def esquema_control_desde_listado(self, origen: Path, destino: Path) -> tuple[Path, list[str]]:
+        """«Hay el qué pero no el cómo»: el esquema de un listado de puntos del usuario. El
+        listado no se guarda en el proyecto. Devuelve el DXF y las filas que no entran."""
+        try:
+            puntos, avisos = puntos_control.leer(Path(origen))
+        except (puntos_control.ListadoNoLegible, hoja_calculo.HojaNoLegible) as exc:
+            raise OrdenRechazada(str(exc)) from exc
+        ruta = self._escribir_esquema_control(
+            destino, puntos, None, f"listado «{Path(origen).name}»"
+        )
+        return ruta, avisos
+
+    def _escribir_esquema_control(self, destino, puntos, secuencias, origen: str) -> Path:
+        texto_origen = "propuesta de TRAZA (paso Control)" if origen == "propuesta" else origen
+        try:
+            return esquema_control_dxf.escribir(
+                Path(destino), self.nombre, puntos, secuencias, "control:esquema", texto_origen
+            )
+        except PermissionError as exc:
+            raise OrdenRechazada(
+                f"No se puede escribir «{exc.filename or destino}»: ¿está abierto en AutoCAD? "
+                "Ciérralo o elige otro nombre."
+            ) from exc
+
     def exportar_control_excel(self, destino: Path) -> Path:
         propuesta = self.propuesta_control()
         try:
@@ -1913,7 +1949,8 @@ class Proyecto:
     ) -> tuple[Path, list[tuple[str, list[Path], str | None]]]:
         """Todo lo del diseño a una carpeta nueva dentro de `carpeta` (nunca sobrescribe):
         planos (Excel), cargas (Excel y PDF), redes (DXF, LISP y Excel), hidráulica (Excel y
-        esquema DXF), subcuadros (unifilar DXF), control (Excel) y la justificación en Word.
+        esquema DXF), subcuadros (unifilar DXF), control (Excel y esquema DXF) y la justificación en
+        Word.
         Devuelve la carpeta y, por entregable, sus ficheros o el motivo por el que no se ha
         generado.
         Un error en uno (de cualquier tipo) se apunta y se sigue con el resto."""
@@ -1999,9 +2036,14 @@ class Proyecto:
             )
         if self.redes() or self.sistemas_hidraulicos():
             ruta_control = unico("Propuesta de control")
+            esquema_control = unico("Esquema de control")
             hacer(
                 "Propuesta de control (Excel)",
                 lambda: self.exportar_control_excel(ruta_control),
+            )
+            hacer(
+                "Esquema de control (DXF)",
+                lambda: self.exportar_esquema_control(esquema_control),
             )
         ruta = unico("Justificación de cálculos")
         hacer(
