@@ -1,8 +1,13 @@
 name: Ejecutable Windows
 
-# Genera TRAZA.exe y lo deja como artefacto descargable de la ejecución
-# (pestaña Actions → ejecución → «TRAZA-windows»). Antes de publicarlo, el propio
-# ejecutable pasa su autoprueba: un .exe que compila pero no funciona no se publica.
+# Genera TRAZA.exe y el paquete de prueba (ejecutable + «Ejemplos de prueba» + «Guía de
+# prueba.docx»). Antes de publicarlo, el propio ejecutable pasa su autoprueba: un .exe que
+# compila pero no funciona no se publica.
+#
+# En cada cambio de main se publica como versión «ultima», con un enlace que no cambia
+# (petición del usuario, 13-11-2026: «no sé qué debo hacer más»; el artefacto de Actions
+# caducaba a los 30 días y había que buscarlo):
+#   https://github.com/atienzacrespomarcos-oss/Herramienta/releases/latest/download/TRAZA-windows.zip
 
 on:
   push:
@@ -14,6 +19,12 @@ jobs:
   exe:
     runs-on: windows-latest
     timeout-minutes: 20
+    permissions:
+      contents: write  # publicar la versión «ultima»
+    # Dos publicaciones a la vez se pisarían (borrar y crear la versión).
+    concurrency:
+      group: ejecutable-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -31,8 +42,36 @@ jobs:
           $p = Start-Process -FilePath dist\TRAZA\TRAZA.exe -ArgumentList "--autoprueba","--informe","`"$informe`"" -Wait -PassThru
           if (Test-Path $informe) { Get-Content $informe -Encoding utf8 } else { Write-Output "(sin informe)" }
           if ($p.ExitCode -ne 0) { throw "La autoprueba del ejecutable ha fallado (código $($p.ExitCode))" }
+      - name: Paquete de prueba (ejecutable, ejemplos y guía)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force paquete | Out-Null
+          Copy-Item -Recurse dist\TRAZA paquete\TRAZA
+          uv run python scripts/ejemplos_prueba.py "paquete\Ejemplos de prueba"
+          uv run python scripts/guia_docx.py docs/GUIA_DE_PRUEBA.md "paquete\Guía de prueba.docx"
+          # zipfile de Python marca los nombres con tildes como UTF-8: el Explorador de
+          # Windows los descomprime bien («Guía», «Diseño», «Certificación»).
+          uv run python -c "import shutil; shutil.make_archive('TRAZA-windows', 'zip', 'paquete')"
       - uses: actions/upload-artifact@v4
         with:
           name: TRAZA-windows
-          path: dist/TRAZA
+          path: paquete
           retention-days: 30
+      - name: Publicar la última versión (enlace fijo)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Se sustituye el ZIP de la versión existente (no se borra antes): si la subida
+        # fallara, el enlace fijo seguiría dando la versión anterior, nunca un 404.
+        run: |
+          $fecha = Get-Date -Format "dd-MM-yyyy HH:mm"
+          $notas = "Última versión de TRAZA ($fecha UTC, commit $($env:GITHUB_SHA.Substring(0,7))). Descarga TRAZA-windows.zip, descomprímelo y sigue «Guía de prueba.docx»."
+          gh release view ultima *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload ultima TRAZA-windows.zip --clobber
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            gh release edit ultima --title "TRAZA · última versión" --notes $notas --latest
+          } else {
+            gh release create ultima TRAZA-windows.zip --target $env:GITHUB_SHA --title "TRAZA · última versión" --notes $notas --latest
+          }

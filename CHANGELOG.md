@@ -2,6 +2,15 @@
 
 ## [Sin publicar]
 
+### Paquete de prueba para Windows (13-11-2026)
+- **Enlace fijo** con la última versión, publicado en cada cambio:
+  https://github.com/atienzacrespomarcos-oss/Herramienta/releases/latest/download/TRAZA-windows.zip
+- El ZIP lleva TRAZA.exe, la carpeta **Ejemplos de prueba** (plano DXF de una nave, oferta
+  BC3, documentos de obra y listado de puntos, todos inventados) y la **Guía de prueba**
+  en Word: instalar, recorridos de diseño, oferta y obra, cómo probar con un proyecto
+  propio y cómo informar de lo que falle.
+- Lectura de la guía climática real del IDAE comprobada (104 estaciones).
+
 ### Revisiones del diseño (11-11-2026)
 - **Archivo → Emitir revisión…**: congela el proyecto con un nombre y una nota («Rev. 1 ·
   Para oferta»), de solo lectura y con su huella.
