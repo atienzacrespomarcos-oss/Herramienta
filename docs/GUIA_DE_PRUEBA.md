@@ -45,15 +45,17 @@ OFICINAS de 78 m², con dos difusores y una UTA en las oficinas.
    - capa de espacios, A-ESPACIOS;
    - capa de textos, A-TEXTOS.
 4. **Planos → Nuevo nivel…**: «Planta baja», cota 0, altura libre 6 m.
-5. Elige cada espacio propuesto y **Planos → Confirmar propuesta…**. Salen ALMACÉN y
-   OFICINAS con su superficie.
+5. Elige cada espacio propuesto y **Planos → Confirmar propuesta…**: primero ALMACÉN y
+   luego OFICINAS. Salen con su superficie y un código: ESP-001 el ALMACÉN y ESP-002 las
+   OFICINAS. El código se ve en la columna «Código» de la tabla de espacios, y es lo que
+   piden los circuitos del sistema hidráulico.
 6. Paso **Cargas y ventilación → Cargas → Clima y obra…**:
    - la guía del IDAE;
-   - estación «Madrid (Barajas)»;
+   - estación «Madrid — Madrid (Barajas)» de la lista;
    - provincia Madrid;
    - altitud de la obra, 650 m;
    - tipo de construcción, el que corresponda.
-   Pulsa **Calcular**. Orden de magnitud con la construcción del CTE, a revisar con tu
+   Pulsa el botón **Calcular**. Orden de magnitud con la construcción del CTE, a revisar con tu
    criterio:
    - ALMACÉN: unos 37 kW de calefacción y 54 kW de refrigeración;
    - OFICINAS: unos 7,6 y 13,5 kW.
@@ -64,24 +66,26 @@ OFICINAS de 78 m², con dos difusores y una UTA en las oficinas.
    - bloque de difusores DIFUSOR y bloque del equipo UTA.
    Sale unos 4.100 m³/h. Es normal que avise de que el ALMACÉN no tiene difusores en esta
    red: el ejemplo solo los tiene en oficinas.
-8. Paso **Sistema hidráulico → Agua → Nuevo sistema…**, de 2 tubos, con dos circuitos:
-   - «Oficinas»: espacio OFICINAS, 4 unidades, 30 m, 15 kPa;
-   - «Nave»: espacio ALMACÉN, 6 unidades, 60 m, 20 kPa.
+8. Paso **Sistema hidráulico → Agua → Nuevo sistema…**, de 2 tubos, con dos circuitos. En
+   la columna «Espacios (códigos)» va el código del espacio, no su nombre:
+   - «Oficinas»: espacios ESP-002, 4 unidades, 30 m, 15 kPa;
+   - «Nave»: espacios ESP-001, 6 unidades, 60 m, 20 kPa.
    Sale un generador de unos 68 kW con primario DN65, más la lista de elementos y el
    esquema.
 9. Paso **Subcuadros de clima → Electricidad → Nuevo subcuadro… → Proponer desde los
-   equipos**. Pon la potencia eléctrica de cada equipo (la de su ficha) y acepta.
-10. Paso **Control**: mira las pestañas Comprobaciones, Categorías y Puntos.
+   equipos**. Pon la potencia eléctrica de cada equipo, la de la ficha del modelo elegido.
+   En el ejemplo no hay fichas: pon 2 kW donde salga vacía. Luego acepta.
+10. Paso **Control**: mira las pestañas Comprobaciones, Categorías por espacio y Puntos.
     - **Control → Exportar esquema de control (DXF)…**.
     - **Control → Esquema desde un listado de puntos…** con «Listado de puntos
       ejemplo.csv».
 11. Paso **Entregables**: **Entregables → Plantilla de Word…**, elige la de Aliter, y luego
-    **Generar entregables…**. Crea una carpeta nueva con todo:
+    **Entregables → Generar entregables…**. Crea una carpeta nueva con todo:
     - DXF, LISP y Excel;
     - PDF de cargas;
     - justificación en Word.
 12. **Archivo → Emitir revisión…** con el nombre «Para oferta».
-    - Cambia el uso de OFICINAS: Cargas → Datos del espacio…
+    - Cambia el uso de OFICINAS: **Cargas → Datos del espacio…**
     - Haz **Archivo → Comparar con una revisión…**: verás qué cambia en cargas, caudales y
       potencias.
 
@@ -99,9 +103,10 @@ OFICINAS de 78 m², con dos difusores y una UTA en las oficinas.
 3. **Mediciones → Leer medición u oferta…**: elige el documento, «oferta» y un proveedor.
    - Mira el árbol de capítulos y partidas, y los avisos.
    - **Mediciones → Exportar Excel con todo…**.
-4. **Modificados → Nuevo modificado…**, cambia la cantidad de una partida con su motivo, y:
-   - **Exportar modificado a Excel…**;
-   - **Exportar presupuesto actualizado a BC3…**.
+4. **Modificados → Nuevo modificado…**, y después **Modificados → Cambiar cantidad de una
+   partida…** con su motivo. Luego:
+   - **Modificados → Exportar modificado a Excel…**;
+   - **Modificados → Exportar presupuesto actualizado a BC3…**.
 5. **Comprueba fuera de TRAZA**: importa ese BC3 en Presto, o en Arquímedes si lo usas.
 
 ## 5. Recorrido C: obra (unos 15 minutos)
@@ -116,7 +121,7 @@ OFICINAS de 78 m², con dos difusores y una UTA en las oficinas.
    - Certificaciones;
    - Coste real, con las facturas del ERP;
    - Previsión: **Obra → Actualizar mi previsión…**;
-   - Futuribles: **Nuevo futurible…** y «Sí / no en el escenario».
+   - Futuribles: **Obra → Nuevo futurible…** y **Obra → Sí / no en el escenario**.
 3. **Obra → Exportar Excel de control…**.
 
 ## 6. Recorrido D: un proyecto tuyo ya terminado (lo que de verdad valida)

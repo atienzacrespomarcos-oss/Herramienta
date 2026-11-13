@@ -37,9 +37,16 @@ def test_recorrido_a_diseno_completo(ejemplos, tmp_path, pdf_3_paginas):
         )
         nivel = CrearNivel("Planta baja", 0.0, 6.0)
         p.ejecutar(nivel)
-        for prop in p.propuestas(plano):
-            p.confirmar_contorno(plano, prop.handle, nivel.id, nombre=prop.nombre_sugerido.texto)
-        assert sorted(e["nombre"] for e in p.espacios()) == ["ALMACÉN", "OFICINAS"]
+        # Como manda la guía: primero ALMACÉN y luego OFICINAS.
+        propuestas = {x.nombre_sugerido.texto: x for x in p.propuestas(plano)}
+        for nombre in ("ALMACÉN", "OFICINAS"):
+            prop = propuestas[nombre]
+            p.confirmar_contorno(plano, prop.handle, nivel.id, nombre=nombre)
+        # Los códigos que la guía manda escribir en los circuitos del sistema hidráulico.
+        assert {e["nombre"]: e["codigo"] for e in p.espacios()} == {
+            "ALMACÉN": "ESP-001",
+            "OFICINAS": "ESP-002",
+        }
         guia = p.incorporar_documento(pdf_3_paginas)
         p.fijar_cargas(
             guia_documento_id=guia,
@@ -126,39 +133,75 @@ def test_recorrido_c_obra_desde_sus_documentos(ejemplos, tmp_path):
 
 
 def test_cada_menu_y_accion_de_la_guia_existe(qtbot):
-    """Vocabulario atado: lo que la guía manda pulsar («**Archivo → Nuevo proyecto…**»)
-    existe en la ventana con ese mismo texto. Si cambia un menú, la guía queda desfasada y
-    esta prueba lo dice."""
+    """Vocabulario atado: lo que la guía manda pulsar existe en la ventana con ese texto y
+    **en ese menú** («**Planos → Nuevo nivel…**»: «Nuevo nivel…» dentro del menú Planos).
+    Toda negrita de la guía que no es una ruta de menú tiene que ser un menú, una acción,
+    un paso o un botón conocido. Revisión 13-11-2026: la primera versión miraba un conjunto
+    plano y dejaba pasar negritas sin flecha."""
     from tests.ui.test_ventana import PreguntasPreparadas
 
     from traza.ui.ventana import PASOS, VentanaPrincipal
 
     v = VentanaPrincipal(PreguntasPreparadas())
     qtbot.addWidget(v)
-    textos: set[str] = set()
+    menus: dict[str, set[str]] = {}  # título del menú → textos de sus acciones
+
+    def limpio(texto: str) -> str:
+        return " ".join(texto.replace("&", "").split())
 
     def recorrer(menu):
+        textos = menus.setdefault(limpio(menu.title()), set())
         for a in menu.actions():
             if a.menu():
-                textos.add(a.menu().title().replace("&", ""))
+                textos.add(limpio(a.menu().title()))
                 recorrer(a.menu())
             elif a.text():
-                textos.add(a.text().replace("&", ""))
+                textos.add(limpio(a.text()))
 
     for a in v.menuBar().actions():
-        textos.add(a.text().replace("&", ""))
         if a.menu():
             recorrer(a.menu())
-    textos |= {nombre for _, nombre, _ in PASOS}
-    # Botones dentro de una página o un diálogo (no son menús).
-    textos |= {"Calcular", "Proponer desde los equipos"}
+    acciones = set().union(*menus.values())
+    pasos = {nombre for _, nombre, _ in PASOS}
+    # Botones dentro de una página o un diálogo (no son menús), con dónde están.
+    botones = {"Calcular": "Cargas y ventilación", "Proponer desde los equipos": "Nuevo subcuadro…"}
     guia = (RAIZ / "docs" / "GUIA_DE_PRUEBA.md").read_text(encoding="utf-8")
-    citadas = [m for m in re.findall(r"\*\*([^*]+)\*\*", guia) if "→" in m]
-    assert len(citadas) > 15
+    negritas = [limpio(m) for m in re.findall(r"\*\*([^*]+)\*\*", guia)]
+    rutas = [n for n in negritas if "→" in n]
+    assert len(rutas) > 20
     faltan = []
-    for ruta in citadas:
-        for trozo in (" ".join(x.split()) for x in ruta.split("→")):
-            trozo = trozo.removeprefix("Paso ").strip()
-            if trozo not in textos:
-                faltan.append(f"{ruta}: «{trozo}»")
+    for ruta in rutas:
+        trozos = [x.strip() for x in ruta.split("→")]
+        if trozos[0] in pasos and trozos[0] not in menus:
+            trozos = trozos[1:]  # «Paso → Menú → Acción» (Control es paso y menú a la vez)
+        for a, b in zip(trozos, trozos[1:], strict=False):
+            if a in menus:
+                if b not in menus[a]:
+                    faltan.append(f"{ruta}: «{b}» no está en el menú {a}")
+            elif botones.get(b) != a:
+                faltan.append(f"{ruta}: «{a} → {b}» no es un menú ni un botón conocido")
+        if trozos and trozos[0] not in menus:
+            faltan.append(f"{ruta}: «{trozos[0]}» no es un menú")
+    # Negritas sin flecha: lo que parece una acción (termina en «…») o un paso tiene que
+    # existir; el resto es énfasis («todos», «No me envíes documentos reales.»).
+    for n in negritas:
+        if "→" in n or not (n.endswith("…") or n in pasos):
+            continue
+        if n not in menus and n not in acciones and n not in pasos and n not in botones:
+            faltan.append(f"«{n}» no existe en la ventana")
     assert faltan == []
+
+
+def test_la_guia_en_word_no_pierde_texto(tmp_path):
+    """El conversor (scripts/guia_docx.py) conserva todas las palabras de la guía, en orden."""
+    from docx import Document
+    from scripts.guia_docx import convertir
+
+    md = (RAIZ / "docs" / "GUIA_DE_PRUEBA.md").read_text(encoding="utf-8")
+    ruta = convertir(RAIZ / "docs" / "GUIA_DE_PRUEBA.md", tmp_path / "Guía.docx")
+    palabras_md = [
+        w for w in re.sub(r"^\s*(#+|-|\d+\.)\s", " ", md.replace("**", ""), flags=re.M).split()
+    ]
+    texto_docx = " ".join(p.text for p in Document(str(ruta)).paragraphs).replace("• ", " ")
+    palabras_docx = [w for w in re.sub(r"(^|\s)\d+\.\s", " ", texto_docx).split()]
+    assert palabras_docx == [w for w in palabras_md if not re.fullmatch(r"\d+\.", w)]
