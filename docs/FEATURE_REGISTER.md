@@ -4,7 +4,7 @@ Estados: **Pendiente** · **En desarrollo** · **Implementada** (funciona, sin v
 **Validada** (cumple los 8 puntos de finalización) · **Limitada** (funciona con límites
 declarados).
 
-Última actualización: 11-11-2026 (validación de los motores con ejemplos publicados: índice en
+Última actualización: 13-11-2026 (paquete de prueba para Windows); 11-11-2026 (validación de los motores con ejemplos publicados: índice en
 `tests/reference_cases/README.md`).
 
 | ID | Funcionalidad | Etapa | Estado | Notas |
@@ -14,7 +14,7 @@ declarados).
 | RF-001, 002, 003*, 006, 007, 008, 010, 011, 012 | Núcleo de proyecto sin interfaz | 1 | Implementada | `docs/modules/nucleo.md`. *RF-003 parcial: geometría de espacios y obstáculos desde DXF (Etapa 3); sin conexiones. Pasa a Validada cuando lo uses desde la interfaz (bloque 2). |
 | RF-009 | Revisiones de proyecto con nombre y comparación | 1–2 | Implementada | `docs/modules/revisiones.md`. Revisiones congeladas (solo lectura, con huella) y comparación de datos y resultados con lo actual o entre revisiones, en pantalla y en Excel. |
 | — | Interfaz: ventana principal, árbol, propiedades, documentos, historial, pendientes | 1 | Implementada | `docs/modules/interfaz.md`. Pasa a Validada cuando el usuario complete el escenario de aceptación con TRAZA.exe en su Windows. |
-| — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions; pendiente de prueba del usuario. |
+| — | TRAZA.exe con autoprueba | 1 | Implementada | Generado en GitHub Actions y publicado en cada cambio como paquete de prueba con enlace fijo (versión «ultima»): ejecutable, «Ejemplos de prueba» inventados y «Guía de prueba.docx» (`docs/GUIA_DE_PRUEBA.md`; sus recorridos los repite `tests/integration/test_ejemplos_prueba.py`). Pendiente de prueba del usuario. |
 | RF-020, 021 | Gestión documental y vínculo dato ↔ documento | 1 | Implementada | PDF con comprobación de página citada; XLSX/DXF se incorporan pero su cita (hoja/celda) aún no se comprueba. |
 | RF-027, 030, 040, 041 | Importación DXF, espacios, visor 2D | 3 | Implementada | `docs/modules/geometria.md`. Implementada con planos de prueba: lector DXF y geometría exacta (3.A), niveles, espacios y obstáculos con procedencia, propuestas confirmadas, bloques por espacio, longitudes por capa y Excel (3.B), y paso «Planos y espacios» con visor 2D (3.C). Falta validarla con un DXF real del usuario. |
 | RF-101, 102 | Cargas térmicas y caudales de ventilación | 4 | Implementada | `docs/modules/cargas.md`. Clima de la guía del IDAE del usuario, 39 usos con fuentes, cerramientos típicos por tipo de construcción, fachadas automáticas del plano, invierno y verano por componentes en hora punta, aire exterior por uso, infiltración; paso «Cargas y ventilación» con informe Excel y PDF. Probado con casos calculados a mano y una estación inventada: falta validarlo con la guía real y un proyecto del usuario. **Motor Limitado** (11-11-2026): presión de saturación (tabla de ASHRAE) y n50 (guía del DB HE) contrastados con valores publicados; geometría solar, cielo despejado, sol-aire e infiltración UNE-EN 12831 sin ejemplo publicado accesible (`tests/reference_cases/README.md`). Las puertas y portones no entran todavía en la infiltración. |
